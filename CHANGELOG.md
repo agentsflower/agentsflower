@@ -2,6 +2,20 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.4 - 2026-10-11
+
+- Removing a checkout no longer empties a `Setup: - link:` target. `git worktree
+  remove` and a recursive delete follow a junction and delete the target's
+  contents; installed projects repeatedly lost the main folder's `node_modules`
+  when a tester checkout was re-created or an accepted developer worktree was
+  removed. The launcher and `accept.py` now unlink the junction itself first.
+- Regression coverage: a junction inside a checkout is removed while its target
+  keeps its contents; a real directory at the same path is left alone.
+
+Migration: stop an idle conductor, run `install.py --update`, then restart it.
+Do not update tools during active attempts. Already prepared checkouts keep
+working; their links are unlinked at the next removal.
+
 ## 2.11.3 - 2026-10-10
 
 - The launcher records issuance (`in progress`) for direct, automatic and manual

@@ -1,7 +1,10 @@
 """accept.py runs its steps in order and stops at the first failure (no real git state is touched)."""
 import contextlib
 import io
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -87,6 +90,31 @@ class AcceptTests(unittest.TestCase):
     def test_already_merged_branch_is_not_merged_again(self):
         calls, _ = self.go(DEV, merged=True)
         self.assertFalse(any("git merge --no-ff" in c or "merge-tree" in c for c in calls))
+
+    def test_setup_link_junction_is_unlinked_not_emptied(self):
+        """A junction inside a checkout must go, but its target (the main folder's copy) must survive."""
+        if os.name != "nt":
+            self.skipTest("junctions are a Windows feature")
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "main"
+            (target / "pkg").mkdir(parents=True)
+            wt = Path(tmp) / "wt"
+            wt.mkdir()
+            link = wt / "node_modules"
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+            task = {"setup": [{"kind": "link", "path": "node_modules"}]}
+            accept.remove_setup_links(task, str(wt), dry=True)
+            self.assertTrue(os.path.lexists(link))  # a dry run only prints
+            accept.remove_setup_links(task, str(wt), dry=False)
+            self.assertFalse(os.path.lexists(link))
+            self.assertTrue((target / "pkg").is_dir())
+
+    def test_setup_link_leaves_a_real_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / "wt" / "dist"
+            real.mkdir(parents=True)
+            accept.remove_setup_links({"setup": [{"kind": "link", "path": "dist"}]}, str(real.parent), dry=False)
+            self.assertTrue(real.is_dir())
 
     def test_trial_merge_conflict_stops_before_merge(self):
         calls, stopped = self.go(DEV, fail_on="merge-tree")

@@ -148,10 +148,23 @@ function Test-Alive($a) {
 }
 function Test-Held($a) { $a -and $a.status -eq 'running' -and ($a.manual -or -not $a.pid -or (Test-Alive $a)) }
 
+function Remove-SetupLinks($t, $dir) {
+  # Junctions the launcher made for "Setup - link: <path>" (Initialize-Workdir). `git worktree remove` and
+  # Remove-Item -Recurse follow a junction and delete the target's contents (the main folder's copy, such as
+  # node_modules); deleting the reparse point itself leaves the target untouched.
+  if (-not $dir) { return }
+  foreach ($s in @($t.setup)) {
+    if ($s.kind -ne 'link') { continue }
+    $i = Get-Item -LiteralPath (Join-Path $dir $s.path) -Force -ErrorAction SilentlyContinue
+    if ($i -and ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($i.FullName) }
+  }
+}
 function Remove-Checkout($t) {   # tester checkouts are disposable: one per repository (gate.py "checkouts")
   if ($t.role -ne 'tester') { return }
+  Remove-SetupLinks $t $t.workdir
   foreach ($c in @($t.checkouts)) {
     if (-not (Test-Path $c.path)) { continue }
+    Remove-SetupLinks $t $c.path
     git -C $c.repo worktree remove --force $c.path 2>$null
     if ($LASTEXITCODE -and (Test-Path $c.path)) {
       try { Remove-Item -Recurse -Force $c.path -ErrorAction Stop; git -C $c.repo worktree prune }
