@@ -326,6 +326,13 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
         rows = gate.ledger_rows()
         if not dry:
             learn_limits(rows)
+        shadow = None
+        if os.environ.get("AGENTFLOW_SHARED_DISPATCHER", "off") == "shadow":
+            try:
+                import dispatch
+                shadow = dispatch.plan()
+            except (OSError, ValueError, TimeoutError) as error:
+                shadow = {"mode": "shadow", "error": f"{type(error).__name__}: {error}"}
         acted, failed, busy = [], [], []
         if not report_only:
             for _ in range(len(rows) + 1):  # accept until nothing changes: a tester accepted can unlock its developer
@@ -352,6 +359,8 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
                   "limited": {k: v["until"] for k, v in read(LIMITS, {}).items() if k != "_seen" and limited(k)}}
+        if shadow is not None:
+            report["dispatchShadow"] = shadow
         if not dry:
             write(TICK, report)
         return report
@@ -399,6 +408,10 @@ def main():
             print(f"wait    {x['task']}: {x['detail']}")
         for k, v in rep["limited"].items():
             print(f"limited {k} until {v}")
+        if shadow := rep.get("dispatchShadow"):
+            print(f"dispatcher shadow: {len(shadow.get('selected', []))} would launch, "
+                  f"{len(shadow.get('waits', []))} would wait"
+                  + (f"; error: {shadow['error']}" if shadow.get("error") else ""))
         return 0
     if a.cmd == "heartbeat":
         if other := heartbeat(a.holder, a.force):

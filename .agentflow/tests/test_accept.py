@@ -78,7 +78,7 @@ class AcceptTests(unittest.TestCase):
         calls, stopped = self.go(DEV, fail_on="merge --no-ff")
         self.assertIn("aborted", stopped)
         self.assertTrue(any("merge --abort" in c for c in calls))
-        self.assertFalse(any("ledger.py" in c or "worktree" in c or "branch -d" in c for c in calls))
+        self.assertFalse(any("ledger.py" in c or "git worktree " in c or "git branch -d" in c for c in calls))
 
     def test_tester_has_no_merge(self):
         calls, stopped = self.go(TESTER, status="review")

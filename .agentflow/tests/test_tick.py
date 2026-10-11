@@ -35,7 +35,8 @@ class TickTests(unittest.TestCase):
         self.patches = [patch.object(tick, "RT", rt), patch.object(tick, "HEARTBEAT", rt / "orchestrator.json"),
                         patch.object(tick, "LIMITS", rt / "tool-limits.json"), patch.object(tick, "TICK", rt / "tick.json"),
                         patch.object(tick, "LOCK", rt / "tick.lock"),
-                        patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})]
+                        patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name,
+                                             "AGENTFLOW_MACHINE_CODEX_MAX": "1"})]
         for p in self.patches:
             p.start()
 
@@ -161,6 +162,18 @@ class TickTests(unittest.TestCase):
             rep = tick.run(launch=lambda t, tool: acts.append(t) or (True, tool))
             self.assertFalse(rep["reportOnly"])
             self.assertEqual(acts, ["T-1"])
+
+    def test_shadow_dispatcher_reports_without_changing_existing_launch(self):
+        proposal = {"mode": "shadow", "selected": [], "waits": [], "launches": 0}
+        with patch.dict(os.environ, {"AGENTFLOW_SHARED_DISPATCHER": "shadow"}), \
+                patch("dispatch.plan", return_value=proposal), \
+                patch.object(tick.gate, "ledger_rows", return_value={"T-1": {"Status": "ready", "Tool": "codex"}}), \
+                patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
+                patch.object(tick.gate, "last_attempt", return_value=None):
+            calls = []
+            report = tick.run(launch=lambda task, tool: calls.append((task, tool)) or (True, tool))
+        self.assertEqual(calls, [("T-1", "codex")])
+        self.assertEqual(report["dispatchShadow"], proposal)
 
     def test_run_accepts_a_chain_in_one_tick(self):
         rows = {"T-1": {"Role": "developer", "Status": "review"}, "T-2": {"Role": "tester", "Status": "in progress"}}

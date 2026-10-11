@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.5 - 2026-10-12
+
+- Added a shared dispatcher in observation mode. It reads ready tasks from all registered projects, simulates fair allocation against the shared machine registry, and reports selections and waits without granting slots or launching workers.
+- `tick.py` includes that report when `AGENTFLOW_SHARED_DISPATCHER=shadow`; its existing launch and acceptance path remains active. Tests cover two-project fairness, occupied slots, and unchanged launches.
+- Isolated the Codex capacity test from the user's machine override and made the acceptance test match a Git command rather than a `worktree` folder name.
+
+Migration: stop an idle conductor, run `install.py --update`, then restart it. Set `AGENTFLOW_SHARED_DISPATCHER=shadow` to collect observations; omit it for existing behavior. No task-file or ledger migration is needed. Do not update tools during active attempts.
+
 ## 2.11.4 - 2026-10-11
 
 - Removing a checkout no longer empties a `Setup: - link:` target. `git worktree
