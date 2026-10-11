@@ -220,6 +220,10 @@ making word counts mandatory.
 
 The human authorized lifecycle infrastructure repairs. Version 2.11.3 makes launcher issuance authoritative, omits empty live argv, audits unique commits and merge resolutions, and refuses invalid acceptance states before side effects. Failed handoffs remain issued with an error attempt for explicit recovery.
 
+## 2026-10-12: Observe shared scheduling before changing launches (2.11.5)
+
+Multiple installed projects need fair access to shared CLI capacity, and Jev routing must consider available platforms and primary/backup models. First add a cross-project dispatcher in observation mode: it reads each project's existing dry-run tick, simulates round-robin allocation with the machine registry, and records no grants or worker launches. Keep the current launcher and acceptance gates intact while the observation output is verified. Activation, Jev changes, routing statistics, and rollout to installations follow as separate tested stages.
+
 ## 2026-10-11: Unlink setup junctions before checkout removal (2.11.4)
 
 A `Setup: - link:` line makes the launcher place a junction inside the checkout that points at the main
