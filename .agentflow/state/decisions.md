@@ -219,3 +219,12 @@ making word counts mandatory.
 ## 2026-10-10: Launcher reliability
 
 The human authorized lifecycle infrastructure repairs. Version 2.11.3 makes launcher issuance authoritative, omits empty live argv, audits unique commits and merge resolutions, and refuses invalid acceptance states before side effects. Failed handoffs remain issued with an error attempt for explicit recovery.
+
+## 2026-10-11: Unlink setup junctions before checkout removal (2.11.4)
+
+A `Setup: - link:` line makes the launcher place a junction inside the checkout that points at the main
+folder's copy. `git worktree remove` and a recursive PowerShell delete follow the junction and delete the
+target's contents; installed projects repeatedly lost the main folder's `node_modules` this way whenever a
+tester checkout was re-created or an accepted developer worktree was removed. The launcher and `accept.py`
+now delete the reparse point itself before removing a checkout, which leaves the target untouched. Rejected:
+copying instead of linking (wasteful per checkout) and documenting manual care (the failure kept recurring).

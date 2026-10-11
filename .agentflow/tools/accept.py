@@ -45,6 +45,30 @@ def run(cmd, dry, cwd=REPO_ROOT, check=True):
     return p.stdout
 
 
+def remove_setup_links(t, path, dry):
+    """Delete `Setup: - link:` junctions inside a checkout before `git worktree remove`: git follows the
+    junction and deletes the target's contents (the main folder's copy, such as node_modules). Removing the
+    reparse point itself (rmdir for a junction, unlink for a symlink) leaves the target untouched."""
+    if not path:
+        return
+    for s in t.get("setup", []):
+        if s["kind"] != "link":
+            continue
+        p = Path(path) / s["path"]
+        try:
+            st = p.lstat()
+        except OSError:
+            continue
+        if not (p.is_symlink() or getattr(st, "st_file_attributes", 0) & 0x400):  # FILE_ATTRIBUTE_REPARSE_POINT
+            continue
+        if dry:
+            print(f"  (dry run) unlink junction {p}")
+        elif p.is_symlink():
+            p.unlink()
+        else:
+            p.rmdir()
+
+
 def ledger_rows():
     path = ledger.ledger_path()
     if not path.exists():
@@ -140,7 +164,9 @@ def accept(tid, dry):
     to_done(tid, gate.sha_text(shas), dry)
 
     print("5. cleanup")
+    remove_setup_links(t, t["worktree"], dry)
     for c in t["checkouts"]:
+        remove_setup_links(t, c["path"], dry)
         if Path(c["path"]).exists():
             run(["git", "worktree", "remove", c["path"]], dry, cwd=c["repo"])
         else:
