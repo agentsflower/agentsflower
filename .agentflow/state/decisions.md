@@ -228,6 +228,10 @@ Multiple installed projects need fair access to shared CLI capacity, and Jev rou
 
 Jev's choice probabilities provide a ranking among configured model options. Save the selected primary and the highest-ranked eligible option on another CLI platform as backup. Exclude a missing CLI or observed shared usage limit before the Jev call, but keep busy platforms in the ranking so the saved backup can be used when a slot is occupied. Tick changes only an unstarted ready Task File and ledger when the backup flag is enabled; account and model entitlement remain launch-time facts. Keep the flag off by default while the pilot validates routing evidence.
 
+## 2026-10-12: Opt-in cross-project slot grants (2.11.7)
+
+The shared registry owns short-lived ready registrations and grants, not task content. In active mode each project conductor registers its ready work, and the next eligible project in round-robin order receives a grant under the registry lock. The launcher atomically exchanges that grant for its usual lease, so the existing task gate and worker lifecycle remain authoritative. Keep active mode off by default until participating installations have been updated; old versions ignore grants. Rejected: a separate always-running dispatcher process, which adds another service and handover failure point on this single machine.
+
 ## 2026-10-11: Unlink setup junctions before checkout removal (2.11.4)
 
 A `Setup: - link:` line makes the launcher place a junction inside the checkout that points at the main

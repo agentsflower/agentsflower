@@ -134,6 +134,44 @@ class LauncherLifecycleTests(unittest.TestCase):
                             f"$p = Get-Process -Id {int(attempt['pid'])} -ErrorAction SilentlyContinue; "
                             "if ($p) { $p.WaitForExit() }"], capture_output=True, timeout=30)
 
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_dispatch_grant_becomes_worker_lease(self):
+        fake = Path(self.tmp.name) / "fake-worker.cmd"
+        fake.write_text(f'@echo off\n"{sys.executable}" -c "import time; time.sleep(1)"\nexit /b 0\n')
+        self.env["AGENTFLOW_DEVIN"] = str(fake)
+        self.env["AGENTFLOW_SHARED_DISPATCHER"] = "active"
+        self.env["PYTHONPATH"] = str(self.flow / "tools")
+        setup = ("import dispatch; from pathlib import Path; "
+                 f"p=Path({json.dumps(str(self.root))}); "
+                 "dispatch.register(p, [('T-001','devin')]); "
+                 "token,reason=dispatch.request(p,'T-001','devin'); "
+                 "print(token or reason); raise SystemExit(0 if token else 1)")
+        claim = subprocess.run([sys.executable, "-c", setup], cwd=self.root, env=self.env,
+                               capture_output=True, text=True, timeout=10)
+        self.assertEqual(claim.returncode, 0, claim.stdout + claim.stderr)
+        grant = claim.stdout.strip()
+        launch = ("import tick; "
+                  f"ok,detail=tick.do_launch('T-001','devin',{json.dumps(grant)}); "
+                  "print(detail); raise SystemExit(0 if ok else 1)")
+        result = subprocess.run([sys.executable, "-c", launch], cwd=self.root, env=self.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        runtime = self.flow / "tasks/.runtime/T-001.json"
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            attempt = json.loads(runtime.read_text())["attempts"][-1]
+            if attempt["status"] != "running":
+                break
+            time.sleep(0.1)
+        self.assertEqual(attempt["status"], "exited", attempt)
+        if attempt.get("pid"):
+            subprocess.run(["pwsh", "-NoProfile", "-Command",
+                            f"$p = Get-Process -Id {int(attempt['pid'])} -ErrorAction SilentlyContinue; "
+                            "if ($p) { $p.WaitForExit() }"], capture_output=True, timeout=30)
+        state = json.loads((Path(self.env["AGENTFLOW_MACHINE_STATE_DIR"]) / "registry.json").read_text())
+        self.assertEqual(state["dispatch"]["grants"], [])
+        self.assertEqual(state["leases"], [])
+
     def test_ledger_failure_records_error_without_launch(self):
         if not shutil.which("pwsh"):
             self.skipTest("pwsh unavailable")

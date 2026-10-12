@@ -212,6 +212,22 @@ class TickTests(unittest.TestCase):
         self.assertEqual(launches, [("T-1", "devin")])
         self.assertIn({"task": "T-1", "action": "backup", "detail": "codex -> devin"}, report["acted"])
 
+    def test_active_dispatcher_passes_grant_to_launcher(self):
+        rows = {"T-1": {"Status": "ready", "Tool": "codex"}}
+        launched = []
+        with patch.dict(os.environ, {"AGENTFLOW_SHARED_DISPATCHER": "active"}), \
+                patch.object(tick.gate, "ledger_rows", return_value=rows), \
+                patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
+                patch.object(tick.gate, "last_attempt", return_value=None), \
+                patch.object(tick.dispatch, "register") as register, \
+                patch.object(tick.dispatch, "request", return_value=("grant-1", "")), \
+                patch.object(tick.dispatch, "release") as release:
+            report = tick.run(launch=lambda tid, tool, grant: launched.append((tid, tool, grant)) or (True, tool))
+        register.assert_called_once_with(FLOW.parent, [("T-1", "codex")])
+        release.assert_called_once_with("grant-1")
+        self.assertEqual(launched, [("T-1", "codex", "grant-1")])
+        self.assertEqual(report["dispatchMode"], "active")
+
     def test_run_accepts_a_chain_in_one_tick(self):
         rows = {"T-1": {"Role": "developer", "Status": "review"}, "T-2": {"Role": "tester", "Status": "in progress"}}
         tasks = {"T-1": dev("T-1"), "T-2": tester("T-2", "T-1")}

@@ -3,7 +3,7 @@
 The registry is shared by all projects of the current OS user. A short OS file lock
 serializes claims, so two launchers cannot both take the last tool slot or PORT.
 Leases follow worker PIDs and are removed after normal exit or when the process dies.
-Only capacity and temporary tool unavailability live here; task memory stays local.
+Capacity, temporary tool unavailability, and dispatch grants live here; task memory stays local.
 """
 import argparse
 import ctypes
@@ -19,6 +19,8 @@ from pathlib import Path
 TOOLS = ("codex", "claude", "devin", "agy")
 DEFAULT_CAPACITY = {"codex": 1}
 PENDING_SECONDS = 600
+READY_SECONDS = 600
+GRANT_SECONDS = 60
 
 
 def state_dir():
@@ -88,6 +90,7 @@ def _locked():
             state.setdefault("leases", [])
             state.setdefault("limits", {})
             state.setdefault("projects", {})
+            state.setdefault("dispatch", {"ready": {}, "grants": [], "last_served": {}})
             yield state
             temp = directory / f"registry.{os.getpid()}.{uuid.uuid4().hex}.tmp"
             temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -109,6 +112,30 @@ def _clean(state):
     state["limits"] = {tool: end for tool, end in state["limits"].items() if end > now}
     state["projects"] = {p: t for p, t in state.get("projects", {}).items()
                          if Path(p).is_dir() or now - t < PENDING_SECONDS}
+    dispatch = state.setdefault("dispatch", {"ready": {}, "grants": [], "last_served": {}})
+    dispatch["ready"] = {p: entry for p, entry in dispatch.get("ready", {}).items()
+                         if now - entry.get("at", 0) < READY_SECONDS and Path(p).is_dir()}
+    dispatch["grants"] = [grant for grant in dispatch.get("grants", []) if grant.get("until", 0) > now]
+    dispatch.setdefault("last_served", {})
+
+
+def project_capacity(tool, project):
+    """Project-specific cap, or zero when the project did not set one."""
+    root = Path(project)
+    value = 0
+    rules = (root / ".agentflow" / "docs" / "engineering-rules.md",
+             root / ".agentflow" / "docs" / "project-rules.md", root / "AGENTS.md")
+    for path in rules:
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            marker = f"- parallel: {tool}="
+            if line.strip().startswith(marker):
+                project_value = int(line.strip()[len(marker):].strip("` "))
+                if project_value < 1:
+                    raise ValueError("project parallel capacity must be positive")
+                value = min(value, project_value) if value else project_value
+    return value
 
 
 def capacity(tool, project=None):
@@ -119,19 +146,9 @@ def capacity(tool, project=None):
     if value < 0:
         raise ValueError("machine capacity must be zero or positive")
     if project:
-        root = Path(project)
-        rules = (root / ".agentflow" / "docs" / "engineering-rules.md",
-                 root / ".agentflow" / "docs" / "project-rules.md", root / "AGENTS.md")
-        for path in rules:
-            if not path.is_file():
-                continue
-            for line in path.read_text(encoding="utf-8-sig").splitlines():
-                marker = f"- parallel: {tool}="
-                if line.strip().startswith(marker):
-                    project_value = int(line.strip()[len(marker):].strip("` "))
-                    if project_value < 1:
-                        raise ValueError("project parallel capacity must be positive")
-                    value = min(value, project_value) if value else project_value
+        project_value = project_capacity(tool, project)
+        if project_value:
+            value = min(value, project_value) if value else project_value
     return value
 
 
@@ -143,12 +160,19 @@ def has_capacity(tool, project, at=None):
         if state["limits"].get(tool, 0) > (at.timestamp() if at else time.time()):
             return False
         current = [lease for lease in state["leases"] if lease["tool"] == tool]
+        grants = [grant for grant in state["dispatch"]["grants"] if grant["tool"] == tool]
+        if os.environ.get("AGENTFLOW_SHARED_DISPATCHER") == "active":
+            machine_limit = capacity(tool)
+            local_limit = project_capacity(tool, project)
+            same_project = sum(item["project"] == str(Path(project).resolve()) for item in current + grants)
+            return (not machine_limit or len(current) + len(grants) < machine_limit) and (
+                not local_limit or same_project < local_limit)
         active_caps = [lease["cap"] for lease in current if lease.get("cap")]
         effective = min([x for x in [requested, *active_caps] if x], default=0)
-        return not effective or len(current) < effective
+        return not effective or len(current) + len(grants) < effective
 
 
-def claim(tool, project, owner, port=None, cap=None, pid=None, pid_start=None):
+def claim(tool, project, owner, port=None, cap=None, pid=None, pid_start=None, grant=None):
     requested = capacity(tool, project) if cap is None else cap
     if requested < 0:
         raise ValueError("machine capacity must be zero or positive")
@@ -157,13 +181,32 @@ def claim(tool, project, owner, port=None, cap=None, pid=None, pid_start=None):
         if state["limits"].get(tool, 0) > time.time():
             return None, f"{tool} is globally limited until {datetime.fromtimestamp(state['limits'][tool], timezone.utc).isoformat()}"
         current = [lease for lease in state["leases"] if lease["tool"] == tool]
-        active_caps = [lease["cap"] for lease in current if lease.get("cap")]
-        effective = min([x for x in [requested, *active_caps] if x], default=0)
-        if effective and len(current) >= effective:
-            return None, f"{tool} has no free machine slot ({len(current)}/{effective})"
+        grants = state["dispatch"]["grants"]
+        selected = next((item for item in grants if item["token"] == grant), None) if grant else None
+        if grant and (not selected or (selected["tool"], selected["project"], selected["task"]) !=
+                      (tool, str(Path(project).resolve()), owner)):
+            return None, "dispatch grant is missing, expired, or belongs to another task"
+        others = [item for item in grants if item["tool"] == tool and item is not selected]
+        if selected:
+            machine_limit = capacity(tool)
+            local_limit = project_capacity(tool, project)
+            occupied = len(current) + len(others)
+            same_project = sum(lease["project"] == str(Path(project).resolve()) for lease in current)
+            same_project += sum(item["project"] == str(Path(project).resolve()) for item in others)
+            if machine_limit and occupied >= machine_limit:
+                return None, f"{tool} has no free machine slot ({occupied}/{machine_limit})"
+            if local_limit and same_project >= local_limit:
+                return None, f"{tool} has no free project slot ({same_project}/{local_limit})"
+        else:
+            active_caps = [lease["cap"] for lease in current if lease.get("cap")]
+            effective = min([x for x in [requested, *active_caps] if x], default=0)
+            if effective and len(current) + len(others) >= effective:
+                return None, f"{tool} has no free machine slot ({len(current) + len(others)}/{effective})"
         if port and any(str(lease.get("port")) == str(port) for lease in state["leases"]):
             return None, f"PORT={port} is reserved by another AgentFlow project"
         token = uuid.uuid4().hex
+        if selected:
+            grants.remove(selected)
         state["projects"][str(Path(project).resolve())] = time.time()
         state["leases"].append({"token": token, "tool": tool, "project": str(Path(project).resolve()),
                                 "owner": owner, "port": str(port) if port else None, "cap": requested,
@@ -223,6 +266,7 @@ def main():
     take.add_argument("--max", type=int, dest="cap")
     take.add_argument("--pid", type=int)
     take.add_argument("--pid-start", type=int)
+    take.add_argument("--grant")
     active = sub.add_parser("activate")
     active.add_argument("token")
     active.add_argument("pid", type=int)
@@ -234,7 +278,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "claim":
-            token, reason = claim(args.tool, args.project, args.owner, args.port, args.cap, args.pid, args.pid_start)
+            token, reason = claim(args.tool, args.project, args.owner, args.port, args.cap, args.pid, args.pid_start,
+                                  args.grant)
             if token:
                 print(token)
             else:

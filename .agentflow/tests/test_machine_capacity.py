@@ -43,6 +43,16 @@ class MachineCapacityTests(unittest.TestCase):
         machine.release(first)
         self.assertTrue(machine.has_capacity("codex", self.projects[1]))
 
+    def test_active_dispatcher_separates_machine_and_project_caps(self):
+        with patch.dict(os.environ, {"AGENTFLOW_MACHINE_CODEX_MAX": "2", "AGENTFLOW_SHARED_DISPATCHER": "active"}):
+            first, reason = machine.claim("codex", self.projects[0], "T-001", pid=os.getpid())
+            self.assertTrue(first, reason)
+            try:
+                self.assertFalse(machine.has_capacity("codex", self.projects[0]))
+                self.assertTrue(machine.has_capacity("codex", self.projects[1]))
+            finally:
+                machine.release(first)
+
     def test_port_is_shared_even_when_tools_differ(self):
         first, _ = machine.claim("devin", self.projects[0], "T-002", port="4348", pid=os.getpid())
         second, reason = machine.claim("claude", self.projects[1], "T-002", port="4348", pid=os.getpid())

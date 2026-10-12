@@ -1,8 +1,8 @@
-"""Preview fair worker allocation across installed AgentFlow projects.
+"""Preview fair allocation or grant worker slots across installed AgentFlow projects.
 
-This is a shadow scheduler: it reads ready tasks and shared machine leases but
-does not grant slots or launch workers. The existing project conductors remain
-the only actors until the allocation policy has been verified in real projects.
+The shadow preview reads ready tasks and shared leases without launching workers.
+In opt-in active mode, project conductors publish ready tasks and request grants;
+the launcher converts a grant into its usual worker lease under the same lock.
 """
 import argparse
 import json
@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -56,25 +57,22 @@ def fair_order(tasks, last_served=None):
 
 def allocate(tasks, state, capacities, project_caps, last_served=None):
     """Return a simulation respecting active leases and configured tool/project caps."""
-    leases = state.get("leases", [])
+    leases = state.get("leases", []) + state.get("dispatch", {}).get("grants", [])
     occupied = defaultdict(int)
     per_project = defaultdict(int)
     for lease in leases:
         occupied[lease["tool"]] += 1
         per_project[(lease["tool"], lease["project"])] += 1
-    active_caps = defaultdict(list)
-    for lease in leases:
-        if lease.get("cap"):
-            active_caps[lease["tool"]].append(lease["cap"])
     selected, waits = [], []
     for task in fair_order(tasks, last_served):
         tool, project = task["tool"], task["project"]
         maximum, local = capacities[tool], project_caps[(tool, project)]
-        effective = min([value for value in [maximum, local, *active_caps[tool]] if value], default=0)
         if state.get("limits", {}).get(tool, 0) > time.time():
             waits.append({**task, "reason": "tool temporarily limited"})
-        elif effective and occupied[tool] >= effective:
+        elif maximum and occupied[tool] >= maximum:
             waits.append({**task, "reason": "machine slots full"})
+        elif local and per_project[(tool, project)] >= local:
+            waits.append({**task, "reason": "project slots full"})
         else:
             selected.append(task)
             occupied[tool] += 1
@@ -94,7 +92,7 @@ def plan(projects=None, snapshot=ready_tasks):
                 tasks.append({"project": str(project), "task": tid, "tool": tool})
     tools = {task["tool"] for task in tasks}
     capacities = {tool: machine_capacity.capacity(tool) for tool in tools}
-    local = {(tool, str(project)): machine_capacity.capacity(tool, project)
+    local = {(tool, str(project)): machine_capacity.project_capacity(tool, project)
              for tool in tools for project in roots}
     with machine_capacity._locked() as state:
         machine_capacity._clean(state)
@@ -102,6 +100,60 @@ def plan(projects=None, snapshot=ready_tasks):
                                    state.get("dispatch", {}).get("last_served"))
     return {"mode": "shadow", "selected": selected, "waits": waits, "errors": errors,
             "ready": len(tasks), "launches": 0}
+
+
+def register(project, ready):
+    """Publish this project's ready tasks for the next conductor rounds."""
+    key = str(Path(project).resolve())
+    with machine_capacity._locked() as state:
+        machine_capacity._clean(state)
+        state["dispatch"]["ready"][key] = {"at": time.time(),
+                                              "tasks": [{"task": tid, "tool": tool} for tid, tool in ready]}
+
+
+def request(project, task, tool):
+    """Atomically give the next fair project a short-lived slot grant."""
+    key = str(Path(project).resolve())
+    with machine_capacity._locked() as state:
+        machine_capacity._clean(state)
+        dispatch = state["dispatch"]
+        entry = dispatch["ready"].get(key, {})
+        if {"task": task, "tool": tool} not in entry.get("tasks", []):
+            return None, "task is not registered as ready"
+        if state.get("limits", {}).get(tool, 0) > time.time():
+            return None, f"{tool} is temporarily limited"
+        leases = [lease for lease in state["leases"] if lease["tool"] == tool]
+        grants = [grant for grant in dispatch["grants"] if grant["tool"] == tool]
+        machine_limit = machine_capacity.capacity(tool)
+        if machine_limit and len(leases) + len(grants) >= machine_limit:
+            return None, f"{tool} has no free machine slot"
+        eligible = []
+        for candidate, ready_entry in dispatch["ready"].items():
+            if not any(item["tool"] == tool for item in ready_entry["tasks"]):
+                continue
+            local_limit = machine_capacity.project_capacity(tool, candidate)
+            used = sum(item["project"] == candidate for item in leases + grants)
+            if not local_limit or used < local_limit:
+                eligible.append(candidate)
+        eligible.sort()
+        previous = dispatch["last_served"].get(tool)
+        if previous in eligible:
+            pivot = eligible.index(previous) + 1
+            eligible = eligible[pivot:] + eligible[:pivot]
+        if not eligible or eligible[0] != key:
+            return None, f"waiting for project {eligible[0]}" if eligible else "no project slot available"
+        token = uuid.uuid4().hex
+        dispatch["grants"].append({"token": token, "project": key, "task": task, "tool": tool,
+                                   "until": time.time() + machine_capacity.GRANT_SECONDS})
+        entry["tasks"].remove({"task": task, "tool": tool})
+        dispatch["last_served"][tool] = key
+        return token, ""
+
+
+def release(token):
+    with machine_capacity._locked() as state:
+        state["dispatch"]["grants"] = [item for item in state["dispatch"]["grants"]
+                                        if item["token"] != token]
 
 
 def main():
