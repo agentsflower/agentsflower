@@ -129,6 +129,8 @@ class RouteTests(unittest.TestCase):
     def route(self, *args, key=True):
         env = {k: v for k, v in os.environ.items() if not k.startswith("TYPESAFE_")}  # never the real service
         env["TYPESAFE_BASE_URL"] = f"http://127.0.0.1:{self.server.server_port}"
+        env["AGENTFLOW_MACHINE_STATE_DIR"] = self.tmp.name
+        env["AGENTFLOW_ROUTE_ASSUME_CLI_AVAILABLE"] = "1"
         env.pop("AGENTFLOW_TYPESAFE_KEY_FILE", None)
         if key:
             env["TYPESAFE_API_KEY"] = KEY
@@ -176,7 +178,18 @@ class RouteTests(unittest.TestCase):
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Tool: codex\nModel: gpt-6.1-sol, effort=xhigh\n", self.task())
+        self.assertIn("Backup Tool: claude\n", self.task())
         self.assertIn("| codex |", (self.root / ".agentflow" / "state" / "tasks.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.log()[-1]["backupChoice"], "claude")
+
+    def test_backup_is_highest_ranked_other_platform_with_model(self):
+        Fake.answers = {"option": option("codex-max", 0.95,
+                                           {"codex-max": 0.8, "devin-high": 0.15, "claude": 0.05}),
+                        "effort": effort("high"), "complexity": complexity(0.4)}
+        result = self.route("T-001", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Backup Tool: devin\nBackup Model: swe-2-high\n", self.task())
+        self.assertEqual(self.log()[-1]["backupProbability"], 0.15)
 
     def test_medium_band_is_shown_not_applied(self):
         Fake.answers = {"option": option("claude", 0.7, {"claude": 0.8, "codex-max": 0.2}),

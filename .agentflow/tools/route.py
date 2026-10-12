@@ -32,9 +32,11 @@ applied), 3 no decision. Every call prints and logs Jev's version, token usage a
 (.agentflow/tasks/.runtime/T-NNN.route.json). A recommendation is advice: the Orchestrator owns the choice.
 """
 import argparse
+import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -46,6 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
+import machine_capacity  # noqa: E402
 
 API = os.environ.get("TYPESAFE_BASE_URL", "https://api.typesafe.ai").rstrip("/") + "/v1/systemone"
 OPTIONS = FLOW_ROOT / "docs" / "model-options.json"
@@ -97,6 +100,34 @@ def available(options, role, avoid_tool=None, today=None):
         other = {k: v for k, v in out.items() if v.get("tool") != avoid_tool}
         out = other or out
     return out
+
+
+def cli_usable(tool):
+    """Known CLI and quota state; account access may still fail at launch."""
+    if machine_capacity.limit_until(tool):
+        return False
+    if os.environ.get("AGENTFLOW_ROUTE_ASSUME_CLI_AVAILABLE") == "1":  # local API stand-in tests
+        return True
+    configured = os.environ.get(f"AGENTFLOW_{tool.upper()}", "").strip()
+    if configured:
+        return bool(glob.glob(configured)) if "*" in configured else (Path(configured).is_file() or shutil.which(configured) is not None)
+    return shutil.which(tool) is not None
+
+
+def backup_option(options, probabilities, primary, complexity, complexity_confidence):
+    """Highest-ranked option on another tool that can handle the measured complexity."""
+    if primary not in options:
+        return None, None
+    tool = options[primary]["tool"]
+    for name, probability in sorted(probabilities.items(), key=lambda item: -item[1]):
+        candidate = options.get(name)
+        if not candidate or candidate["tool"] == tool:
+            continue
+        limit = candidate.get("max_complexity")
+        if limit is not None and complexity_confidence >= LOW and complexity > float(limit) + 0.5:
+            continue
+        return name, probability
+    return None, None
 
 
 def criterion(o):
@@ -231,7 +262,7 @@ def band(conf):
     return "high" if conf >= HIGH else "medium" if conf >= LOW else "low"
 
 
-def set_header(path, tool, model, effort):
+def set_header(path, tool, model, effort, backup=None):
     text = Path(path).read_text(encoding="utf-8")
     head, sep, rest = text.partition("\n## Result")
     head = re.sub(r"(?m)^Tool:[^\n]*$", f"Tool: {tool}", head, count=1)
@@ -240,6 +271,13 @@ def set_header(path, tool, model, effort):
         head = re.sub(r"(?m)^Model:[^\n]*\n?", (model_line + "\n") if model_line else "", head, count=1)
     elif model_line:
         head = re.sub(r"(?m)^(Tool:[^\n]*\n)", rf"\1{model_line}\n", head, count=1)
+    head = re.sub(r"(?m)^Backup Tool:[^\n]*\n?|^Backup Model:[^\n]*\n?", "", head)
+    if backup:
+        backup_tool, backup_model, backup_effort = backup
+        backup_line = f"Backup Tool: {backup_tool}\n"
+        if backup_model:
+            backup_line += f"Backup Model: {backup_model}" + (f", effort={backup_effort}" if backup_effort else "") + "\n"
+        head = re.sub(r"(?m)^(Stage:[^\n]*\n)", backup_line + r"\1", head, count=1)
     Path(path).write_text(head + sep + rest, encoding="utf-8", newline="\n")
 
 
@@ -253,6 +291,7 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     if t["role"] == "tester":
         avoid = gate.field(gate.header(Path(t["checked"]["file"]).read_text(encoding="utf-8-sig")), "Tool")
     opts = available(cfg.get("options", {}), t["role"], avoid, today)
+    opts = {name: option for name, option in opts.items() if cli_usable(option["tool"])}
     if not opts:
         raise NoDecision(f"no option is available today for a {t['role']} task")
     answers, meta = ask(task_state(t, text, today), questions(opts, cfg.get("policy", "")), api_key(),
@@ -263,11 +302,17 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     probs = sorted(opt.get("probabilities", {}).items(), key=lambda kv: -kv[1])
     margin = probs[0][1] / probs[1][1] if len(probs) > 1 and probs[1][1] else None
     pick, note = combine(opts, answers)
+    if pick not in opts:
+        raise NoDecision("Jev selected an option that is unavailable for this task")
     o = opts.get(pick, {})
     needs_effort = bool(supported_efforts(o))
     effort_conf = float(effort_answer.get("confidence", 0)) if needs_effort else None
     selected_effort = effort_answer.get("choice") if needs_effort else None
     model, task_effort, resolved_effort = resolve_option(o, selected_effort)
+    backup_name, backup_probability = backup_option(opts, opt.get("probabilities", {}), pick,
+                                                     float(cx.get("score", 0)), float(cx.get("confidence", 0)))
+    backup = opts.get(backup_name) if backup_name else None
+    backup_model, backup_effort, _ = resolve_option(backup, selected_effort) if backup else (None, None, None)
     conf = min(option_conf, effort_conf) if effort_conf is not None else option_conf
     rec = {"task": tid, "at": date.today().isoformat(), **meta, "jevChoice": opt.get("choice"), "choice": pick,
            "confidence": conf, "optionConfidence": option_conf, "band": band(conf),
@@ -275,6 +320,9 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
            "complexityConfidence": cx.get("confidence"), "escalation": note,
            "jevEffort": selected_effort, "effortConfidence": effort_conf, "resolvedEffort": resolved_effort,
            "tool": o.get("tool"), "model": model, "effort": task_effort, "applied": False}
+    rec.update({"backupChoice": backup_name, "backupProbability": backup_probability,
+                "backupTool": backup.get("tool") if backup else None,
+                "backupModel": backup_model, "backupEffort": backup_effort})
     print(f"{tid}: {pick} -> Tool: {o.get('tool')}"
           + (f", Model: {model}" + (f", effort={task_effort}" if task_effort else "") if model else ""))
     effort_text = (f"; effort {selected_effort} -> {resolved_effort} (confidence {effort_conf:.2f})"
@@ -286,6 +334,9 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
         print(f"  {v:.2f}  {k}")
     if note:
         print(f"  {note}")
+    if backup:
+        print(f"  backup {backup_name} -> Tool: {backup['tool']}"
+              + (f", Model: {backup_model}" if backup_model else ""))
     u = meta.get("usage") or {}
     print(f"  TypeSafe {meta.get('model')}: {u.get('input_tokens', '?')} in / {u.get('output_tokens', '?')} out tokens,"
           f" request {meta.get('requestId') or '-'}")
@@ -301,7 +352,8 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
         status = gate.ledger_rows().get(tid, {}).get("Status")
         if status not in (None, "", "ready", "blocked"):
             raise NoDecision(f"{tid} is '{status}': --apply changes only a task that has not started")
-        set_header(t["file"], o["tool"], model, task_effort)
+        set_header(t["file"], o["tool"], model, task_effort,
+                   (backup["tool"], backup_model, backup_effort) if backup else None)
         if status:
             subprocess.run([sys.executable, str(FLOW_ROOT / "tools" / "ledger.py"), "set", tid, "--tool", o["tool"]],
                            check=True, capture_output=True)

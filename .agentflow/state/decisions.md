@@ -224,6 +224,10 @@ The human authorized lifecycle infrastructure repairs. Version 2.11.3 makes laun
 
 Multiple installed projects need fair access to shared CLI capacity, and Jev routing must consider available platforms and primary/backup models. First add a cross-project dispatcher in observation mode: it reads each project's existing dry-run tick, simulates round-robin allocation with the machine registry, and records no grants or worker launches. Keep the current launcher and acceptance gates intact while the observation output is verified. Activation, Jev changes, routing statistics, and rollout to installations follow as separate tested stages.
 
+## 2026-10-12: Keep primary and backup Jev choices (2.11.6)
+
+Jev's choice probabilities provide a ranking among configured model options. Save the selected primary and the highest-ranked eligible option on another CLI platform as backup. Exclude a missing CLI or observed shared usage limit before the Jev call, but keep busy platforms in the ranking so the saved backup can be used when a slot is occupied. Tick changes only an unstarted ready Task File and ledger when the backup flag is enabled; account and model entitlement remain launch-time facts. Keep the flag off by default while the pilot validates routing evidence.
+
 ## 2026-10-11: Unlink setup junctions before checkout removal (2.11.4)
 
 A `Setup: - link:` line makes the launcher place a junction inside the checkout that points at the main

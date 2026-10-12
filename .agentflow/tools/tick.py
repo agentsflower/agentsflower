@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
 import machine_capacity  # noqa: E402
+import route  # noqa: E402
 
 TOOLS = FLOW_ROOT / "tools"
 RT = FLOW_ROOT / "tasks" / ".runtime"
@@ -303,6 +304,33 @@ def do_launch(tid, tool):
     return True, tool  # the launcher owns the transition, including direct/manual starts
 
 
+def use_backup(tid, current_tool):
+    """Switch one unstarted ready task to Jev's saved backup when the primary has no slot."""
+    if gate.last_attempt(tid):
+        return False, "task has an attempt; its header cannot be changed"
+    task = gate.parse(tid)
+    path = Path(task["file"])
+    original = path.read_text(encoding="utf-8-sig")
+    head = gate.header(original)
+    backup = gate.field(head, "Backup Tool")
+    if not backup or backup not in LAUNCHABLE or backup == current_tool:
+        return False, "no usable backup is recorded"
+    if limited(backup) or not machine_capacity.has_capacity(backup, FLOW_ROOT.parent):
+        return False, f"backup {backup} has no free slot"
+    model, effort = gate.parse_model(gate.field(head, "Backup Model"))
+    route.set_header(path, backup, model, effort)
+    code, output = py(TOOLS / "ledger.py", "set", tid, "--tool", backup)
+    if code:
+        path.write_text(original, encoding="utf-8", newline="\n")
+        return False, f"backup update failed: {output[-200:]}"
+    try:
+        route._log(tid, {"event": "backup-selected", "at": iso(now()), "primaryTool": current_tool,
+                         "tool": backup, "model": model, "effort": effort, "reason": "primary unavailable"})
+    except (OSError, ValueError):
+        pass  # the ledger and Task File are authoritative for launch; a missing metric cannot block it
+    return True, backup
+
+
 def lock():
     """One tick at a time (the conductor and a background Orchestrator may both call run). Stale after 30 minutes."""
     RT.mkdir(parents=True, exist_ok=True)
@@ -342,6 +370,19 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                 for tid, detail in todo:
                     ok, msg = accept(tid)
                     (acted if ok else failed).append({"task": tid, "action": "accept", "detail": msg if ok else f"accept stopped: {msg}"})
+                rows = gate.ledger_rows()
+            if os.environ.get("AGENTFLOW_BACKUP_ROUTING", "off") == "on":
+                for tid, row in rows.items():
+                    if row.get("Status") != "ready":
+                        continue
+                    tool = (row.get("Tool") or "").strip()
+                    if tool not in LAUNCHABLE or (not limited(tool) and machine_capacity.has_capacity(tool, FLOW_ROOT.parent)):
+                        continue
+                    switched, detail = use_backup(tid, tool)
+                    if switched:
+                        acted.append({"task": tid, "action": "backup", "detail": f"{tool} -> {detail}"})
+                    elif detail != "no usable backup is recorded":
+                        busy.append({"task": tid, "detail": detail})
                 rows = gate.ledger_rows()
             for tid, a, tool in decide(rows):
                 if a == "launch":
