@@ -232,6 +232,10 @@ Jev's choice probabilities provide a ranking among configured model options. Sav
 
 The shared registry owns short-lived ready registrations and grants, not task content. In active mode each project conductor registers its ready work, and the next eligible project in round-robin order receives a grant under the registry lock. The launcher atomically exchanges that grant for its usual lease, so the existing task gate and worker lifecycle remain authoritative. Keep active mode off by default until participating installations have been updated; old versions ignore grants. Rejected: a separate always-running dispatcher process, which adds another service and handover failure point on this single machine.
 
+## 2026-10-12: Measure routing outcomes without claiming causal proof (2.11.8)
+
+Jev needs feedback across comparable tasks. Record the eligible candidate list and provide a read-only report of recommendation, actual platform, backup use, attempts, acceptance, and elapsed attempt time, grouped by role and measured complexity. Planning receives an optional Jev recommendation independent of the user's chat model. Do not invent worker token use or cost, and do not label a one-task outcome as model-selection accuracy. A full goal text is not persisted in the planning route log; a hash and request ID are enough to correlate diagnostics.
+
 ## 2026-10-11: Unlink setup junctions before checkout removal (2.11.4)
 
 A `Setup: - link:` line makes the launcher place a junction inside the checkout that points at the main

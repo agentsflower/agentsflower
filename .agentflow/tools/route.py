@@ -314,7 +314,8 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     backup = opts.get(backup_name) if backup_name else None
     backup_model, backup_effort, _ = resolve_option(backup, selected_effort) if backup else (None, None, None)
     conf = min(option_conf, effort_conf) if effort_conf is not None else option_conf
-    rec = {"task": tid, "at": date.today().isoformat(), **meta, "jevChoice": opt.get("choice"), "choice": pick,
+    rec = {"task": tid, "at": date.today().isoformat(), **meta, "eligibleOptions": sorted(opts),
+           "jevChoice": opt.get("choice"), "choice": pick,
            "confidence": conf, "optionConfidence": option_conf, "band": band(conf),
            "probabilities": dict(probs), "complexity": cx.get("score"),
            "complexityConfidence": cx.get("confidence"), "escalation": note,
