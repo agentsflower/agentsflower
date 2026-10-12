@@ -1,6 +1,3 @@
 # Current Step
 
-Version 2.11.3 implements the human-authorized launcher and end-check repairs.
-Pilot installation is complete; upstream check reports no drift. Broader improvements in
-`docs/improvement-plan.md` remain planned; this change does not authorize them.
-Push only on the human's word.
+Version 2.11.8 is merged on `main`. Transcript Youtube and Watermark Remover are updated and pass 124 tests each; both remain in dispatcher `shadow` mode. The next action is to resolve Gemini to Word's manual T-009 and its uncommitted template-owned files with that project's owner, then update its AgentFlow installation while no attempt is active. Only after all participating launchers are grant-aware, compare shadow output with real ready tasks and pilot `AGENTFLOW_SHARED_DISPATCHER=active` with `AGENTFLOW_BACKUP_ROUTING=on` on controlled work. Keep a rollback to `shadow`; do not push without the human's request.

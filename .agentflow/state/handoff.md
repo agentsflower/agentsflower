@@ -1,17 +1,11 @@
 # Session Handoff
 
-As of: 2026-10-10; AgentFlow 2.11.3 lifecycle repair.
+As of: 2026-10-12; main@3e61ebd, AgentFlow 2.11.8 routing and dispatch features merged.
 
 ## Verified state
 
-The authorized launcher/end-check fixes are implemented: launcher-owned issuance,
-PowerShell 5.1 empty-argv compatibility, commit-by-commit task-file audit with
-merge-resolution checks, and acceptance status validation before merging.
-Real PowerShell 5.1/7 and disposable manual acceptance tests pass; tick launch
-was tested with a fake worker, without model calls. See session-log for full-suite results.
+The template has opt-in round-robin slot grants, Jev primary/backup choices, planning-model advice and read-only routing reports. The 124-test suite passed, including real PowerShell launch through a grant with a fake worker. Transcript Youtube and Watermark Remover run 2.11.8; their installed suites passed and upstream drift is clean. A real Jev planning request succeeded in Transcript. Shared dispatch remains `shadow`, automatic backup switching is off.
 
 ## Next
 
-Watermark Remover is updated to 2.11.3; upstream check reports no drift.
-Broader reliability improvements remain in docs/improvement-plan.md.
-No push is authorized. No other project's installation is included.
+Gemini to Word still runs 2.11.3: manual T-009 is active and template-owned launcher/acceptance files have uncommitted changes. Resolve those in that project before updating its installation; then pilot active shared dispatch with a rollback to `shadow`. Do not alter Gemini's active tester or foreign changes. No push is authorized.
