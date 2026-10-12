@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.8 - 2026-10-12
+
+- Added `plan_route.py` to ask Jev for a planning model from the project's usable CLI options. It compares the recommendation with an optionally supplied current chat model, records the request ID and complexity, and never changes the chat or worker Task Files. The runtime log stores a goal hash, not the full goal text.
+- Added `route_report.py` to join routing history with task status and attempts. It reports primary/backup use, acceptance, first-attempt pass, and measured attempt time, grouped by role, complexity and recommended model. `--all-projects` combines installations that have this version and identifies older installations. Worker cost and token use remain unknown unless a CLI supplies them.
+- Route history now explicitly records the eligible model options sent to Jev. Tests use a local stand-in and fixtures, with no real Jev or worker calls.
+
+Migration: stop idle conductors, run `install.py --update`, then restart them. The new reports read existing runtime files; no ledger or Task File migration is required. Planning advice is optional and does not alter the user's current IDE model. Keep active shared dispatch disabled until all participating installations use grant-aware launchers.
+
 ## 2.11.7 - 2026-10-12
 
 - Added opt-in active shared dispatch. With `AGENTFLOW_SHARED_DISPATCHER=active`, each project's tick registers ready tasks in the machine registry. A round-robin decision grants a short-lived reservation to one project; the launcher atomically converts that grant into its existing worker lease. Grants expire after 60 seconds, ready registrations after 10 minutes.

@@ -17,7 +17,7 @@ Everything AgentFlow needs lives in this folder, so it never collides with a pro
 | `workspace.json` | project | workspace only: the product repositories under the workspace root |
 | `docs/model-options.json` | project | tools, model families, effort variants, and availability windows for `route.py` |
 | `template-source.json` | project | where this install came from (written by `install.py`); `upstream.py` reads it |
-| `tools/` | template | `run-task.ps1` launcher, `machine_capacity.py` shared machine slots, `dispatch.py` shared scheduling preview and grants, `upstream.py` template drift report, `gate.py`, `ledger.py`, `accept.py`, `route.py` (TypeSafe), `install.py`, `paths.py` |
+| `tools/` | template | `run-task.ps1` launcher, `machine_capacity.py` shared machine slots, `dispatch.py` shared scheduling preview and grants, `route.py` and `plan_route.py` (Jev), `route_report.py` selection outcomes, `upstream.py` template drift report, `gate.py`, `ledger.py`, `accept.py`, `install.py`, `paths.py` |
 | `dashboard/` | template | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `tests/` | template | checks of the tools themselves (`python -m unittest discover -s .agentflow/tests`) |
 
