@@ -175,6 +175,43 @@ class TickTests(unittest.TestCase):
         self.assertEqual(calls, [("T-1", "codex")])
         self.assertEqual(report["dispatchShadow"], proposal)
 
+    def test_backup_switches_only_an_unstarted_task(self):
+        path = Path(self.tmp.name) / "T-1.md"
+        path.write_text("# T-1\n\nRole: developer\nTool: codex\nModel: gpt-6.1-sol, effort=high\n"
+                        "Backup Tool: devin\nBackup Model: swe-2-high\nStage: 1\n\n## Result\n", encoding="utf-8")
+        with patch.object(tick.gate, "last_attempt", return_value=None), \
+                patch.object(tick.gate, "parse", return_value={"file": str(path)}), \
+                patch.object(tick.machine_capacity, "has_capacity", return_value=True), \
+                patch.object(tick, "limited", return_value=False), \
+                patch.object(tick, "py", return_value=(0, "")), \
+                patch.object(tick.route, "_log"):
+            switched, tool = tick.use_backup("T-1", "codex")
+        self.assertTrue(switched)
+        self.assertEqual(tool, "devin")
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("Tool: devin\nModel: swe-2-high\n", text)
+        self.assertNotIn("Backup Tool:", text)
+        with patch.object(tick.gate, "last_attempt", return_value={"n": 1}):
+            self.assertFalse(tick.use_backup("T-1", "devin")[0])
+
+    def test_run_uses_backup_when_primary_slot_is_full(self):
+        rows = {"T-1": {"Status": "ready", "Tool": "codex"}}
+        launches = []
+
+        def switch(tid, tool):
+            rows[tid]["Tool"] = "devin"
+            return True, "devin"
+
+        with patch.dict(os.environ, {"AGENTFLOW_BACKUP_ROUTING": "on"}), \
+                patch.object(tick.gate, "ledger_rows", side_effect=lambda: {k: dict(v) for k, v in rows.items()}), \
+                patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
+                patch.object(tick.gate, "last_attempt", return_value=None), \
+                patch.object(tick.machine_capacity, "has_capacity", side_effect=lambda tool, *_: tool != "codex"), \
+                patch.object(tick, "use_backup", side_effect=switch):
+            report = tick.run(launch=lambda tid, tool: launches.append((tid, tool)) or (True, tool))
+        self.assertEqual(launches, [("T-1", "devin")])
+        self.assertIn({"task": "T-1", "action": "backup", "detail": "codex -> devin"}, report["acted"])
+
     def test_run_accepts_a_chain_in_one_tick(self):
         rows = {"T-1": {"Role": "developer", "Status": "review"}, "T-2": {"Role": "tester", "Status": "in progress"}}
         tasks = {"T-1": dev("T-1"), "T-2": tester("T-2", "T-1")}

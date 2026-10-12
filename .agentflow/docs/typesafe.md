@@ -38,3 +38,4 @@ uses or changes this integration works from the official documentation, not from
    Price: input tokens only (see Models); one route call is about 1k input tokens.
 7. The key is a secret: environment `TYPESAFE_API_KEY` or a file named by `AGENTFLOW_TYPESAFE_KEY_FILE`, outside the
    repository; never printed, logged or committed. Tests use a local stand-in server, never the real service.
+8. The option choice probabilities rank configured candidates. AgentFlow records the chosen primary and the highest-ranked eligible candidate on another CLI platform as backup, resolving the same Jev effort to each model's supported form. Missing CLI executables and observed shared usage limits are excluded before the call. A busy slot does not remove a candidate: the saved backup is used at launch if the primary has no free slot. CLI model entitlement and account access can still fail only when a real session starts.

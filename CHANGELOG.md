@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.6 - 2026-10-12
+
+- Jev routing now saves one primary and one backup model on different CLI platforms. The backup is the highest-ranked eligible alternative in the choice probabilities; both choices and their evidence are recorded in the route history.
+- Before asking Jev, routing excludes CLI tools missing from this machine and platforms with an observed shared usage limit. A configured model still requires a real launch to confirm account and model access.
+- With `AGENTFLOW_BACKUP_ROUTING=on`, tick switches an unstarted ready task to its saved backup when the primary platform is limited or has no free machine slot. The Task File and ledger are updated before launch; started tasks are never rewritten. This feature is off by default for staged rollout.
+
+Migration: stop an idle conductor, run `install.py --update`, then restart it. Existing Task Files without backup fields keep their previous behavior. Route new tasks with Jev to record both models; enable `AGENTFLOW_BACKUP_ROUTING=on` only after reviewing the saved alternatives. No ledger schema migration is needed.
+
 ## 2.11.5 - 2026-10-12
 
 - Added a shared dispatcher in observation mode. It reads ready tasks from all registered projects, simulates fair allocation against the shared machine registry, and reports selections and waits without granting slots or launching workers.

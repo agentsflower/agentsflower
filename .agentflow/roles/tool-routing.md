@@ -6,11 +6,11 @@ This file is shared by all projects and replaced on template update: notes from 
 
 ## How to choose
 
-0. If the project has `.agentflow/docs/model-options.json` and a TypeSafe key: `python .agentflow/tools/route.py T-NNN` first. Jev chooses both the tool/model family and the reasoning effort; code converts the generic effort to a valid CLI model or flag. Exit 0 (confidence >= 0.9): take it (`--apply`); exit 4 (0.5-0.9): confirm it against the tables below; exit 3: decide here. Rules and links: [../docs/typesafe.md](../docs/typesafe.md). Keep the options file current: models and their effort variants, free windows (`until`), quotas that come back (`from`), and the policy in one or two sentences.
-1. Fit: the tables below.
+0. If the project has `.agentflow/docs/model-options.json` and a TypeSafe key: `python .agentflow/tools/route.py T-NNN` first. Jev ranks the configured usable CLI/model options and reasoning effort; the highest eligible choice is primary and the highest eligible option on another CLI is backup. Exit 0 (confidence >= 0.9): take it (`--apply`); exit 4 (0.5-0.9): review its evidence; exit 3: decide from the task and available tools. Rules and links: [../docs/typesafe.md](../docs/typesafe.md). Keep the options file current: models, efforts, availability windows, and project policy.
+1. Fit: evaluate the task's required capabilities and model characteristics. No platform has a standing first-choice priority.
 2. Remaining limit: at session start the human says what is left per tool. Not said: ask in one line. Do not write limits to memory.
 3. Expensive tools only where a mistake is expensive: mechanical edits, renames, simple tests go to the cheapest fitting tool or a smaller model.
-4. Tester on a different tool than the Developer when possible: another model has other blind spots. Codex first: only there [review isolation](../docs/ai-handoff-protocol.md#terms) is a sandbox.
+4. Tester on a different tool than the Developer when possible: another model has other blind spots. Codex's [review isolation](../docs/ai-handoff-protocol.md#terms) uses a sandbox; other tools rely on the end check.
 5. Plan for limits, not only fit. Observed: Claude Code worker sessions can end after minutes when several run at once; an Antigravity quota can be gone for days; a Codex sandbox on Windows can refuse to start processes. Give long tasks to the tool that has proved steady on this machine, keep a second tool ready, and move a task at once when its tool is out ([Recovery](../docs/ai-handoff-protocol.md#recovery-stale-task)).
 6. Multiple projects on one machine share AgentFlow's tool slots, declared ports, and observed usage-limit reset times through `machine_capacity.py`. A busy slot waits and is retried; it does not mark a task failed. Keep each project's repository and worktree paths distinct.
 
@@ -24,29 +24,18 @@ This file is shared by all projects and replaced on template update: notes from 
 | Antigravity CLI | context up to 1M tokens: large code, logs, dumps; fast models; free quota | young; quotas can run out for days; soft confirmations: never production |
 | Devin CLI | independent model for development and testing; follows Task Files well | needs `--permission-mode dangerous` in print mode; no Windows sandbox (the end check guards a Tester) |
 
-## Routing
+## Task types
 
-| Task | First choice | Fallback |
-|---|---|---|
-| Orchestrator: plan, split, accept | Claude Code | Codex |
-| Developer: complex, several files, architecture | Claude Code | Codex (larger model) |
-| Developer: small, isolated, clear criteria | Codex (smaller model) | Devin, Antigravity CLI |
-| Tester: code review, test runs | Codex | Claude Code, Devin (a tool other than the Developer's) |
-| Tester: interface in a browser, widths, screenshots | Antigravity (IDE) | Claude Code + Playwright |
-| Reading large code, logs, data | Antigravity CLI | Claude Code |
-| Deployer | the tool where server access and the runbook are set up: Claude Code or Codex | never Antigravity CLI for production |
+- Planning and acceptance: the available Orchestrator session prepares tasks and decides from gate evidence. The chat's manually selected model does not determine a worker's model.
+- Development: route every scoped Developer Task File through Jev when available; launch independent tasks in parallel within shared capacity.
+- Code review and automated tests: Tester Task Files use narrow checks covering the changed behavior and an independent model when one is available.
+- Interface verification: a browser-capable Tester checks changed UI states after code and targeted tests. Antigravity IDE is manual; another browser-capable tool may be used.
+- Reading large code or logs is work inside one of these tasks, not a separate routing category.
+- Deployment uses a tool with configured server access and the runbook; production still requires the human's approval.
 
-## Fallback by limit
+## Backup and limits
 
-Used when `-Status` shows `limitHit=True`, or the attempt is `dead` / `error` without a Result, after the lock is released ([Recovery](../docs/ai-handoff-protocol.md#recovery-stale-task), rule 7).
-
-| Out of | Use instead |
-|---|---|
-| Claude Code | Codex (larger model) |
-| Codex | Antigravity CLI (`-i`); for review: Claude Code |
-| Antigravity CLI | Codex |
-
-No tool left: the task is `blocked` and one line to the human. Orchestrator out of Claude limit: hand the role to Codex through `.agentflow/state/handoff.md`; Claude stays for splitting and disputed acceptance.
+An unstarted ready task with a saved backup may switch automatically when `AGENTFLOW_BACKUP_ROUTING=on` and the primary platform is limited or full. A started task follows [Recovery](../docs/ai-handoff-protocol.md#recovery-stale-task); after its attempt ends, use the saved backup if still eligible and record the handover. If Jev made no decision or no backup is usable, the Orchestrator decides or leaves the task waiting. No fixed vendor-to-vendor fallback order applies.
 
 ## Tool notes
 
