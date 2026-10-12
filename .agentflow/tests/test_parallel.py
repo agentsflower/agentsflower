@@ -1,5 +1,5 @@
-"""Project Preflight rule "- parallel: <tool>=<n>": no more than n running attempts of a tool on this machine.
-Regression: two Codex sessions at once on Windows locked the sandbox and user accounts (error 1909)."""
+"""Project Preflight rule "- parallel: <tool>=<n>": no more than n running attempts of a tool in one project.
+The legacy elevated Codex sandbox hit Windows logon error 1909 during parallel tests; the rule remains configurable."""
 import json
 import os
 import shutil

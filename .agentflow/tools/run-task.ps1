@@ -37,7 +37,8 @@ param(
   [switch]$MarkFinished,
   [switch]$Recheck,
   [switch]$Manual,
-  [switch]$Worker
+  [switch]$Worker,
+  [string]$DispatchGrant
 )
 $ErrorActionPreference = 'Stop'
 $flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -359,6 +360,7 @@ try {
     $launcherStart = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
     $claimArgs = @('claim', $Tool, $root, $TaskId, '--pid', "$PID", '--pid-start', "$launcherStart")
     if ($t.env.PORT) { $claimArgs += @('--port', [string]$t.env.PORT) }
+    if ($DispatchGrant) { $claimArgs += @('--grant', $DispatchGrant) }
     $claim = Invoke-Machine $claimArgs
     if ($claim.code -eq 4) { throw "machine capacity wait: $($claim.text)" }
     if ($claim.code) { throw "machine capacity failed: $($claim.text)" }

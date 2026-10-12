@@ -12,6 +12,7 @@ needs no judgment: accept a tester whose Verdict is pass, accept a developer who
 check is none, launch a ready task whose dependencies are done and whose tool is not limited. Everything else becomes
 a "need" in tick.json for an Orchestrator session. Acceptance and launch go through accept.py and run-task.ps1, so
 every gate still applies. While an Orchestrator is live (fresh heartbeat), `run` only reports: one actor at a time.
+`AGENTFLOW_SHARED_DISPATCHER=shadow` adds a read-only cross-project preview; `active` requires a shared grant before each automatic worker launch. Both modes preserve the existing acceptance gate.
 """
 import argparse
 import ctypes
@@ -29,6 +30,7 @@ from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
 import machine_capacity  # noqa: E402
 import route  # noqa: E402
+import dispatch  # noqa: E402
 
 TOOLS = FLOW_ROOT / "tools"
 RT = FLOW_ROOT / "tasks" / ".runtime"
@@ -294,9 +296,12 @@ def do_accept(tid):
     return code == 0, (out.splitlines() or [""])[-1]
 
 
-def do_launch(tid, tool):
+def do_launch(tid, tool, grant=None):
     ps = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
-    p = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(TOOLS / "run-task.ps1"), tid, tool],
+    args = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(TOOLS / "run-task.ps1"), tid, tool]
+    if grant:
+        args.extend(["-DispatchGrant", grant])
+    p = subprocess.run(args,
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     out = (p.stdout + p.stderr).strip()
     if p.returncode:
@@ -355,9 +360,9 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
         if not dry:
             learn_limits(rows)
         shadow = None
-        if os.environ.get("AGENTFLOW_SHARED_DISPATCHER", "off") == "shadow":
+        dispatch_mode = os.environ.get("AGENTFLOW_SHARED_DISPATCHER", "off")
+        if dispatch_mode == "shadow":
             try:
-                import dispatch
                 shadow = dispatch.plan()
             except (OSError, ValueError, TimeoutError) as error:
                 shadow = {"mode": "shadow", "error": f"{type(error).__name__}: {error}"}
@@ -384,9 +389,22 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                     elif detail != "no usable backup is recorded":
                         busy.append({"task": tid, "detail": detail})
                 rows = gate.ledger_rows()
+            launches = [(tid, tool) for tid, action, tool in decide(rows) if action == "launch"]
+            if dispatch_mode == "active":
+                dispatch.register(FLOW_ROOT.parent, launches)
             for tid, a, tool in decide(rows):
                 if a == "launch":
-                    ok, msg = launch(tid, tool)
+                    grant = None
+                    if dispatch_mode == "active":
+                        grant, reason = dispatch.request(FLOW_ROOT.parent, tid, tool)
+                        if not grant:
+                            busy.append({"task": tid, "detail": reason})
+                            continue
+                    try:
+                        ok, msg = launch(tid, tool, grant) if grant else launch(tid, tool)
+                    finally:
+                        if grant:
+                            dispatch.release(grant)
                     if not ok and ("running session(s) on this machine" in msg or "machine capacity wait:" in msg):
                         busy.append({"task": tid, "detail": f"{tool} has no free slot (project rule parallel)"})
                         continue
@@ -400,6 +418,8 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
                   "limited": {k: v["until"] for k, v in read(LIMITS, {}).items() if k != "_seen" and limited(k)}}
+        if dispatch_mode == "active":
+            report["dispatchMode"] = "active"
         if shadow is not None:
             report["dispatchShadow"] = shadow
         if not dry:

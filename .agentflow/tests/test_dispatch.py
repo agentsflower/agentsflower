@@ -53,6 +53,45 @@ class DispatchTests(unittest.TestCase):
                  for root, name in ((self.a, "T-1"), (self.b, "T-2"))]
         self.assertEqual(dispatch.fair_order(tasks, {"codex": str(self.a)})[0]["project"], str(self.b))
 
+    def test_grants_round_robin_and_convert_to_worker_leases(self):
+        for root in (self.a, self.b):
+            (root / ".agentflow" / "docs" / "project-rules.md").write_text(
+                "## Preflight\n\n- parallel: codex=1\n", encoding="utf-8")
+        dispatch.register(self.a, [("T-1", "codex"), ("T-2", "codex")])
+        dispatch.register(self.b, [("T-3", "codex")])
+        first, reason = dispatch.request(self.a, "T-1", "codex")
+        self.assertTrue(first, reason)
+        waiting, reason = dispatch.request(self.a, "T-2", "codex")
+        self.assertIsNone(waiting)
+        self.assertIn(str(self.b), reason)
+        second, reason = dispatch.request(self.b, "T-3", "codex")
+        self.assertTrue(second, reason)
+        leases = []
+        try:
+            for root, task, grant in ((self.a, "T-1", first), (self.b, "T-3", second)):
+                lease, reason = machine_capacity.claim("codex", root, task, pid=os.getpid(), grant=grant)
+                self.assertTrue(lease, reason)
+                leases.append(lease)
+            self.assertEqual(len(leases), 2)
+            with machine_capacity._locked() as state:
+                self.assertEqual(state["dispatch"]["grants"], [])
+        finally:
+            for lease in leases:
+                machine_capacity.release(lease)
+
+    def test_grant_is_bound_to_task_and_expires(self):
+        dispatch.register(self.a, [("T-1", "codex")])
+        grant, reason = dispatch.request(self.a, "T-1", "codex")
+        self.assertTrue(grant, reason)
+        lease, reason = machine_capacity.claim("codex", self.a, "T-wrong", pid=os.getpid(), grant=grant)
+        self.assertIsNone(lease)
+        self.assertIn("another task", reason)
+        with machine_capacity._locked() as state:
+            state["dispatch"]["grants"][0]["until"] = 0
+        lease, reason = machine_capacity.claim("codex", self.a, "T-1", pid=os.getpid(), grant=grant)
+        self.assertIsNone(lease)
+        self.assertIn("expired", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

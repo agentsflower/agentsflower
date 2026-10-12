@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.7 - 2026-10-12
+
+- Added opt-in active shared dispatch. With `AGENTFLOW_SHARED_DISPATCHER=active`, each project's tick registers ready tasks in the machine registry. A round-robin decision grants a short-lived reservation to one project; the launcher atomically converts that grant into its existing worker lease. Grants expire after 60 seconds, ready registrations after 10 minutes.
+- In active mode, machine and project concurrency caps are checked separately. A project capped at one can share a machine capacity of two with another project capped at one. Existing launch behavior remains the default and `shadow` still previews the allocation without grants.
+- Tests cover project turns, mismatched and expired grants, capacity, and a real PowerShell launcher with a fake worker. No real model calls were used.
+
+Migration: stop idle conductors and update every project that will join active dispatch before enabling it; old launchers do not honor grants. Start with `AGENTFLOW_SHARED_DISPATCHER=shadow`, compare reports, then set `active` and restart the conductors. Revert to `shadow` or unset the variable to restore the previous launch path. Do not update tools during active attempts. The registry adds optional dispatch state and does not migrate Task Files or ledgers.
+
 ## 2.11.6 - 2026-10-12
 
 - Jev routing now saves one primary and one backup model on different CLI platforms. The backup is the highest-ranked eligible alternative in the choice probabilities; both choices and their evidence are recorded in the route history.
