@@ -1,5 +1,12 @@
 # Session Log
 
+## 2026-10-15: Launch T-001 via Devin
+
+Human authorized launch of T-001 on Devin (swe-2-high) and confirmed that external
+projects do not block AgentFlow template work. Template rollout into client projects
+will occur only after AgentFlow changes and tests are complete. Ledger T-001 set to
+ready, then launched via launcher.
+
 ## 2026-10-15: Prefer Devin for release work
 
 Human changed resource routing. Queried Devin/agy model catalogs, assigned

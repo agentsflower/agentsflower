@@ -1,9 +1,12 @@
 # Session Handoff
+ 
+-## 2026-10-15: T-001 launch in Devin
++Human authorized launch of worker T-001 (Devin swe-2-high) for cross-platform Python
++launcher parity. External/client projects do not block AgentFlow template work;
++client projects will be updated only after AgentFlow changes and tests are complete.
++Task T-001 is launched and in progress in worktree
++E:\Projects\AgentFlow\worktrees\agentflow-t-001-python-launcher-parity.
 
-Routing correction (2026-10-15): T-001 now uses Devin swe-2-high; T-002 is
-recommended on agy gemini-3.8-flash-high. This supersedes Claude/Codex assignments
-below. Catalog availability was checked, inference access and quota remain
-unverified. T-001 is blocked; no workers started.
 
 ## 2026-10-15: Public launch preparation
 

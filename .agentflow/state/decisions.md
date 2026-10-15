@@ -1,5 +1,12 @@
 # Decision Log
 
+## 2026-10-15: Authorize T-001 launch on Devin and decouple external projects
+
+Human confirmed authorization to launch worker T-001 via Devin (swe-2-high).
+Third-party and client projects (including Gemini to Word) do not influence or block
+AgentFlow template tasks; template rollout into client projects will take place only
+after changes and testing of AgentFlow are completed in this repository.
+
 ## 2026-10-15: Revise public release worker routing
 
 Human directs maximum use of Devin, with agy as a limited secondary platform and
