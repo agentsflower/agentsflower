@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-10-15: Revise public release worker routing
+
+Human directs maximum use of Devin, with agy as a limited secondary platform and
+Codex conserved. T-001 now requests Devin swe-2-high. Recommend agy
+gemini-3.8-flash-high for independent T-002, subject to fresh model/resource checks;
+do not automatically fall back to Claude or Codex. Model catalog queries returned
+these identifiers, but do not prove remaining quota or successful inference access.
+This supersedes the initial Claude/Codex pairing below. No worker launch authorized
+by this routing adjustment; T-001 stays blocked pending start readiness.
+
 ## 2026-10-15: Approve public release scope and prepare T-001
 
 Human approved T-001 through T-011 for v2.12.0. Cross-platform scope covers the

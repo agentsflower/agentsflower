@@ -1,5 +1,9 @@
 # Current Step
 
+Routing update: T-001 uses Devin swe-2-high; proposed T-002 uses agy
+gemini-3.8-flash-high for an independent check. No automatic Claude/Codex fallback.
+Check actual model access and resource availability immediately before starting.
+
 2026-10-15: Public release sequence T-001 through T-011 is approved. Review the
 prepared T-001 contract and resolve model access/resource preflight before any
 worker launch. T-001 remains blocked for launch readiness, not scope approval.

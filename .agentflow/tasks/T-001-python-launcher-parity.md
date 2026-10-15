@@ -1,8 +1,8 @@
 # T-001: Cross-platform Python launcher with PowerShell compatibility
 
 Role: developer
-Tool: claude
-Model: opus, effort=high
+Tool: devin
+Model: swe-2-high
 Stage: 6
 Depends on: none
 Branch: t-001-python-launcher-parity

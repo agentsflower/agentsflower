@@ -1,5 +1,10 @@
 # Session Handoff
 
+Routing correction (2026-10-15): T-001 now uses Devin swe-2-high; T-002 is
+recommended on agy gemini-3.8-flash-high. This supersedes Claude/Codex assignments
+below. Catalog availability was checked, inference access and quota remain
+unverified. T-001 is blocked; no workers started.
+
 ## 2026-10-15: Public launch preparation
 
 Human approved the v2.12.0 task sequence and decisions in decisions.md. T-001

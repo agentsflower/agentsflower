@@ -1,5 +1,12 @@
 # Session Log
 
+## 2026-10-15: Prefer Devin for release work
+
+Human changed resource routing. Queried Devin/agy model catalogs, assigned
+T-001 to Devin swe-2-high and proposed agy gemini-3.8-flash-high for T-002.
+No inference probes or workers launched; model access/quotas are not inferred
+from catalog listings.
+
 ## 2026-10-15: Public release planning
 
 Read the production roadmap and implementation. Human approved T-001 through
