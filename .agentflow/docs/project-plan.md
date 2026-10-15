@@ -10,6 +10,22 @@ Tasks are not listed here: they live in `state/tasks.md` with a `Stage` column. 
 
 ## Roadmap
 
+### Stage 6. Public release and production upgrade (2.12.0)
+
+Status: planned.
+
+Human approved the task sequence on 2026-10-15. Specification:
+[agentflow-production-roadmap.txt](agentflow-production-roadmap.txt).
+Contract preparation does not authorize worker launch in this session.
+Stages 4 and 5 remain separate; their unfinished scope is not implicitly adopted.
+
+Exit criteria: Python launcher parity and PowerShell compatibility; packaged
+zero-dependency core CLI; optional SDK-based MCP with privileged tools off by
+default; measured English dashboard metrics with marked demo data; CI on three
+OSes and Python 3.10-3.12; English/Russian guides; accurate README; independent
+clean-install and update verification. Conductor/autostart stays Windows-only.
+The human performs push and GitHub publication.
+
 ### Stage 1. Team layer and launcher
 
 Status: closed.

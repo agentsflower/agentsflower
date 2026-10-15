@@ -4,5 +4,5 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 
 | ID | Title | Stage | Role | Tool | Status | Depends on | Commit / artifact | Notes | Updated |
 |---|---|---|---|---|---|---|---|---|---|
+| T-001 | Cross-platform Python launcher with PowerShell compatibility | 6 | developer | claude | blocked |  |  | Scope approved 2026-10-15; launch pending model access and resource checks; T-002 independent review required | 2026-10-15 17:10 |
 
-No tasks yet.

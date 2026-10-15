@@ -1,5 +1,15 @@
 # Session Handoff
 
+## 2026-10-15: Public launch preparation
+
+Human approved the v2.12.0 task sequence and decisions in decisions.md. T-001
+contract is prepared; ledger is blocked pending model access/resource checks and
+launch instruction. No worker has started. Recommended Developer: Claude opus/high;
+Tester T-002: Codex gpt-6.1-sol/high, exact SHA to be assigned after development.
+Read the production roadmap, Stage 6 in project-plan.md, decisions.md and T-001.
+The human performs push and GitHub Release publication. Older maintenance below
+is separate from this release work. Untracked nul is unrelated and untouched.
+
 As of: 2026-10-12; main@3e61ebd, AgentFlow 2.11.8 routing and dispatch features merged.
 
 ## Verified state

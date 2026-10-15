@@ -1,0 +1,127 @@
+================================================================================
+PROJECT SPECIFICATION: AGENTFLOW PUBLIC RELEASE & PRODUCTION UPGRADE (v2.12.0)
+================================================================================
+
+1. CONTEXT & STRATEGIC GOAL
+--------------------------------------------------------------------------------
+AgentFlow (https://github.com/vcherstar/AgentFlow) is a lightweight multi-agent
+workflow for AI-assisted software development (Orchestrator, Developer, Tester,
+Deployer) using single-writer project memory, isolated Git worktrees, deterministic
+quality gates (`gate.py`, `accept.py`), and an immutable Task Ledger (`ledger.py`).
+
+It is already battle-tested in production to build and maintain AI applications
+serving 85,600+ active users:
+- NotebookLM AI Sidebar (aisidebar.app): 80,000+ users, 4.7★ (111 ratings), Google Featured
+- Export Chat from Gemini to Word: 4,000+ users, 4.8★ (38 ratings), Google Featured
+- YouTube Transcript Extension: 1,600+ users
+- AI Home Design: Full-stack Generative AI SaaS in production
+
+Objective: Upgrade AgentFlow from an internal Windows-centric toolset into a
+cross-platform, MCP-compatible, production-ready open-source product ready for
+public developer adoption (Reddit/GitHub) and Senior AI Engineer technical review.
+
+
+2. CURRENT ARCHITECTURAL BOTTLENECKS TO RESOLVE
+--------------------------------------------------------------------------------
+- Bottleneck A (OS Lock-in): Worker launching relies on `.agentflow/tools/run-task.ps1`
+  and `README.md` states "PowerShell 7 on Windows" with backslash paths (`\`).
+  75%+ of AI Engineers use macOS/Linux.
+- Bottleneck B (No Unified CLI / Package Entry): Tools are invoked as separate raw
+  scripts (`install.py`, `gate.py`, `accept.py`, `ledger.py`, `dashboard/build.py`).
+  No root `pyproject.toml`.
+- Bottleneck C (No Native MCP Server): Agents currently interact only via file
+  reads and slash commands. Adding a Model Context Protocol (MCP) server will
+  make AgentFlow a first-class citizen in Claude Code, Cursor, and modern IDEs.
+- Bottleneck D (Language & Visual Barrier in Docs): `GUIDE.md` is currently in
+  Russian; `README.md` lacks an architecture diagram (Mermaid), dashboard screenshots,
+  CI badges, and production social proof.
+- Bottleneck E (No CI/CD or GitHub Releases): Unit tests exist in `.agentflow/tests/`
+  (`python -m unittest discover -s .agentflow/tests`), but there is no GitHub Actions
+  workflow and 0 published GitHub Releases despite reaching v2.11.0.
+
+
+3. SEQUENTIAL MILESTONES & TECHNICAL REQUIREMENTS
+--------------------------------------------------------------------------------
+
+MILESTONE 1: Cross-Platform Python Launcher & Unified CLI
+- Create `.agentflow/tools/run_task.py` in pure Python (stdlib: `subprocess`,
+  `pathlib`, `argparse`, `os`, `shutil`) replicating all functionality of
+  `run-task.ps1` across macOS, Linux, and Windows.
+- Keep `.agentflow/tools/run-task.ps1` as a thin backward-compatible wrapper
+  that delegates to `run_task.py` (so existing Windows workflows do not break).
+- Add a unified CLI entry point (`.agentflow/tools/cli.py` + root `pyproject.toml`)
+  supporting subcommands:
+  * `agentflow install <project> [--dry-run] [--update]`
+  * `agentflow run <task_id> --role <developer|tester|deployer>`
+  * `agentflow gate <task_id> [--stage <preflight|verify|stage>]`
+  * `agentflow accept <task_id>`
+  * `agentflow ledger [subcommands]`
+  * `agentflow dashboard [--open]`
+- Ensure core tools remain zero-dependency (Python 3.10+ stdlib) by default.
+
+MILESTONE 2: Model Context Protocol (MCP) Server Integration
+- Create `.agentflow/tools/mcp_server.py` (with optional `mcp` / `FastMCP`
+  dependency in `pyproject.toml` under `[project.optional-dependencies] mcp = [...]`
+  or lightweight JSON-RPC stdio fallback if `mcp` is not installed).
+- Expose deterministic AgentFlow tools over MCP:
+  1. `agentflow_status()` -> current project state, active tasks, machine capacity.
+  2. `agentflow_get_task(task_id: str)` -> reads task contract from `.agentflow/tasks/`.
+  3. `agentflow_run_gate(task_id: str, check_type: str)` -> executes `gate.py`
+     and returns structured JSON output (pass/fail, logs, evidence).
+  4. `agentflow_accept_task(task_id: str)` -> Orchestrator-only tool invoking `accept.py`.
+  5. `agentflow_query_ledger(limit: int, filter_role: str)` -> queries `ledger.py`.
+- Update `install.py` to optionally configure `.mcp.json` for Claude Code / Cursor.
+
+MILESTONE 3: Telemetry & FinOps Metrics in Dashboard & Ledger
+- Enhance `ledger.py` and `.agentflow/dashboard/build.py` to compute and display
+  key AI Engineering / LLMOps metrics:
+  * First-Pass Gate Pass Rate (%) per role/tool (how often workers pass `gate.py`
+    on the first attempt).
+  * Task Lead Time & Routing Efficiency (outcomes per agent/tool from `tool-routing.md`).
+  * Estimated Token / Context Efficiency (isolated single-task sessions vs.
+    monolithic context windows).
+- Generate a clean sample dataset or export from AgentFlow's own state so we can
+  capture a high-resolution screenshot of the dashboard (Gantt, timeline, metrics)
+  and save it to `.agentflow/docs/assets/dashboard.png`.
+
+MILESTONE 4: Multi-OS GitHub Actions CI & Official Release Tag
+- Create `.github/workflows/ci.yml` running `python -m unittest discover -s .agentflow/tests`
+  across a matrix of:
+  * OS: `ubuntu-latest`, `macos-latest`, `windows-latest`
+  * Python: `3.10`, `3.11`, `3.12`
+- Add unit tests in `.agentflow/tests/` covering the new `run_task.py` and CLI router.
+- Prepare Git tag and GitHub Release notes for `v2.12.0` from `CHANGELOG.md`.
+
+MILESTONE 5: Documentation Internationalization (`GUIDE.md` -> English)
+- Rename current Russian `GUIDE.md` to `GUIDE.ru.md`.
+- Create a comprehensive English `GUIDE.md` covering cross-platform installation
+  (macOS/Linux/Windows), machine setup, Orchestrator vs. Worker session workflows,
+  MCP setup, and daily usage.
+
+MILESTONE 6: Product-Grade `README.md` Overhaul
+- Rewrite `README.md` for global developer & technical recruiter appeal:
+  1. Header with badges (CI status, MIT License, Version, Python 3.10+, MCP Ready).
+  2. Clear value proposition: Why multi-agent coding fails without state isolation
+     (Context Drift, File Collisions, "Hallucinated Done") and how AgentFlow solves it.
+  3. "Battle-Tested in Production" section linking to real products built/maintained
+     with AgentFlow serving 85,600+ users (NotebookLM AI Sidebar [80k users, 4.7★],
+     Export Chat from Gemini [4k users, 4.8★], AI Home Design SaaS).
+  4. Mermaid.js Architecture Diagram illustrating:
+     `Orchestrator (Single-Writer Memory)` -> `Task Contracts` -> `Isolated Git Worktrees (Developer/Tester/Deployer)` -> `gate.py (Preflight/Verify)` -> `accept.py (Merge + Task Ledger)`.
+  5. Embedded screenshot of the HTML Dashboard (`.agentflow/docs/assets/dashboard.png`).
+  6. Cross-platform Quick Start (`/` paths, `run_task.py` / `agentflow` CLI).
+  7. Link to both `GUIDE.md` (English) and `GUIDE.ru.md` (Russian).
+
+
+4. INSTRUCTIONS FOR THE ORCHESTRATOR SESSION
+--------------------------------------------------------------------------------
+1. Review existing files in `.agentflow/tools/` and `.agentflow/docs/ai-handoff-protocol.md`
+   to ensure 100% compliance with our internal rules.
+2. Propose a step-by-step execution plan broken down into discrete AgentFlow tasks.
+3. For each proposed task, specify:
+   - Task ID & Title
+   - Target Role & Tool Routing advice
+   - Files to create/modify
+   - Verification command for `gate.py` / `unittest`
+4. Wait for human approval before creating task files or spawning worker sessions.
+================================================================================

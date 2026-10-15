@@ -1,5 +1,25 @@
 # Decision Log
 
+## 2026-10-15: Approve public release scope and prepare T-001
+
+Human approved T-001 through T-011 for v2.12.0. Cross-platform scope covers the
+Python launcher and CLI; Windows conductor/autostart remains Windows-only. Keep
+PowerShell Checks on Windows and sh on Unix, stateful ledger and contract-owned
+roles; fail closed for unsupported permission modes. Package template resources
+inside the distribution. Use optional official MCP SDK, no custom protocol fallback;
+privileged acceptance tools are opt-in and installer merges existing MCP settings.
+Reuse routing evidence, mark missing metrics unknown and demo data explicitly;
+dashboard defaults to English. Serialize protocol/version/changelog ownership.
+Keep real Deployer flow and human-only push/release publication. Product figures
+were supplied by the human as October 2026 observations; publication needs direct
+source links. T-001 is prepared without authorizing a worker launch; recommended
+routes are Claude opus/high for development and Codex gpt-6.1-sol/high for review.
+No local model-options.json exists; model entitlement and remaining quotas are
+unknown. Before every start check model access, available capacity and resource
+observations; CLI presence/help is insufficient. Unknown quota needs an explicitly
+approved bounded policy or another checked route; do not invent quota readings.
+T-001 uses intermediate 2.11.9 release metadata; final release reserves 2.12.0.
+
 Decisions about the AgentFlow template itself: why, and what was rejected. What changed per version: `CHANGELOG.md`. Add new decisions below; do not delete old ones without a reason.
 
 ## 2026-10-10: Human authorizes managed Team Mode

@@ -1,5 +1,12 @@
 # Session Log
 
+## 2026-10-15: Public release planning
+
+Read the production roadmap and implementation. Human approved T-001 through
+T-011 and scope decisions recorded in decisions.md. Prepared only T-001; no
+workers launched. CLI executables found for Claude, Codex, Devin and agy; model
+access and quotas remain unknown. Added mandatory pre-start resource checks.
+
 Chronological log of work on the AgentFlow template.
 
 ## 2026-05-21
