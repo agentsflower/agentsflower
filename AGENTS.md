@@ -18,6 +18,13 @@ Workflow and instruction authority: `.agentflow/docs/ai-handoff-protocol.md`. St
 
 ## Project rules
 
+### AgentFlow source authority (human instruction, 2026-10-15)
+
+- This is the independently maintained vcherstar/AgentFlow project. The sole remote authority for its versions, releases, updates and migrations is https://github.com/vcherstar/AgentFlow (origin), together with this project's local branch and changelog.
+- A fork relationship or a remote named upstream does not authorize using the parent as a source of updates or as the definition of latest. Do not query, recommend, fetch, merge or migrate from AleksandrPankin/AgentFlow unless the human explicitly requests that repository in the current task.
+- For version checks, report local VERSION and the version in origin's actual default branch separately. State the exact repository/ref checked. Do not conflate a newer parent release with an update of this project.
+- Existing generic instructions mentioning upstream refer to the project's configured local template workflow; they do not override this source-authority rule. Never modify remotes or push without explicit authorization.
+
 - Repository parameters: [.agentflow/docs/project-rules.md](.agentflow/docs/project-rules.md).
 
 - This repository develops the template itself: template-owned files are its product (`.agentflow/README.md`).

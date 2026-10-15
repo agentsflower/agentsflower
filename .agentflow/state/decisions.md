@@ -244,3 +244,5 @@ target's contents; installed projects repeatedly lost the main folder's `node_mo
 tester checkout was re-created or an accepted developer worktree was removed. The launcher and `accept.py`
 now delete the reparse point itself before removing a checkout, which leaves the target untouched. Rejected:
 copying instead of linking (wasteful per checkout) and documenting manual care (the failure kept recurring).
+
+2026-10-15: Human explicitly confirms AgentFlow is an independently maintained project at vcherstar/AgentFlow. Source-authority rule belongs to this local template repository, not TuScript. Added mandatory rule in root AGENTS.md outside template-owned block: version/update authority is own origin and local development; parent/upstream repository requires explicit per-task request. Do not conflate parent's releases with this project's version. No remote changes or push.
