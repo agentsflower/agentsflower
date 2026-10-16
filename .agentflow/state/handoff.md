@@ -1,4 +1,10 @@
 # Session Handoff
+
+2026-10-16 recovery supersedes earlier status: T-001 rejected to T-012, T-002
+cancelled after its agy -i process hung 15h without Result/log. Stopped normally;
+06b7e3a and original worktree preserved. T-012 is the authorized Developer
+successor on Devin swe-2-high. Follow ledger and current-step; do not accept old
+T-001 or rerun cancelled T-002. New review must target successor SHA.
  
 -## 2026-10-15: T-001 launch in Devin
 +Human authorized launch of worker T-001 (Devin swe-2-high) for cross-platform Python

@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-10-16: Recover hung agy Tester through a successor
+
+Human authorized repair and continuation. T-002 attempt ran about 15h with no
+Result/log; process used -i. Stopped via run-task.ps1 -Stop, preserving artifacts.
+Reject T-001 to T-012 rather than change reviewed branch/header; cancel T-002 and
+review successor SHA in a new task. T-012 preserves 06b7e3a and requires agy
+print/streaming, enforced 20-minute default runtime and process-tree cleanup,
+without weakening Tester permissions. Include regression and machine-env isolation
+fixtures. Devin remains primary; agy Opus is intended for independent review.
+
 ## 2026-10-16: Use non-Gemini models through agy
 
 Human authorizes using agy's Claude and GPT models, rather than excluding the

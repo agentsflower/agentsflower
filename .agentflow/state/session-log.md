@@ -1,5 +1,11 @@
 # Session Log
 
+## 2026-10-16: Recover agy interactive hang
+
+Observed T-002 process alive for 15h with no Result/log; stopped using launcher.
+Human authorized execution. Prepared T-012 successor for Python port plus bounded
+noninteractive agy review, rejected T-001 with preserved artifact, cancelled T-002.
+
 ## 2026-10-15: Launch T-001 via Devin
 
 Human authorized launch of T-001 on Devin (swe-2-high) and confirmed that external
