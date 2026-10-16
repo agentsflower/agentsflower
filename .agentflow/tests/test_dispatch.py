@@ -16,8 +16,10 @@ class DispatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name,
-                                        "AGENTFLOW_MACHINE_CODEX_MAX": "2"})
+        # a machine's own AGENTFLOW_* variables must not leak into the fixture
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        clean.update({"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name, "AGENTFLOW_MACHINE_CODEX_MAX": "2"})
+        self.env = patch.dict(os.environ, clean, clear=True)
         self.env.start()
         self.addCleanup(self.env.stop)
         self.a = Path(self.tmp.name) / "a"

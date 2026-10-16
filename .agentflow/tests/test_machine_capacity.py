@@ -18,7 +18,10 @@ class MachineCapacityTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        # a machine's own AGENTFLOW_* variables must not leak into the fixture
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        clean["AGENTFLOW_MACHINE_STATE_DIR"] = self.tmp.name
+        env = patch.dict(os.environ, clean, clear=True)
         env.start()
         self.addCleanup(env.stop)
         self.projects = [Path(self.tmp.name) / "project-a", Path(self.tmp.name) / "project-b"]

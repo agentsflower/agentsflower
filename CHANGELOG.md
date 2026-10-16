@@ -2,6 +2,72 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.9 - 2026-10-15
+
+- Ported the worker launcher to Python 3.10+ stdlib: `.agentflow/tools/run_task.py` now owns launch, `-Status`,
+  `-Stop`, `-Manual`, `-MarkFinished`, `-Recheck`, the internal worker and dispatch-grant exchange, with the same
+  runtime state, gates, worktrees, setup links, capacity claims and ledger issuance as before. It runs on Windows,
+  macOS and Linux without PowerShell.
+- `run-task.ps1` is now a thin compatibility wrapper: it translates the old parameter names to `run_task.py` and
+  preserves its exit code, so tick.py, conductor.ps1 and existing instructions keep working on Windows.
+- Before a worker starts, the launcher checks the tool executable, a free authenticated-access probe
+  (`codex login status`, `claude auth status`, `devin auth status`, `agy models`; overridable per machine with
+  `AGENTFLOW_<TOOL>_PROBE`), observed quota/access limits and machine capacity. An unsupported or failing check
+  refuses the unattended launch with an actionable diagnostic instead of guessing account access; `AGENTFLOW_<TOOL>_PROBE=off`
+  declares a tool uncheckable. The observation's source and time are recorded in the attempt's `resourceCheck` (no secrets).
+- The supported permission matrix (tool x role) is explicit in `run_task.py`; a combination outside it refuses to
+  launch rather than silently downgrading isolation. Review isolation for testers still comes from the disposable
+  checkout plus the end-of-attempt check; only codex adds a preventive sandbox. agy testers now run in
+  noninteractive print mode with streaming output (`-p --output-format stream-json`) instead of `-i`, which could
+  hang a Tester attempt; no permission flags are added for testers.
+- Every launched worker runs under a wall-clock limit the launcher enforces itself: `AGENTFLOW_WORKER_TIMEOUT`
+  seconds (default 1200, 0 disables). On expiry it kills the managed process tree, records a timeout error and
+  releases the machine lease; captured output keeps streaming into the attempt log while the tool runs.
+- Process-start identity is now also measured on macOS (`ps -o lstart=`, as a /proc fallback): `--stop` and
+  recovery no longer kill a pid whose recorded identity cannot be confirmed - a possibly reused pid is refused.
+- Unattended launches now prove access to the task's selected concrete model, not only the account:
+  `AGENTFLOW_<TOOL>_MODEL_PROBE=on` runs the built-in audited inference check (it may cost tokens, so nothing runs
+  it without opt-in). Custom probe argv is no longer accepted - it cannot be told apart from an auth/catalog
+  check - so any other value fails closed. Unset/`off` refuses an unattended launch with an actionable
+  diagnostic; the check runs without repository tools or writes under its own timeout, and records model
+  identity, observation source/time and outcome. A probe success is never reported as a remaining-quota figure.
+- Probe and launch evidence is safe metadata only: operator-supplied probe argv and `AGENTFLOW_<TOOL>_ARGS` are
+  recorded as hashes, built-in probe argv verbatim (they are constants); user argv and probe output never appear
+  in runtime files or diagnostics. Both access and model probes run under strict timeouts
+  (`AGENTFLOW_PROBE_TIMEOUT`/`AGENTFLOW_MODEL_PROBE_TIMEOUT`) that kill the probe's whole process tree on expiry.
+- The worker environment is handed over through the spawn call only; the plaintext
+  `.runtime/T-NNN.env.json` handover file was removed, so secret-bearing `AGENTFLOW_*` values are never
+  serialized to disk.
+- `limitHit` now requires a nonzero exit plus observed limit wording: a successful report that merely mentions
+  quota or rate-limit text no longer marks the tool limited.
+- The visible-window rule now matches the implementation: workers are detached launcher-managed processes
+  observed through the log, `--status` and `--stop`, with a guaranteed launcher-enforced wall clock.
+- Machine `AGENTFLOW_*` variables no longer leak into the test fixtures (test_parallel, test_tick,
+  test_machine_capacity, test_dispatch, test_conductor isolate the environment), so the verbatim suite does not
+  depend on what the machine exports.
+- New `AGENTFLOW_WORKER_PYTHON` selects the worker's interpreter independently of `AGENTFLOW_PYTHON`.
+- Tests are portable: Python fake workers and disposable repositories cover launch/status/stop of descendants,
+  manual/recheck, failed handoff, concurrent refusal, approval/terminal refusals, argv precedence, setup-link
+  safety, grants/capacity and resource preflight. No real model calls.
+- Linux defect repairs found by real-kernel verification (T-019): on POSIX the tool process now leads its own
+  session (`start_new_session`), so a worker wall-clock timeout kills only the managed tree and the worker
+  survives to record the error attempt; `kill_tree` signals the process groups of the whole tree, so `--stop`
+  still reaches a tool in its own session. Windows (`taskkill /T`) is unchanged.
+- `accept.py`'s trial merge no longer passes `--quiet` to `git merge-tree --write-tree`, an option stock
+  git 2.47.x does not support; a conflict still stops the accept before any repository is merged.
+- A `test_endcheck.py` merge fixture now passes `-c user.name`/`-c user.email` like every neighboring git call,
+  so the suite does not depend on a host-global git identity.
+
+Migration: stop idle conductors, run `install.py --update`, then restart them. Windows callers may keep using
+`run-task.ps1` (it delegates); on macOS/Linux use `python .agentflow/tools/run_task.py`. For unattended launches,
+each tool needs a working free access probe: the built-in ones fit current codex/claude/devin/agy CLIs; if a CLI has
+none on your version, set `AGENTFLOW_<TOOL>_PROBE` to one or launch that tool's tasks with `-Manual`. Every
+unattended launch additionally needs an opted-in selected-model inference check: set
+`AGENTFLOW_<TOOL>_MODEL_PROBE=on` (may cost tokens), or run that tool's tasks with `-Manual`. A custom
+`AGENTFLOW_<TOOL>_MODEL_PROBE` argv from an earlier draft is no longer honored and fails closed; move any
+account/catalog check it held to `AGENTFLOW_<TOOL>_PROBE`. If you relied on `.runtime/T-NNN.env.json`, read the
+attempt's environment from your own launch configuration instead - it is no longer written. Conductor and autostart remain Windows-only. Do not update tools during active attempts.
+
 ## 2.11.8 - 2026-10-12
 
 - Added `plan_route.py` to ask Jev for a planning model from the project's usable CLI options. It compares the recommendation with an optionally supplied current chat model, records the request ID and complexity, and never changes the chat or worker Task Files. The runtime log stores a goal hash, not the full goal text.

@@ -18,7 +18,8 @@ class LauncherLifecycleTests(unittest.TestCase):
         shutil.copy(source / "tasks/_template.md", self.flow / "tasks")
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
         self.env.update(AGENTFLOW_PYTHON=sys.executable,
-                        AGENTFLOW_MACHINE_STATE_DIR=str(Path(self.tmp.name) / "machine"), PYTHONUTF8="1")
+                        AGENTFLOW_MACHINE_STATE_DIR=str(Path(self.tmp.name) / "machine"), PYTHONUTF8="1",
+                        AGENTFLOW_DEVIN_MODEL_PROBE="on")  # opt into the built-in probe; fakes exit 0 anyway
         self.env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + self.env["PATH"]
         self.env.update(GIT_AUTHOR_NAME="test", GIT_AUTHOR_EMAIL="test@example.invalid",
                         GIT_COMMITTER_NAME="test", GIT_COMMITTER_EMAIL="test@example.invalid")
@@ -95,14 +96,17 @@ class LauncherLifecycleTests(unittest.TestCase):
             self.assertIn("T-002", r.stdout + r.stderr)
 
     def test_process_start_failure_keeps_recoverable_attempt(self):
-        if not shutil.which("pwsh"):
-            self.skipTest("pwsh unavailable")
-        script = Path(self.tmp.name) / "fail-start.ps1"
-        path = str(self.flow / "tools/run-task.ps1").replace("'", "''")
-        script.write_text("function Start-Process { throw 'simulated process failure' }\n"
-                          + f"& '{path}' T-001 devin\n")
-        r = subprocess.run(["pwsh", "-NoProfile", "-File", str(script)], env=self.env,
-                           cwd=self.root, capture_output=True, text=True)
+        if os.name == "nt":
+            fake = Path(self.tmp.name) / "fake-worker.cmd"
+            fake.write_text("@echo off\nexit /b 0\n")  # the spawn itself fails, not the tool
+        else:
+            fake = Path(self.tmp.name) / "fake-worker.sh"
+            fake.write_text("#!/bin/sh\nexit 0\n")
+            fake.chmod(0o755)
+        env = dict(self.env, AGENTFLOW_DEVIN=str(fake),
+                   AGENTFLOW_WORKER_PYTHON=str(Path(self.tmp.name) / "no-such-python"))
+        r = subprocess.run([sys.executable, str(self.flow / "tools" / "run_task.py"), "T-001", "devin"],
+                           env=env, cwd=self.root, capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
         rt = json.loads((self.flow / "tasks/.runtime/T-001.json").read_text())
         self.assertEqual(rt["attempts"][-1]["status"], "error")

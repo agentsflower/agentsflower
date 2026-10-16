@@ -32,11 +32,13 @@ class TickTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         rt = Path(self.tmp.name)
+        # a machine's own AGENTFLOW_* variables must not leak into the fixture
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        clean.update({"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name, "AGENTFLOW_MACHINE_CODEX_MAX": "1"})
         self.patches = [patch.object(tick, "RT", rt), patch.object(tick, "HEARTBEAT", rt / "orchestrator.json"),
                         patch.object(tick, "LIMITS", rt / "tool-limits.json"), patch.object(tick, "TICK", rt / "tick.json"),
                         patch.object(tick, "LOCK", rt / "tick.lock"),
-                        patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name,
-                                             "AGENTFLOW_MACHINE_CODEX_MAX": "1"})]
+                        patch.dict(os.environ, clean, clear=True)]
         for p in self.patches:
             p.start()
 
