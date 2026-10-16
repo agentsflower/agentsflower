@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-10-16: Use non-Gemini models through agy
+
+Human authorizes using agy's Claude and GPT models, rather than excluding the
+platform when Gemini is exhausted. T-002 selects claude-opus-4-6-thinking; a short
+plan-mode inference returned ACCESS_OK before launch. Catalog also lists
+claude-sonnet-4-6 and gpt-oss-120b-medium; probe them when selected for future work.
+Do not equate separate Claude CLI availability with Claude-through-agy access.
+Machine registry currently scopes the observed Gemini limit to agy:agy-gemini;
+Opus remaining quota is unknown. No automatic substitution on exhausted quota.
+
 ## 2026-10-15: Authorize T-001 launch on Devin and decouple external projects
 
 Human confirmed authorization to launch worker T-001 via Devin (swe-2-high).
