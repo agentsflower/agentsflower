@@ -1,5 +1,21 @@
 # Decision Log
 
+## 2026-10-16: Record bounded launcher review without accepting missing guarantees
+
+T-012 successor recovered on Devin swe-2-medium after Devin high made no repair
+progress and agy Opus exhausted quota. Separate Sonnet and GPT-OSS probes also
+returned RESOURCE_EXHAUSTED; Gemini was already unavailable. Keep quota evidence
+and reset timing in runtime, not a claim that catalog presence proves resources.
+T-012 produced 87de72c: noninteractive agy Tester, streaming, 1200-second enforced
+worker timeout/tree termination, PID identity checks and isolated fixtures.
+T-013 independently ran all checks: 147 tests pass on Windows 10/Python 3.13.
+Its unverified verdict is accepted as a completed review, not code acceptance.
+Reject T-012 to prepared T-014: selected-model inference is still unproven by
+auth/catalog probes despite the Tester's pass label for AC-06; user requires the
+stronger guarantee. Also close secret-bearing probe argv and visible-window rule
+gaps. Linux/macOS behavior needs actual host/CI evidence; asked human for route.
+Preserve unmerged 06b7e3a and 87de72c worktrees; no push/publication authorized.
+
 ## 2026-10-16: T-012 recovery to agy Opus
 
 Devin attempt 1 copied the source port but made no repairs or Result for over

@@ -1,8 +1,8 @@
 # T-012: Recover Python launcher and bounded agy review
 
 Role: developer
-Tool: agy
-Model: claude-opus-4-6-thinking
+Tool: devin
+Model: swe-2-medium
 Stage: 6
 Depends on: none
 Branch: t-012-launcher-recovery
@@ -11,6 +11,13 @@ Independent check: tester
 Resume: start fresh
 
 ## Goal
+
+Current recovery: agy Opus failed with RESOURCE_EXHAUSTED after reading sources;
+Sonnet and GPT-OSS probes also failed with the same reset window. All executors
+have exited. Continue preserved draft on Devin medium to avoid the long high
+reasoning stall. Focus on the concrete -i hang and regression/timeout repair;
+read targeted function ranges rather than entire large files. Earlier recovery
+notes below are historical, not instructions to select agy again.
 
 Recovery attempt: prior Devin attempt was stopped after over ten minutes with no
 log/Result and no repair changes. The staged original port is preserved in this
@@ -129,4 +136,41 @@ Port the existing launcher lifecycle to Python 3.10+ stdlib on Windows, macOS an
 - `python -m unittest discover -s .agentflow/tests` - mandatory regression suite before commit.
 
 ## Result
+
+Outcome: completed
+Change: 87de72c on t-012-launcher-recovery
+Files:
+- .agentflow/tools/run_task.py - preserved T-001 port (full launcher lifecycle, Python 3.10+ stdlib); repaired: agy Tester now runs `-p --output-format stream-json` (noninteractive print mode, no dangerous flags); `run_logged` got a launcher-enforced wall-clock limit (`AGENTFLOW_WORKER_TIMEOUT`, default 1200s, 0/non-number disables) that kills the managed process tree on expiry; `cmd_worker` records the timeout error (exitCode 124 if needed, state `error`) and releases the lease; `pid_start` gained a macOS/other-Unix fallback via `ps -o lstart=`; `alive`/`--stop` refuse to signal a pid whose recorded start identity cannot be confirmed
+- .agentflow/tools/run-task.ps1 - thin wrapper delegating to run_task.py (from the preserved port, unchanged by the repair)
+- .agentflow/tests/test_run_task.py - updated agy tester argv expectation (+regression: no `-i`, no dangerous flags); new `test_wall_clock_timeout_kills_the_tree_and_records_an_error` (Python fake sleeping past a 5s limit: streamed log line seen while running, tree killed, timeout note, lease released); new `test_recorded_pid_identity_is_verified_before_any_kill`
+- .agentflow/tests/test_parallel.py, test_tick.py, test_machine_capacity.py, test_dispatch.py, test_conductor.py - fixtures now clear machine `AGENTFLOW_*` variables instead of only overriding a few, so the verbatim suite no longer depends on the machine environment
+- .agentflow/tests/test_launcher_args.py, test_launcher_lifecycle.py, test_endcheck.py - as staged from the preserved port (wrapper delegation, spawn-failure via AGENTFLOW_WORKER_PYTHON, endcheck coverage)
+- .agentflow/docs/ai-handoff-protocol.md - launcher-related sections only: Python launcher ownership, access probe, and item 6 now states that observed limits are records, not an enforceable budget, and that every non-manual worker runs under the launcher-enforced wall clock
+- .agentflow/VERSION - 2.11.9 (kept; 2.12.0 reserved for release)
+- CHANGELOG.md - 2.11.9 entry extended with the repair bullets and migration notes
+- AGENTS.md - template block version 2.11.9, outside-block text untouched
+Checks:
+- `python .agentflow/tools/run_task.py --help` -> pass (exit 0)
+- `python -m unittest discover -s .agentflow/tests -p test_run_task.py` -> pass (22 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_launcher_args.py` -> pass (7 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_launcher_lifecycle.py` -> pass (8 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_endcheck.py` -> pass (8 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_dispatch.py` -> pass (5 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` -> pass (147 passed / 0 failed), run verbatim with this machine's real environment exported (AGENTFLOW_CODEX, AGENTFLOW_CODEX_ARGS, AGENTFLOW_DEVIN_ARGS, AGENTFLOW_MACHINE_CODEX_MAX=2, AGENTFLOW_TARGET=local, AGENTFLOW_TYPESAFE_KEY_FILE). No remaining machine-environment failure.
+Criteria without a command:
+- AC-11: agy tester argv is `agy -p <prompt> --output-format stream-json`, verified against the installed agy CLI help (agy.exe at C:\Users\Win10Pro\AppData\Local\agy\bin\agy.exe lists `-p/--print` noninteractive mode and `--output-format stream-json`); read-only only, no writes. No skip-permissions flags for Tester; disposable-checkout + endcheck isolation preserved; unlisted (tool,role) combinations still refuse to launch.
+- AC-12: timeout is enforced by the launcher process itself (`p.wait(timeout=...)` -> `kill_tree`), not delegated to the tool's own CLI timeout; tested with a Python fake that ignores any CLI limit and sleeps 300s - the tree died, the attempt recorded `wall-clock timeout ... (AGENTFLOW_WORKER_TIMEOUT)` and the lease registry ended empty. Output streams to the attempt log while running (asserted before exit). Built-in probes are bounded by PROBE_TIMEOUT=45s; `agy models` is a model catalog probe, reported as access evidence only, not a quota measurement.
+- AC-13: docstring and protocol say explicitly that observed quota/access limits are records, not an enforceable time/attempt budget; unknown quota stays unknown. macOS start identity now measured via `ps -o lstart=`; when a recorded identity cannot be re-confirmed, `alive` reports not-ours and `--stop` warns and skips the kill instead of signalling a possibly reused pid.
+- Parity matrix (unchanged from the preserved port): launch/status/stop/mark-finished/recheck/manual/worker/dispatch-grant, runtime schema, launch.lock, preflight->claim->workdir->attempt->ledger->spawn order, env handover file, all error paths. Deliberate differences: detached Python worker instead of a pwsh window; UTF-8 logs; `mklink /J` vs symlink; taskkill /T /F vs killpg; pidStart .NET ticks on Windows, /proc on Linux, `ps lstart` elsewhere.
+- Permission matrix: (codex,developer) danger-full-access preventive; (codex,tester) workspace-write+network preventive; (claude|agy|devin,developer) dangerous flags post-execution; (claude,tester) allowedTools post-execution; (agy,tester) `-p --output-format stream-json` post-execution; (devin,tester) permission-mode dangerous post-execution. Anything else refuses; no silent downgrade.
+- Platforms actually tested: Windows 10 + Python 3.13, 147 tests. macOS/Linux paths (`ps lstart`, killpg, symlinks, POSIX fakes) are implemented and unit-covered where simulatable but not executed on a real Unix machine - honest gap for the independent Tester.
+Found, not fixed:
+- roles/orchestrator.md, roles/tool-routing.md, .agentflow/README.md, GUIDE.md, README.md and gate.py's docstring still say run-task.ps1; outside Allowed files or do-not-touch (wrapper keeps them literally true).
+- tick.py still spawns workers through pwsh run-task.ps1 (do-not-touch): on Unix a tick launch needs run_task.py invoked directly; conductor stays Windows-only.
+- Protocol rule "Visible windows only" unchanged; the Python worker has no console - observation is via log + runtime state + --stop, as under the previous -WindowStyle Hidden spawn.
+- agy CLI also offers `--print-timeout`; deliberately not used because AC-12 requires parent-enforced bounds that hold even when a tool ignores its own timeout.
+Proposed memory updates:
+- decisions.md: "2026-10-16: 2.11.9 - launcher ported to Python (run_task.py owns the lifecycle; run-task.ps1 delegates) and hardened after the agy Tester hang: all tools run noninteractive, the launcher enforces AGENTFLOW_WORKER_TIMEOUT (default 20 min) by killing the managed tree, and macOS pid identity uses `ps -o lstart=` so --stop refuses unconfirmed/reused pids. Rejected: interactive -i testers (hangs), tool-side --print-timeout (tool can ignore it), treating observed limits as an enforceable budget, killing by pid when identity is unmeasurable."
+- known-issues.md: resolve the 2026-10-03 entry about limitHit heuristics? No - keep it; add: machine AGENTFLOW_* exports no longer break the verbatim test suite (fixtures isolate env). Note agy -i interactive mode hung a Tester attempt (T-002) - fixed by -p + launcher wall clock.
+- session-log.md: T-012 - recovered the staged Python port, repaired agy Tester interactivity, added launcher-enforced wall clock, macOS pid-start identity, env-isolated fixtures; 147 tests green verbatim.
 

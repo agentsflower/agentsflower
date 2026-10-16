@@ -1,5 +1,16 @@
 # Session Log
 
+## 2026-10-16: Launcher recovery and independent review completed
+
+T-012 attempt 1 Devin high copied port but made no repairs; stopped safely.
+Attempt 2 agy Opus read sources then quota failure; Sonnet/GPT-OSS also exhausted.
+Attempt 3 Devin medium completed 87de72c, 147 tests green. T-013 on separate Devin
+high session repeated 147 tests green and verified Windows timeout/noninteractive
+behavior; unverified for actual Unix. Accepted review via accept.py, rejected
+artifact to T-014 because required selected-model inference preflight is still
+missing. Prepared T-014 but did not launch; awaiting human Unix/CI verification
+route. No product commit merged and no push. Evidence in T-013.evidence runtime.
+
 ## 2026-10-16: Recover agy interactive hang
 
 Observed T-002 process alive for 15h with no Result/log; stopped using launcher.
