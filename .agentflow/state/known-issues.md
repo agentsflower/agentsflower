@@ -4,8 +4,13 @@
   incident: final main (2.11.8) checkpoint suite ran 124 tests with one error in
   test_tick.test_disabled_subscription_access_temporarily_skips_the_tool; stack
   ends in machine_capacity._locked replacing a disposable registry JSON. T-017's
-  candidate 151-test run passed. Scope a bounded Windows registry reliability
-  investigation separately; do not hide this behind an eventual rerun pass.
+  candidate 151-test run passed. T-021 independently reproduced it twice in two
+  full-suite runs on the bafc2a0 checkout (one error each: test_tick, then
+  test_dispatch; both green standalone) - likely a scanner/AV briefly locking
+  registry.json; a retry-with-backoff on os.replace would harden it, and it may
+  also explain T-020's one-off test_route exit-1-vs-4 flake (same subprocess
+  registry path). Scope a bounded Windows registry reliability investigation
+  separately; do not hide this behind an eventual rerun pass.
 
 - 2026-10-16 - T-014 worker env-file/custom model-probe defects were independently
   verified fixed in candidate 1e0bd87 by T-017 (151 Windows tests). This resolves
@@ -20,9 +25,15 @@
   verified fixed in 1e0bd87; a transient Windows registry os.replace Access denied
   occurred once during developer runs but not T-017's independent full run.
 
-- 2026-10-16 - Python launcher candidate 87de72c: Windows independently passed
-  147 tests; real Linux/macOS spawn, killpg, PID identity and symlink paths remain
-  unverified. Reopen with actual Unix hosts or the planned multi-OS CI.
+- 2026-10-16 - Resolved at bafc2a0 (merged eb59c7c): T-019's real Linux run
+  (Docker python:3.12-slim, WSL2 kernel) had found two product defects
+  (run_logged spawned the tool without start_new_session, so killpg self-killed
+  the worker on timeout; accept.py `merge-tree --write-tree --quiet` unsupported
+  by Debian git 2.47.3) plus one env-dependent fixture (test_endcheck merge
+  without git identity). T-020 repaired all three and T-021 independently
+  re-verified 151 tests green on the real Linux kernel (git 2.47.3). macOS
+  (Darwin ps-based pid_start/tree_pgroups fallback) remains fully unverified;
+  Linux pass never implies macOS.
 - 2026-10-16 - Candidate resource probes establish account/catalog access, not
   entitlement to the selected model. T-014 closes this and raw probe argv secret
   persistence; do not accept the stronger AC-06 guarantee on existing evidence.

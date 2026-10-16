@@ -1,9 +1,10 @@
 # Questions for the human
 
-- 2026-10-16, T-018: Which actual Unix verification route is available: Linux/macOS
-  hosts, or prepare Multi-OS GitHub Actions in a branch for your manual push?
-  Candidate 1e0bd87 independently passes 151 Windows tests and all local hardening
-  checks. Cross-platform acceptance and source merge wait on real Unix evidence.
-  No agent push or publication is authorized. Async question also sent in chat.
+- 2026-10-16, T-018: Linux evidence is now covered by your virtualization steer:
+  T-019 ran the exact candidate in Docker (python:3.12-slim, WSL2 kernel) and
+  found two repairable defects plus one test fixture defect; T-020 is fixing
+  them. What still needs your route is macOS: a real macOS host, or Multi-OS CI
+  prepared in a branch for your manual push. No agent push or publication is
+  authorized. Async question also sent in chat.
 
 Written by a background Orchestrator (protocol, "Autonomous orchestration"); answered entries are removed.

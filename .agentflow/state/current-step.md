@@ -1,16 +1,22 @@
 # Current Step
 
-2026-10-16: T-017 independently verified candidate
-1e0bd876a4c3247416f6ccc3dd9c89970a36d695: 151 tests pass on Windows, all local
-probe/secret/timeout fixes pass. Overall Verdict unverified solely for real
-Linux/macOS execution. Review is done; product remains unmerged.
+2026-10-16: main is now 2.11.9 (merge eb59c7c). T-020 ported the T-016 candidate
+onto main and repaired the three T-019 Linux defects; T-021 independently
+verified the exact commit on a real Linux kernel in Docker (151 tests, 0 failed,
+18 Windows-only skips) and accepted Verdict pass. T-019/T-020/T-021 are done.
 
-T-016 is rejected to prepared, blocked T-018 under the non-pass lifecycle.
-Need human's route: real Unix hosts, or Multi-OS CI prepared in a branch for
-human's manual push. See questions.md. Do not auto-launch or waive Unix evidence.
-No workers are running. Preserve all source/evidence worktrees.
+Next action waits on the human: T-018 stays blocked - its question is now only
+the macOS route (real macOS host, or Multi-OS CI branch for the human's manual
+push; see questions.md). Re-scope T-018 before unblocking: Docker now covers
+Linux, and accept.py was never in its ownership. Nothing else is runnable:
+no ready tasks, no undecided results.
 
-Main still uses 2.11.8 launcher; candidate is 2.11.9. Old regex can falsely limit
-successful reports mentioning quota; candidate fixes this. Quota/reset observations
-live in runtime. Conductor's separate raw env-file risk needs its own repair.
+Housekeeping for the human: rejected branches/worktrees t-001, t-012, t-014,
+t-016 remain preserved per the cleanup-agreement rule; stray untracked `nul`
+file is foreign, left untouched; worker-created ref
+refs/remotes/origin/t-020-linux-defect-repair was deleted after the merge.
+
+Separate open risks (known-issues.md): recurring machine_capacity._locked
+os.replace WinError 5 flake (T-021 reproduced twice; retry-backoff would
+harden); conductor.ps1 writes raw AGENTFLOW_* into conductor.env.json.
 No push, publication or production deployment by agents.

@@ -5,6 +5,21 @@ Checkpoint validation after all workers exited: main 2.11.8 full suite ran
 Recorded as recurring baseline registry reliability issue. Product candidate
 1e0bd87 independently passed 151 tests in T-017; no product merge performed.
 
+## 2026-10-16: Linux defect repair merged via Docker evidence (background devin)
+
+Decided T-019's fail Verdict: T-016 stays rejected; T-019 verified and done.
+Created successor T-020 (developer, devin): ported 1e0bd87 onto main and repaired
+the three T-019 defects - run_logged tool spawn now leads its own POSIX session
+(no killpg self-kill), kill_tree signals the tree's process groups via /proc
+with ps fallback, accept.py drops `merge-tree --quiet` (git 2.47), test_endcheck
+merge fixture carries git identity. Commit bafc2a0. T-021 (tester, devin -
+Codex conserved per human routing, agy/claude limited) independently re-ran the
+Docker Linux gate on the exact SHA: 151 tests, 0 failed, 18 Windows-only skips;
+Verdict pass. Windows verbatim suite hit the known registry os.replace WinError 5
+flake twice (different tests, green standalone) - reported, not T-020's code.
+T-020 accepted and merged to main (eb59c7c). T-018 stays blocked: its question
+now reduces to the macOS route (questions.md). No push or release.
+
 ## 2026-10-16: Complete local launcher hardening; hold real Unix gate
 
 T-015 found concrete defects despite 149 tests: accepted the failing review,
