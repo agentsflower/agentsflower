@@ -148,7 +148,7 @@ def accept(tid, dry):
         if r not in todo:
             print(f"  {t['branch']}{' in ' + r if r else ''} is already merged")
             continue
-        run(["git", "merge-tree", "--write-tree", "--quiet", "HEAD", t["branch"]], dry, cwd=gate.repo_dir(r))
+        run(["git", "merge-tree", "--write-tree", "HEAD", t["branch"]], dry, cwd=gate.repo_dir(r))
 
     print("3. merge")
     for r in todo:

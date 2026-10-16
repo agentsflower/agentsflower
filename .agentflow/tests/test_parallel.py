@@ -44,8 +44,11 @@ Resume: none
 class ParallelRuleTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.machine_env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        # a machine's own AGENTFLOW_* variables must not leak into the fixture
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        self.machine_env = patch.dict(os.environ, clean, clear=True)
         self.machine_env.start()
+        os.environ["AGENTFLOW_MACHINE_STATE_DIR"] = self.tmp.name
         self.root = Path(self.tmp.name) / "p"
         flow = self.root / ".agentflow"
         shutil.copytree(FLOW / "tools", flow / "tools", ignore=shutil.ignore_patterns("__pycache__"))

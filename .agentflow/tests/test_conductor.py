@@ -115,7 +115,8 @@ class ConductorTests(unittest.TestCase):
 
     def test_busy_machine_slot_waits_and_retries_after_release(self):
         self.report(needs=[NEED])
-        env = dict(os.environ, AGENTFLOW_MACHINE_STATE_DIR=str(self.root / "machine"))
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env["AGENTFLOW_MACHINE_STATE_DIR"] = str(self.root / "machine")
         helper = FLOW / "tools" / "machine_capacity.py"
         claim = subprocess.run([sys.executable, str(helper), "claim", "codex", str(self.root), "other-project",
                                 "--pid", str(os.getpid())], capture_output=True, text=True, env=env, check=True)

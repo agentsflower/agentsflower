@@ -127,11 +127,13 @@ class RouteTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def route(self, *args, key=True):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("TYPESAFE_")}  # never the real service
+        # Hermetic: the machine's real TYPESAFE_/AGENTFLOW_* exports (CLI paths, capacity caps, dispatcher
+        # mode, key files) must never reach route.py or the registry it consults.
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("TYPESAFE_", "AGENTFLOW_"))}
         env["TYPESAFE_BASE_URL"] = f"http://127.0.0.1:{self.server.server_port}"
         env["AGENTFLOW_MACHINE_STATE_DIR"] = self.tmp.name
         env["AGENTFLOW_ROUTE_ASSUME_CLI_AVAILABLE"] = "1"
-        env.pop("AGENTFLOW_TYPESAFE_KEY_FILE", None)
         if key:
             env["TYPESAFE_API_KEY"] = KEY
         return subprocess.run([sys.executable, "-X", "utf8", self.root / ".agentflow" / "tools" / "route.py", *args],

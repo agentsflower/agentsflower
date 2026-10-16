@@ -112,7 +112,7 @@ class WorktreeCopyTests(unittest.TestCase):
         self.commit(self.root, "main product")
         (self.wt / "product.txt").write_text("work\n")
         self.commit(self.wt, "product")
-        git(self.wt, "merge", "--no-ff", "--no-commit", "main")
+        git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-ff", "--no-commit", "main")
         (self.wt / ".agentflow/tasks/other.md").write_text("merge edit\n")
         self.commit(self.wt, "merge with forbidden edit")
         self.assertTrue(any("commits Task Files" in x for x in self.problems()))
