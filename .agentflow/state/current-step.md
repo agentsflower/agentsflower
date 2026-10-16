@@ -1,10 +1,8 @@
 # Current Step
 
-2026-10-15: Human authorized launch of T-001 with Devin swe-2-high. External/client
-projects do not block AgentFlow template work; client projects will be updated
-only after AgentFlow changes and tests are complete. Task T-001 launched in worker
-worktree on branch t-001-python-launcher-parity. Monitor Devin progress via
-.agentflow/tasks/.runtime/T-001.1.log and .agentflow/tools/run-task.ps1 -Status.
-When the attempt exits, inspect ## Result, run gate.py verify T-001, and if passed,
-prepare independent review T-002 on agy.
+T-001 is in `review` (commit 06b7e3a, Devin completed with exit 0; clean test suite passes 145/145).
+Task T-002 contract is prepared in `.agentflow/tasks/T-002-verify-python-launcher-parity.md` and
+added to ledger as `ready`. Ready to launch T-002 (role: tester, tool: agy, model: gemini-3.8-flash-high)
+in a disposable checkout of 06b7e3a. Upon passing Verdict, accept T-001 via accept.py.
+
 
