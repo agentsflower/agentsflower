@@ -1,5 +1,9 @@
 # Current Step
 
+T-012 recovery: attempt 1 Devin stopped after over ten minutes without repair
+changes/log/Result. Draft port preserved; retry on agy Opus with confirmed inference
+access. This supersedes Devin assignment below; do not start a concurrent writer.
+
 2026-10-16 recovery: T-002 stopped after about 15h with empty Result/log;
 interactive agy Tester startup is confirmed in both launcher implementations.
 T-001 rejected in favor of T-012; T-002 cancelled. Preserve 06b7e3a read-only.

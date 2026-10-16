@@ -1,16 +1,26 @@
 # T-012: Recover Python launcher and bounded agy review
 
 Role: developer
-Tool: devin
-Model: swe-2-high
+Tool: agy
+Model: claude-opus-4-6-thinking
 Stage: 6
 Depends on: none
 Branch: t-012-launcher-recovery
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-012-launcher-recovery
 Independent check: tester
-Resume: none
+Resume: start fresh
 
 ## Goal
+
+Recovery attempt: prior Devin attempt was stopped after over ten minutes with no
+log/Result and no repair changes. The staged original port is preserved in this
+task's worktree; inspect it and continue, do not discard it. No prior repair
+commit exists. Selected-model inference access for agy Opus was checked before
+handover. This header update is after the previous attempt fully stopped.
+
+Main baseline suite during handover: 124 tests, one transient WinError 5 replacing
+a disposable registry file in test_dispatch. Immediate narrow rerun passed 5/5.
+Report recurrence honestly; do not modify machine_capacity.py outside ownership.
 
 Successor of rejected T-001. Preserve the unmerged Python port at
 06b7e3afb2e6d85bc5f5e54ad9e9a80ccea2d62f while fixing the demonstrated agy

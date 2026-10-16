@@ -1,5 +1,14 @@
 # Decision Log
 
+## 2026-10-16: T-012 recovery to agy Opus
+
+Devin attempt 1 copied the source port but made no repairs or Result for over
+ten minutes. Stopped via launcher; staged draft preserved. Per stale-task recovery,
+same scope/task/worktree continues on agy claude-opus-4-6-thinking after a fresh
+ACCESS_OK inference probe. Update header only after the first executor stopped.
+Current launcher already supports noninteractive developer agy; its broken
+interactive Tester path is not used. Independent review can use Devin after repair.
+
 ## 2026-10-16: Recover hung agy Tester through a successor
 
 Human authorized repair and continuation. T-002 attempt ran about 15h with no
