@@ -1,5 +1,25 @@
 # Known Issues
 
+- 2026-10-16 - Registry os.replace WinError 5 is recurring, not just one observed
+  incident: final main (2.11.8) checkpoint suite ran 124 tests with one error in
+  test_tick.test_disabled_subscription_access_temporarily_skips_the_tool; stack
+  ends in machine_capacity._locked replacing a disposable registry JSON. T-017's
+  candidate 151-test run passed. Scope a bounded Windows registry reliability
+  investigation separately; do not hide this behind an eventual rerun pass.
+
+- 2026-10-16 - T-014 worker env-file/custom model-probe defects were independently
+  verified fixed in candidate 1e0bd87 by T-017 (151 Windows tests). This resolves
+  the earlier probe-gap entry for that candidate only; main is still 2.11.8.
+- 2026-10-16 - conductor.ps1 Start-Orchestrator still writes AGENTFLOW_* raw into
+  conductor.env.json. Pre-existing Windows-only path, outside launcher repair
+  ownership. Review a separate bounded secret-handover repair before public launch.
+- 2026-10-16 - Old main limitHit regex misreads successful reports discussing
+  quota tests as exhaustion. Candidate 1e0bd87 requires nonzero exit and includes
+  a regression. Do not treat the flag alone as provider evidence; inspect exit/log.
+- 2026-10-16 - test_route fixture environment/registry leakage is independently
+  verified fixed in 1e0bd87; a transient Windows registry os.replace Access denied
+  occurred once during developer runs but not T-017's independent full run.
+
 - 2026-10-16 - Python launcher candidate 87de72c: Windows independently passed
   147 tests; real Linux/macOS spawn, killpg, PID identity and symlink paths remain
   unverified. Reopen with actual Unix hosts or the planned multi-OS CI.

@@ -1,5 +1,25 @@
 # Decision Log
 
+## 2026-10-16: Verify Windows hardening and hold Unix acceptance
+
+T-015 independently failed T-014 despite 149 green tests: custom catalog/auth
+could masquerade as inference, heuristic argv masking missed short secrets and
+the worker env JSON reserialized raw config. Rejected to T-016, preserving source.
+T-016 produced 1e0bd876a4c3247416f6ccc3dd9c89970a36d695: built-in-only opt-in
+model inference, hash-only operator argv evidence, spawn-only worker environment,
+probe tree timeouts, hermetic test_route fixtures and nonzero-exit limit detection.
+T-017 independently passed local criteria and 151 tests on Windows; overall
+unverified solely for real Linux/macOS coverage. Accepted the review via accept.py,
+not the product. Per non-pass lifecycle reject T-016 to blocked T-018 for actual
+Unix evidence. No source candidate merged or pushed. Human must choose Unix hosts
+or CI prepared for manual push; do not silently waive the coverage gate.
+The old main launcher falsely set limitHit on successful quota-discussion reports.
+Fresh model inference / later successful sessions disproved those observed limits;
+corrected through tick.py with explicit administrative one-minute cooldowns, not
+raw registry edits. The candidate contains the regression fix; main does not yet.
+Conductor's separate plaintext env handover is pre-existing and outside ownership;
+record it for a separate bounded security repair before public release.
+
 ## 2026-10-16: Record bounded launcher review without accepting missing guarantees
 
 T-012 successor recovered on Devin swe-2-medium after Devin high made no repair

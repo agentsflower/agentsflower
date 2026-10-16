@@ -1,14 +1,16 @@
 # Current Step
 
-2026-10-16: T-013 review is done with Verdict unverified. Candidate 87de72c
-(T-012) fixes the agy interactive hang and enforces a 1200s wall-clock bound;
-independent Windows suite passed 147/147. It remains unmerged.
+2026-10-16: T-017 independently verified candidate
+1e0bd876a4c3247416f6ccc3dd9c89970a36d695: 151 tests pass on Windows, all local
+probe/secret/timeout fixes pass. Overall Verdict unverified solely for real
+Linux/macOS execution. Review is done; product remains unmerged.
 
-T-012 is rejected to prepared, blocked T-014. Remaining code gaps: selected-model
-inference preflight (auth/catalog is insufficient), secret-safe probe evidence,
-and detached-worker visibility policy. Preserve prior candidate worktrees.
+T-016 is rejected to prepared, blocked T-018 under the non-pass lifecycle.
+Need human's route: real Unix hosts, or Multi-OS CI prepared in a branch for
+human's manual push. See questions.md. Do not auto-launch or waive Unix evidence.
+No workers are running. Preserve all source/evidence worktrees.
 
-Human question pending: actual Linux/macOS host, or Multi-OS GitHub Actions after
-human's manual push? Unix behavior must remain unverified until actual runs.
-No worker is running. Devin medium remains the viable development route; observed
-agy exhaustion/reset data lives in runtime. No push or publication by agents.
+Main still uses 2.11.8 launcher; candidate is 2.11.9. Old regex can falsely limit
+successful reports mentioning quota; candidate fixes this. Quota/reset observations
+live in runtime. Conductor's separate raw env-file risk needs its own repair.
+No push, publication or production deployment by agents.

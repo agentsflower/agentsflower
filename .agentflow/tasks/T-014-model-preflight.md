@@ -128,3 +128,39 @@ in independent Windows review. This is a new task with one final commit.
 
 ## Result
 
+Outcome: completed
+Change: 549245f758dfa10419b119a86e2cb720b489e4c6 on t-014-model-preflight
+Files:
+- .agentflow/tools/run_task.py - ported artifact (T-012 @ 87de72c) plus: opt-in selected-model inference probe (AGENTFLOW_<TOOL>_MODEL_PROBE=on|custom argv with {model}, MODEL_PROBE_TIMEOUT=60s, empty temp cwd, stdin DEVNULL, no repository tools/writes); selected_model() resolves the effective model (task Model line, else AGENTFLOW_<TOOL>_ARGS); safe_argv() masks secret-shaped probe argv in evidence/diagnostics; run_capture gained cwd + closed stdin; resourceCheck now stores sanitized probe argv and a modelProbe record {at, model, source, argv, timeout, result}; unset/off model probe refuses unattended launches; account-access success with model inference denied fails closed; no remaining-quota figure is ever claimed
+- .agentflow/tools/run-task.ps1 - thin compatibility wrapper delegating to run_task.py (port, unchanged semantics)
+- .agentflow/tests/test_run_task.py - full ported lifecycle suite + 2 new regression tests: inference probe required/denied/recorded (incl. auth-ok + model-denied, builtin opt-in, {model} substitution) and dummy-secret masking in evidence and diagnostics
+- .agentflow/tests/test_launcher_lifecycle.py - fixture opts the fake devin into the inference probe (AGENTFLOW_DEVIN_MODEL_PROBE=auth)
+- .agentflow/tests/test_launcher_args.py, test_endcheck.py, test_parallel.py, test_dispatch.py, test_conductor.py, test_tick.py, test_machine_capacity.py - ported fixture/env isolation, unchanged
+- .agentflow/docs/ai-handoff-protocol.md - item 2 rewritten: detached launcher-managed workers observed via log/--status/--stop with guaranteed wall clock (was "Visible windows only"); item 6 documents the model-inference probe, sanitization and no-quota-claims; launcher sections only
+- .agentflow/VERSION - 2.11.9 (intermediate; 2.12.0 reserved for release)
+- CHANGELOG.md - 2.11.9 entry extended: model-inference preflight, probe sanitization, visible-window rule fix; migration notes require AGENTFLOW_<TOOL>_MODEL_PROBE or -Manual for unattended launches
+- AGENTS.md - template block version line 2.11.9 only; outside-block text preserved
+Checks:
+- `python .agentflow/tools/run_task.py --help` -> pass (exit 0; portable entry point)
+- `python -m unittest discover -s .agentflow/tests -p test_run_task.py` -> pass (24 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_launcher_args.py` -> pass (7 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_launcher_lifecycle.py` -> pass (8 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_endcheck.py` -> pass (8 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_dispatch.py` -> pass (5 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` -> pass on the final run (149 passed / 0 failed / 0 skipped, ~90s, machine's real AGENTFLOW_* exported). Honest report per AC-14: two earlier runs of the same verbatim suite each failed exactly one test in test_route.py (test_medium_band... 1 != 4, then test_low_band_is_no_decision 1 != 3). test_route.py is not in Allowed files, so it was not modified. The fixture passes this machine's real AGENTFLOW_* (AGENTFLOW_CODEX exe, AGENTFLOW_CODEX_ARGS, AGENTFLOW_MACHINE_CODEX_MAX=2) into route.py, which consults the real machine-capacity registry; exit 1 vs 3/4 is consistent with live codex slot/lease state on this machine, not with any T-014 change - the failure appeared on different tests across runs and the file passed in isolation (11/11) and inside the final verbatim run.
+Criteria without a command:
+- AC-15 - implemented as described above; covered by test_selected_model_inference_probe_required_denied_and_recorded (unset/off refused, auth-ok+model-denied refused, {model} substitution, builtin opt-in, recorded model/source/time/outcome). Probes use fakes only; no real paid calls were made. A probe success is recorded as point-in-time model access, never remaining quota.
+- AC-16 - safe_argv masks flag values for secret-named flags (key|token|secret|passw|bearer|credential|cookie|header|signat|auth), name=value pairs and long bare values; probe stdout/stderr is never serialized; covered by test_probe_secrets_are_never_serialized with a dummy secret in both probes, asserted absent from runtime JSON and output.
+- AC-17 - protocol item 2 now documents detached workers observed via log/--status/--stop plus the launcher-enforced wall clock; production approval (item 3/11) and permissions unchanged.
+- AC-01..AC-14 - preserved by the verbatim port of 87de72c plus the additions above; all coverage notes from T-012's Result and T-013's evaluation still apply.
+Platforms tested: Windows 10 + Python 3.13 (this machine). macOS/Linux execution evidence remains an external release gate - not performed here, not claimed; the POSIX-only paths (start_new_session, killpg, ps -o lstart=, /proc identity, symlink Setup links, .sh fakes) had zero real executions.
+Parity matrix (launcher): launch/status/stop/manual/mark-finished/recheck/internal worker/dispatch grants - Python on Windows+macOS+Linux; run-task.ps1 translates old parameters and preserves exit codes on Windows only.
+Permission matrix (unchanged): codex developer exec --sandbox danger-full-access (preventive) / codex tester exec --sandbox workspace-write + network (preventive); claude developer -p --dangerously-skip-permissions, claude tester -p --allowedTools Read,Grep,Glob,Bash,Edit, agy developer -p --dangerously-skip-permissions, agy tester -p --output-format stream-json, devin both -p --permission-mode dangerous (all post-execution isolation via end check). Unlisted combinations refuse to launch.
+Found, not fixed:
+- test_route.py intermittent failure inside the verbatim suite on this machine (see Checks note): its fixture forwards real AGENTFLOW_* exports to route.py, which reads the live machine-capacity registry; making it hermetic needs test_route.py, outside this task's Allowed files.
+- (pre-existing, from T-013) tick.py still spawns workers through pwsh run-task.ps1 on Windows; roles/orchestrator.md, tool-routing.md, .agentflow/README.md, GUIDE.md, README.md and gate.py's docstring still reference run-task.ps1 - all outside Allowed files.
+- stray untracked file `nul` in the repository root (pre-existing, predates this task).
+- resourceCheck.toolArgs still records AGENTFLOW_CODEX_ARGS verbatim for codex attempts (pre-existing shape; a secret put there by an operator would be recorded - out of AC-16's probe scope, flagged for a successor).
+Proposed memory updates:
+- decisions.md (dated): "Unattended launches now require an explicit opt-in selected-model inference probe (AGENTFLOW_<TOOL>_MODEL_PROBE); the account-access probe alone was rejected as entitlement proof. Rejected alternative: running the built-in inference probe by default - it would perform surprise paid calls." and "Workers are documented as detached processes observed via log/--status/--stop with a launcher-enforced wall clock; the 'visible windows only' rule was retired because it no longer matched the implementation."
+- known-issues.md: add - "test_route.py is intermittently non-hermetic inside the full suite on machines exporting AGENTFLOW_* (route.py reads the live machine registry); isolate the fixture in a follow-up." and keep the T-013 Unix-coverage entry: POSIX-only launcher paths still unverified on real macOS/Linux - external release gate.

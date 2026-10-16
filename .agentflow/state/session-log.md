@@ -1,5 +1,22 @@
 # Session Log
 
+Checkpoint validation after all workers exited: main 2.11.8 full suite ran
+124 tests, one WinError 5 error in test_tick via machine_capacity._locked/os.replace.
+Recorded as recurring baseline registry reliability issue. Product candidate
+1e0bd87 independently passed 151 tests in T-017; no product merge performed.
+
+## 2026-10-16: Complete local launcher hardening; hold real Unix gate
+
+T-015 found concrete defects despite 149 tests: accepted the failing review,
+rejected T-014 to T-016. T-016 on Devin medium produced exact SHA
+1e0bd876a4c3247416f6ccc3dd9c89970a36d695; developer 151 tests green twice.
+T-017 separately repeated probes/secret/timeout/routing checks and full suite:
+151/0/0, all local criteria pass, overall unverified only for actual Linux/macOS.
+Accepted T-017 as a completed review via accept.py; no code merge. T-016 rejected
+to prepared blocked T-018 under the protocol's non-pass successor rule. All worker
+processes exited, no new worker launched. Human question asks Unix hosts vs CI
+branch for human push. Conductor env-file risk logged separately. No push/release.
+
 ## 2026-10-16: Launcher recovery and independent review completed
 
 T-012 attempt 1 Devin high copied port but made no repairs; stopped safely.
