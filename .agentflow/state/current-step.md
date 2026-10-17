@@ -1,22 +1,25 @@
 # Current Step
 
-2026-10-16: main is now 2.11.9 (merge eb59c7c). T-020 ported the T-016 candidate
-onto main and repaired the three T-019 Linux defects; T-021 independently
-verified the exact commit on a real Linux kernel in Docker (151 tests, 0 failed,
-18 Windows-only skips) and accepted Verdict pass. T-019/T-020/T-021 are done.
+2026-10-17: human requests all approved v2.12.0 work. Do not stop local work on
+missing macOS evidence. Push/publication remain human-only.
 
-Next action waits on the human: T-018 stays blocked - its question is now only
-the macOS route (real macOS host, or Multi-OS CI branch for the human's manual
-push; see questions.md). Re-scope T-018 before unblocking: Docker now covers
-Linux, and accept.py was never in its ownership. Nothing else is runnable:
-no ready tasks, no undecided results.
+T-024 bootstrap is accepted/merged (VERSION 2.11.10): Devin probe has explicit
+workspace-trust false + auto permissions; Codex read-only probe skips Git check.
+T-025 independently passed focused 27/full 152 and a real bounded Devin check
+(recovery reused suite evidence after a harness-only cleanup failure).
 
-Housekeeping for the human: rejected branches/worktrees t-001, t-012, t-014,
-t-016 remain preserved per the cleanup-agreement rule; stray untracked `nul`
-file is foreign, left untouched; worker-created ref
-refs/remotes/origin/t-020-linux-defect-repair was deleted after the merge.
+Running on Devin medium: T-009 CI and T-022 runtime reliability. T-022 owns
+shared version/changelog/protocol files. CI owns only workflow/release-validation.
+Queue: T-003 package/CLI depends on both; T-005 MCP -> T-007 English metrics ->
+T-008 visual review/screenshot -> T-010 docs/release -> T-011 final local review.
+Create independent Tester contracts for exact feature SHAs (T-004/T-006/T-008
+reserved for those reviews). All feature scope approved; no repeated approval.
 
-Separate open risks (known-issues.md): recurring machine_capacity._locked
-os.replace WinError 5 flake (T-021 reproduced twice; retry-backoff would
-harden); conductor.ps1 writes raw AGENTFLOW_* into conductor.env.json.
-No push, publication or production deployment by agents.
+Use AGENTFLOW_DEVIN_MODEL_PROBE=on for real launch checks. Bound long implementation
+attempts via AGENTFLOW_WORKER_TIMEOUT; preserve drafts on a stop. Other tool quota
+observations live in runtime. Do not launch the old conductor plaintext env path
+until T-022 repairs it; root Orchestrator currently coordinates live.
+
+MacOS actual remote runs stay an external release gate after human push. CI is
+prepared early in T-009; do not invent green remote jobs or block other local work.
+Untracked nul is foreign. Preserve rejected worktrees pending cleanup agreement.

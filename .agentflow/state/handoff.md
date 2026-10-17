@@ -1,34 +1,27 @@
 # Session Handoff
 
-Background session devin, 2026-10-16T21:30Z: decided T-019's fail verdict
-(T-016 stays rejected, T-019 done), created and ran T-020 developer + T-021
-tester, verified and merged the Linux defect repair to main (eb59c7c).
-Waits: T-018 blocked on the human's macOS route (questions.md); nothing else
-runnable - no ready tasks, no undecided results.
+As of 2026-10-17: main includes accepted T-020 Linux repair and T-024 probe
+bootstrap, AgentFlow 2.11.10. User authorized testing plus the entire remaining
+v2.12.0 queue. Previous macOS-only stop is superseded; see current-step/ledger.
 
-As of 2026-10-16, main@eb59c7c: product is AgentFlow 2.11.9 - the T-016
-launcher-hardening candidate plus T-020's Linux defect repairs is merged.
+T-024 exact 183171c19e2e115dfdc6f23af92b42471134e3af fixed required CLI probe
+trust/non-Git flags, through narrow native Manual attempts because all automated
+CLI starts were blocked. T-025 independently passed 27 focused and 152 full tests,
+then a bounded real Devin resource check (first harness cleanup lost its result;
+recovery repeated only that missing criterion). accept.py verified/merged/cleaned
+T-024; native sessions complete. No probe/security bypass or model permission
+escalation; remaining workers are Devin to conserve Codex.
 
-Verified state: T-019 produced real Linux evidence on candidate 1e0bd87 via
-Docker (python:3.12-slim, WSL2 kernel) - Verdict fail with three reproducible
-defects. T-020 (devin) ported the candidate onto main and repaired them
-(bafc2a0): run_logged spawns the tool in its own POSIX session so killpg cannot
-self-kill the worker; kill_tree signals the whole tree's process groups
-(/proc first, ps fallback - slim images ship no ps); accept.py drops
-`merge-tree --write-tree --quiet` (unsupported by git 2.47.3); test_endcheck
-merge fixture carries an explicit git identity. T-021 (devin, same tool -
-Codex conserved, agy/claude limited) independently verified the exact SHA on
-real Linux: 151 tests, 0 failed, 18 Windows-only skips, Verdict pass.
+Running T-009 CI and T-022 registry/conductor hardening on separate Devin worktrees.
+Approved files/metadata ownership are in their contracts. T-003 package/CLI,
+T-005 official-SDK MCP, T-007 English telemetry/dashboard, T-010 docs/release are
+ready with dependencies. Independent reviews and screenshot T-008 come at exact
+SHAs. Do not create conflicting parallel release-metadata owners.
 
-Waits for the human: T-018 blocked; its question is now only the macOS route
-(real macOS host or Multi-OS CI branch for the human's manual push -
-questions.md). Re-scope T-018 before unblocking: Docker covers Linux and
-accept.py was outside its ownership. Rejected branches/worktrees t-001, t-012,
-t-014, t-016 preserved awaiting cleanup agreement. Untracked `nul` file left
-untouched (foreign). No push or release by agents.
+Conductor was off; keep old plaintext env handover unstarted until T-022 repairs
+it, then start with the approved Devin preference and probe opt-in. Real macOS
+CI execution requires human push; no agent push, publish or production deployment.
+Public product URLs requested asynchronously for README; unresolved links must
+be explicit, not invented. Stray nul and rejected worktrees remain untouched.
 
-Open risks (known-issues.md): recurring machine_capacity._locked os.replace
-WinError 5 flake (T-021 saw it twice; retry-backoff candidate, not this
-commit's code); conductor.ps1 raw env handover still needs its own repair.
-
-First reads: current-step.md, questions.md, known-issues.md, T-021 Result.
+First reads: current-step.md, tasks.md, decisions.md, active Task Results.

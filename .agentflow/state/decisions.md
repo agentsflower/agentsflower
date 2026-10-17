@@ -1,5 +1,24 @@
 # Decision Log
 
+## 2026-10-17: Execute the entire approved public-release pool
+
+Human directs testing and all remaining queued work, then asks to check progress.
+Treat this as approval to execute the agreed v2.12.0 scope, not only the previously
+registered launcher tasks. Prepare the nine-job CI now and continue all local
+features without waiting for macOS; actual remote/macOS results remain an external
+release gate and human performs push/publication. Cancel obsolete T-018 placeholder
+in favor of T-009 CI and final release evidence. Work on this repository only.
+Add T-022 for recurring registry reliability and conductor secret handover, then
+T-003 package/CLI, T-005 MCP, T-007 English metrics/dashboard, T-010 public docs;
+independent Tester contracts are created for exact result SHAs. Shared release
+metadata ownership makes these feature tasks sequential; CI can run independently.
+Fresh Devin inference failed solely on untrusted probe cwd; direct read-only/auto
+call with explicit respect-workspace-trust false succeeded. T-024 is a narrow
+native Codex manual-adapter bootstrap (launcher created worktree/baseline), followed
+by independent review, so model checks are retained rather than bypassed. Conserve
+Codex; use Devin for the remaining pool. Do not start the old conductor's unsafe
+plaintext handover until T-022 repairs it; live Orchestrator coordinates meanwhile.
+
 ## 2026-10-16: Verify Windows hardening and hold Unix acceptance
 
 T-015 independently failed T-014 despite 149 green tests: custom catalog/auth

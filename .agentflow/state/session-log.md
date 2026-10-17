@@ -1,5 +1,18 @@
 # Session Log
 
+## 2026-10-17: Resume the full approved release queue
+
+Read current repository: background Devin had completed T-020/T-021 and merged
+2.11.9 Linux fixes. Human now explicitly authorizes all remaining pool tasks.
+Created/approved CI, reliability, package CLI, MCP, English metrics and final docs
+contracts with serialized shared metadata. Cancelled obsolete T-018 placeholder.
+Live pre-start check reproduced Devin untrusted-temp-cwd refusal. T-024 repaired
+only built-in probe argv using narrow native Manual adapter; T-025 independently
+passed 27 focused, 152 full and a real Devin probe after harness-only recovery.
+accept.py verified and merged bootstrap to 2.11.10; no source/code changes by the
+Orchestrator. Started ordinary Devin T-022 and T-009 after real inference checks.
+No push/publication. Current queue and actual evidence references are in ledger.
+
 Checkpoint validation after all workers exited: main 2.11.8 full suite ran
 124 tests, one WinError 5 error in test_tick via machine_capacity._locked/os.replace.
 Recorded as recurring baseline registry reliability issue. Product candidate
