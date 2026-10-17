@@ -152,3 +152,6 @@ separate release gate.
 
 2026-10-17: Foreground Orchestrator confirmed all approved Stage 6 contracts terminal, T-011 pass at 0fcd773 (204 tests OK, 3 skipped, package integration passed). Updated stale continuation memory and T-010 note. Human explicitly authorized origin/main push; tag/release remain separate. Final regression rerun before checkpoint commit.
 Final pre-push regression on 2026-10-17: 204 tests in 138.107s, OK (3 skipped); git diff --check passed.
+
+2026-10-17: Prepared handover for human-delegated Devin swe-2-high foreground orchestration of sequential Stages 3-5. Built-in bounded selected-model inference passed; agy family resource probes pending. Local v2.12.0 scope already accepted; no new publication authorization.
+Fresh bounded checks: Devin swe-2-high inference OK; agy Gemini Flash inference OK, remaining quota unknown; agy Sonnet/Opus/GPT-OSS denied RESOURCE_EXHAUSTED. Existing tool-wide agy limit must not be bypassed; evaluate scoped repair if needed.

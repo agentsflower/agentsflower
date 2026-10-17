@@ -1,21 +1,27 @@
 # Session Handoff
 
-As of 2026-10-17: main@a490086 contains accepted AgentFlow 2.12.0 implementation.
-T-003/T-005/T-007/T-010 and independent T-004/T-006/T-008/T-011 are done;
-T-026 integrated CI after accepted runtime repairs. See state/tasks.md.
+As of 2026-10-17 main@50adf65, AgentFlow 2.12.0 pushed to origin/main by explicit
+human request. T-011 accepted; final local regression 204 tests OK (3 skipped).
+Remote CI run 39026298541 last observed queued, not established macOS evidence.
 
-T-011 verified 0fcd773 in an isolated checkout: 204 tests OK, 3 skipped;
-layout/install checks and wheel/sdist installation/update integration passed.
-Result: tasks/T-011-final-local-review.md. No active worker/orchestrator preceded
-this foreground session. Final Result and acceptance ledger are being checkpointed.
+NEW HUMAN SCOPE: sequential Stage 3 evidence verification, bounded Stage 4 drift
+review/rollout cycle, then full Stage 5 improvement-plan.md and documentation
+alignment. Delegated planning/task approval/execution authorized; no repeated plan
+permission needed. Project-rules.md owns current scope and model policy.
 
-Human explicitly authorized git push on 2026-10-17, superseding the earlier
-human-only push restriction for this operation. Only origin/main is authorized;
-no tag, GitHub Release, PyPI publication or deployment is authorized.
-Remote source authority remains vcherstar/AgentFlow; never use the parent remote.
+Transfer writer ownership from Codex to human-designated foreground Devin
+swe-2-high coordinator, holder devin. This is not an automatically-created
+restricted background session. Claim heartbeat before mutation. Pending tracked
+memory edits belong to this handover; checkpoint on task branch with required
+checks, merge and cleanup. Never discard them or mix foreign product changes.
 
-Next: inspect actual remote CI, including macOS, and record evidence before
-public release. Local preparation does not establish remote matrix success.
-Optional missing product URLs remain in state/questions.md. Stage 4 and Stage 5
-are separate unfinished roadmap work, not remaining approved Stage 6 contracts.
-Keep rejected worktrees and unrelated files untouched.
+Default workers swe-2-high, complexity assessment and stronger-model escalation
+when required. Fresh agy concrete Gemini/Claude/GPT resource checks before routing;
+unknown remaining quota explicit, obey observed failure/reset windows. Built-in
+bounded Devin swe-2-high inference passed during handover.
+
+Read protocol, role, project-rules, plan, improvement-plan, ledger, known issues.
+Next unused task T-028 (verify). Stage 3 already closed: verify evidence first.
+Stage 4 recurring process: finish a bounded cycle, not an eternal maintenance job.
+Pilot rollout must respect its own rules, preserve open tasks and active writers.
+Keep rejected worktrees/unrelated files. No publication/deployment/future push.
