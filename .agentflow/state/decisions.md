@@ -1,5 +1,28 @@
 # Decision Log
 
+## 2026-10-17: Stage 4 bounded cycle outcome and Stage 5 decomposition
+
+Drift audit (upstream.py --check): every installed project sits at 2.11.8
+behind 2.12.0 - version lag only - except Transcript Youtube site\code, which
+carries two generalized upstream candidates (tools/limit_detection.py,
+tools/quota_groups.py + tests). They address the known tool-wide-limit
+conflation and regex-only limitHit false positives; adopted into Stage 5 task
+T-030 instead of copying file-by-file, because the plan asks for generalized,
+documented mechanisms.
+Pilot rollout to WatermarkRemover done inside the authorized cycle
+(master@3fa1efb): 2.11.8 -> 2.12.0, dry-run first, local untracked files
+preserved, stale env handover files removed per 2.11.11 migration, installed
+suite 204 pass. Its conductor was already dead and was not restarted.
+Stage 5 decomposed into six serialized developer tasks (T-028/030/032/034/036/
+038) mapped 1:1 to improvement-plan sections 1-6, each requiring an independent
+tester. Serialization is deliberate: every contract touches CHANGELOG.md and
+VERSION, and the human asked for serialized release metadata.
+Continuation policy applied to machine config only (never template code):
+AGENTFLOW_ORCHESTRATORS=devin, AGENTFLOW_DEVIN_ARGS=--model swe-2-high, worker
+timeout 2400s, model probes on; conductor restarted with no active writers.
+Rejected: leaving codex first in the orchestrator list (would route background
+handover to a conserved tool) and editing conductor.ps1 for machine config.
+
 ## 2026-10-17: Runtime baseline accepted and continuation assigned to Devin
 
 T-022 exact 0420265a1e2a5a35136f3b80039adc2bb8a5a177 independently passed T-023
