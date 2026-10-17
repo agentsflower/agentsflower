@@ -9,6 +9,7 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -22,6 +23,25 @@ DEFAULT_CAPACITY = {"codex": 1}
 PENDING_SECONDS = 600
 READY_SECONDS = 600
 GRANT_SECONDS = 60
+GROUP = r"[A-Za-z0-9_.-]+"
+
+
+def _limit_key(tool, group=None):
+    """Registry key for a provider hold: '<tool>' tool-wide, '<tool>:<group>' one quota group."""
+    if group:
+        if not re.fullmatch(GROUP, str(group)):
+            raise ValueError(f"bad quota group: {group!r}")
+        return f"{tool}:{group}"
+    return tool
+
+
+def _limit_end(state, tool, group=None):
+    """Latest hold timestamp applying to <tool> on <group>: the tool-wide hold plus its group's."""
+    lim = state.get("limits", {})
+    end = lim.get(tool, 0)
+    if group:
+        end = max(end, lim.get(_limit_key(tool, group), 0))
+    return end
 
 # Windows transient replace failures (a scanner or indexer briefly holds registry.json):
 # ERROR_ACCESS_DENIED=5, ERROR_SHARING_VIOLATION=32. Anything else, and exhaustion, fails closed.
@@ -214,12 +234,12 @@ def capacity(tool, project=None):
     return value
 
 
-def has_capacity(tool, project, at=None):
+def has_capacity(tool, project, at=None, group=None):
     """A read-only scheduling hint; claim() is still the atomic final decision."""
     requested = capacity(tool, project)
     with _locked() as state:
         _clean(state)
-        if state["limits"].get(tool, 0) > (at.timestamp() if at else time.time()):
+        if _limit_end(state, tool, group) > (at.timestamp() if at else time.time()):
             return False
         current = [lease for lease in state["leases"] if lease["tool"] == tool]
         grants = [grant for grant in state["dispatch"]["grants"] if grant["tool"] == tool]
@@ -234,14 +254,16 @@ def has_capacity(tool, project, at=None):
         return not effective or len(current) + len(grants) < effective
 
 
-def claim(tool, project, owner, port=None, cap=None, pid=None, pid_start=None, grant=None):
+def claim(tool, project, owner, port=None, cap=None, pid=None, pid_start=None, grant=None, group=None):
     requested = capacity(tool, project) if cap is None else cap
     if requested < 0:
         raise ValueError("machine capacity must be zero or positive")
     with _locked() as state:
         _clean(state)
-        if state["limits"].get(tool, 0) > time.time():
-            return None, f"{tool} is globally limited until {datetime.fromtimestamp(state['limits'][tool], timezone.utc).isoformat()}"
+        end = _limit_end(state, tool, group)
+        if end > time.time():
+            scope = "globally" if state["limits"].get(tool, 0) >= end else f"group '{group}'"
+            return None, f"{tool} is {scope} limited until {datetime.fromtimestamp(end, timezone.utc).isoformat()}"
         current = [lease for lease in state["leases"] if lease["tool"] == tool]
         grants = state["dispatch"]["grants"]
         selected = next((item for item in grants if item["token"] == grant), None) if grant else None
@@ -291,16 +313,31 @@ def release(token):
         state["leases"] = [lease for lease in state["leases"] if lease["token"] != token]
 
 
-def record_limit(tool, until):
+def record_limit(tool, until, group=None):
     with _locked() as state:
-        state["limits"][tool] = until.timestamp()
+        state["limits"][_limit_key(tool, group)] = until.timestamp()
 
 
-def limit_until(tool):
+def limit_until(tool, group=None):
     with _locked() as state:
         _clean(state)
-        end = state["limits"].get(tool)
+        end = _limit_end(state, tool, group)
     return datetime.fromtimestamp(end, timezone.utc) if end else None
+
+
+def move_limit(tool, group):
+    """Move a tool-wide hold under '<tool>:<group>', keeping its reset time; the later of two ends wins.
+
+    Legacy holds recorded before quota groups stay tool-wide until an explicit migration; other
+    limits, leases and projects are untouched. Returns the moved timestamp, or None."""
+    with _locked() as state:
+        _clean(state)
+        end = state["limits"].pop(tool, None)
+        if end is None:
+            return None
+        key = _limit_key(tool, group)
+        state["limits"][key] = max(end, state["limits"].get(key, 0))
+        return end
 
 
 def known_projects():
@@ -329,6 +366,7 @@ def main():
     take.add_argument("--pid", type=int)
     take.add_argument("--pid-start", type=int)
     take.add_argument("--grant")
+    take.add_argument("--group", help="quota group the session consumes; its group holds also apply")
     active = sub.add_parser("activate")
     active.add_argument("token")
     active.add_argument("pid", type=int)
@@ -337,11 +375,14 @@ def main():
     sub.add_parser("projects")
     done = sub.add_parser("release")
     done.add_argument("token")
+    mv = sub.add_parser("move-limit", help="move a tool-wide hold under '<tool>:<group>', keeping the reset time")
+    mv.add_argument("tool", choices=TOOLS)
+    mv.add_argument("group")
     args = parser.parse_args()
     try:
         if args.command == "claim":
             token, reason = claim(args.tool, args.project, args.owner, args.port, args.cap, args.pid, args.pid_start,
-                                  args.grant)
+                                  args.grant, args.group)
             if token:
                 print(token)
             else:
@@ -351,6 +392,13 @@ def main():
             return 0 if activate(args.token, args.pid, args.pid_start) else 1
         elif args.command == "release":
             release(args.token)
+        elif args.command == "move-limit":
+            end = move_limit(args.tool, args.group)
+            if end:
+                print(f"{args.tool} -> {_limit_key(args.tool, args.group)} until "
+                      f"{datetime.fromtimestamp(end, timezone.utc).isoformat()}")
+            else:
+                print(f"no active {args.tool} limit to move")
         elif args.command == "status":
             with _locked() as state:
                 _clean(state)

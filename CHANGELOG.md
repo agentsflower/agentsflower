@@ -2,6 +2,86 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.13.1 - 2026-10-17
+
+Fixup on the 2.13.0 recoverable handover (the two defects the independent
+review found on the rejected T-030 artifact): quoted provider phrasing in a
+worker's prose no longer trips `limitHit`, and a tool-wide refusal names the
+tool-wide hold.
+
+- `limit_detection.py` quote framing covers the report verbs `shows`,
+  `prints`, `displays`, `writes`/`wrote`/`written`, `echoes`/`echoed` (and
+  `displayed`, `printed`), and a match inside an already-open quote span is
+  skipped at any exit code: `the banner shows "you've hit your usage limit"`
+  stays subject matter, so a worker quoting the provider verbatim no longer
+  records a false group-scoped hold. A bare provider line or an
+  error-prefixed line still counts.
+- `run_task.py resource_check` names the hold that actually blocks: under a
+  bare `<tool>` hold the refusal reads `<tool> is limited until ...` even
+  when the session consumes a quota group; a `<tool>:<group>`-scoped binding
+  constraint still reads `<tool> group <group> is limited until ...`.
+- Migration for installed projects: `install.py --update` ships the corrected
+  `limit_detection.py` and `run_task.py` (`tools/` is template-owned). No
+  data change: holds already recorded keep their keys and expiry; fewer
+  false `limitHit`s simply record fewer group-scoped holds.
+
+## 2.13.0 - 2026-10-17
+
+Recoverable handover (improvement plan section 2; two audited candidates
+generalized from the Transcript Youtube install): one shared provider-limit
+detector, per-model quota groups for observed holds, classified attempt end
+states, takeover that refuses to run alongside live managed children, and a
+bounded recovery record that preserves uncommitted drafts.
+
+- `.agentflow/tools/limit_detection.py` (new) is the single judge of whether a
+  session log shows the tool's own provider/account limit; `run_task.py`
+  (worker `limitHit`/`limitKind`/`limitPhrase`), `tick.py`
+  (`limit`/`learn_limits`/`hit_limit`) and `conductor.ps1` now share it instead
+  of three regex copies. Strong provider-directed phrases count at any exit
+  code; weak quota/status words need failure evidence (nonzero exit, an
+  error-prefixed line, an outer error event in stream-json); quoted
+  subject-matter content (test output, a report about the product's own
+  quotas) is skipped; retryable transport failures never match.
+- `.agentflow/tools/quota_groups.py` (new) scopes observed holds per model
+  quota group: `model-options.json` gains the optional `quota_group` field, a
+  hold recorded under `<tool>:<group>` blocks only sessions of that group,
+  bare-`<tool>` holds stay tool-wide and account/access failures always apply
+  to the whole tool. The option named after the tool defines the default
+  group's model, so unmodelled launches and background Orchestrators check the
+  group they would actually consume. `tick.py limit --group`, `tick.py
+  limit-migrate` and `machine_capacity.py claim --group`/`move-limit` manage
+  scoped holds; launches, `tick.py run` and the conductor's next-orchestrator
+  honor them.
+- Attempt records classify the stop reason (`stopReason`: completed, limit,
+  timeout, stopped, dead, environment, implementation, verification) from
+  launcher facts - exit code, shared limit detection, end check - never free
+  text alone, and record the quota group the session consumed (`quotaGroup`).
+- A new attempt or `--stop` is refused with a diagnosable error while a
+  managed child of the previous worker still runs: descendants by parent
+  chain, plus the recorded tool session on POSIX and the worker's named job
+  object on Windows (orphaned grandchildren that left the parent chain still
+  count). Uncertain process ownership blocks concurrent writing instead of
+  launching alongside a possibly live writer.
+- An attempt that did not complete carries a bounded `recovery` record (per
+  checkout: branch, HEAD, tracked modifications and untracked paths -
+  paths/status only, file contents never enter runtime state; the stop reason;
+  whether a Result exists), captured even when the worker left no commit and
+  no Result. The next attempt's prompt carries a one-line handover (also
+  printed for `--manual` starts).
+- `Resume:` on the Task File: `<commit>` continues the preserved draft on the
+  same branch and worktree (the commit must be an ancestor of its HEAD);
+  `start fresh` discards only that worktree's draft; `none` leaves the
+  worktree as found.
+- Migration for installed projects: `install.py --update` delivers the two new
+  tools (`tools/` is template-owned). Existing tool-wide holds keep working
+  unchanged; a hold known to belong to one quota group can be rescoped with
+  `tick.py limit-migrate <tool> <group>` (for example the recorded agy
+  tool-wide hold to `agy:agy-claude-gpt` so a Gemini probe stays possible).
+  Add `quota_group` to project `model-options.json` options to opt in; absent
+  groups keep tool-wide semantics. `dispatch.py` still reads tool-wide holds
+  only - a grant for a group-held tool is refused at the scoped claim and
+  released, so active dispatch degrades to a wait, never to a blocked launch.
+
 ## 2.12.2 - 2026-10-17
 
 Lifecycle trust, second round (improvement plan section 1, independent review

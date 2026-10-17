@@ -425,6 +425,8 @@ class RunTaskTests(unittest.TestCase):
         r = self.launch("T-001", "--stop")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.attempt()["status"], "error")
+        self.assertEqual(self.attempt()["stopReason"], "stopped")
+        self.assertTrue(self.attempt()["recovery"]["capturedAt"])
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and (run_task.alive(a["pid"]) or run_task.alive(child_pid)):
             time.sleep(0.2)
@@ -522,6 +524,7 @@ class RunTaskTests(unittest.TestCase):
         self.assertTrue(streamed, "tool output did not reach the log while the attempt was running")
         a = self.wait_state("error", timeout=45)
         self.assertIn("wall-clock timeout", a["note"] or "")
+        self.assertEqual(a["stopReason"], "timeout")
         self.assertTrue(child.exists(), "fake worker did not start its descendant")
         child_pid = int(child.read_text())
         deadline = time.monotonic() + 10
@@ -560,6 +563,9 @@ class RunTaskTests(unittest.TestCase):
         a = self.wait_state("error")
         self.assertEqual(a["exitCode"], 1)
         self.assertTrue(a["limitHit"])
+        self.assertEqual(a["limitKind"], "quota")
+        self.assertTrue(a["limitPhrase"])
+        self.assertEqual(a["stopReason"], "limit")
         self.assertTrue(Path(a["log"]).is_file())
 
     def test_successful_report_mentioning_quota_is_not_a_limit(self):
@@ -632,6 +638,7 @@ class RunTaskTests(unittest.TestCase):
         a = self.wait_state("error")
         self.assertEqual(a["exitCode"], 0)
         self.assertIn("worktree copy", a["note"])
+        self.assertEqual(a["stopReason"], "verification")
         r = self.launch("T-001", "--recheck")  # cause not fixed yet
         self.assertEqual(r.returncode, 1)
         main_task = self.flow / "tasks" / "T-001-probe.md"
@@ -639,6 +646,186 @@ class RunTaskTests(unittest.TestCase):
         r = self.launch("T-001", "--recheck")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.attempt()["status"], "exited")
+
+    # --- recovery: classification, draft capture, takeover, Resume --------------------------------------------------
+    def test_failed_attempt_captures_drafts_and_hands_over(self):
+        """An implementation failure records its classified end plus the worktree's draft state (paths,
+        never contents); the next attempt's record and prompt carry the recovery handover."""
+        (self.wt / "src").mkdir()
+        (self.wt / "src" / "a.txt").write_text("base\n", encoding="utf-8")
+        test_endcheck.git(self.wt, "add", "src/a.txt")
+        test_endcheck.git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\n'
+                        'echo changed>> "%CD%\\src\\a.txt"\r\necho new> "%CD%\\draft-note.txt"\r\nexit /b 2',
+                        'if [ "$1" = "auth" ]; then exit 0; fi\n'
+                        'echo changed >> "$PWD/src/a.txt"\necho new > "$PWD/draft-note.txt"\nexit 2')
+        self.assertEqual(self.launch("T-001", "devin").returncode, 0)
+        a = self.wait_state("error")
+        self.assertEqual(a["stopReason"], "implementation")
+        self.assertFalse(a["limitHit"])
+        repo = a["recovery"]["repos"][0]
+        self.assertEqual(repo["branch"], "t-001-probe")
+        self.assertTrue(repo["head"])
+        self.assertIn("src/a.txt", repo["modified"])
+        self.assertIn("draft-note.txt", repo["untracked"])
+        self.assertFalse(a["recovery"]["hasResult"])
+        # the successor sees the handover: on its record and inside the prompt it receives
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\necho args: %*\r\nexit /b 0',
+                        'if [ "$1" = "auth" ]; then exit 0; fi\necho "args: $*"\nexit 0')
+        self.assertEqual(self.launch("T-001", "devin").returncode, 0)
+        a = self.wait_state("exited")
+        self.assertIn("Recovery handover", a["handover"])
+        self.assertIn("'implementation'", a["handover"])
+        self.assertIn("1 modified + 1 untracked", a["handover"])
+        self.assertIn("Recovery handover", Path(a["log"]).read_text(encoding="utf-8", errors="replace"))
+        self.assertEqual(a["stopReason"], "completed")
+        self.assertNotIn("recovery", a)  # a completed attempt carries no recovery record
+
+    def test_a_dead_workers_attempt_recovers_and_the_successor_is_told(self):
+        """A worker process that died without a final state is closed as 'dead' with a recovery record;
+        the draft is preserved and the next attempt is told what happened."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        start = run_task.pid_start(p.pid)
+        p.kill()
+        p.wait()
+        att = {"n": 1, "tool": "devin", "manual": False, "status": "running",
+               "pid": p.pid, "pidStart": start, "taskId": "T-001", "log": None}
+        self.rt_file.parent.mkdir(exist_ok=True)
+        self.rt_file.write_text(json.dumps({"taskId": "T-001", "attempts": [att]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-001", "--status", "in progress")
+        (self.wt / "draft.txt").write_text("kept\n", encoding="utf-8")
+        self.fake_devin("exit /b 0", "exit 0")
+        self.assertEqual(self.launch("T-001", "devin").returncode, 0)
+        attempts = json.loads(self.rt_file.read_text(encoding="utf-8-sig"))["attempts"]
+        self.assertEqual(len(attempts), 2)
+        old, new = attempts
+        self.assertEqual(old["status"], "error")
+        self.assertEqual(old["stopReason"], "dead")
+        self.assertIn("draft.txt", old["recovery"]["repos"][0]["untracked"])
+        self.assertIn("'dead'", new["handover"])
+        self.assertTrue((self.wt / "draft.txt").exists(), "the draft must survive the takeover")
+        self.wait_state("exited")
+
+    def test_orphaned_descendant_blocks_the_next_launch(self):
+        """A managed child that outlives its worker keeps the task locked: the next launch refuses while
+        it runs and proceeds once it is gone (POSIX: session scan; Windows: the worker's job object)."""
+        child = Path(self.tmp.name) / "orphan.pid"
+        spawn = ("import subprocess,sys;"
+                 "c=subprocess.Popen([sys.executable,'-c','import time;time.sleep(120)']);"
+                 f"open({str(child)!r},'w').write(str(c.pid))")
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\n' + f'"{sys.executable}" -c "{spawn}"\r\nexit /b 0',
+                        'if [ "$1" = "auth" ]; then exit 0; fi\n' + f'"{sys.executable}" -c "{spawn}"\nexit 0')
+        self.assertEqual(self.launch("T-001", "devin").returncode, 0)
+        self.wait_state("exited")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not child.exists():
+            time.sleep(0.1)
+        self.assertTrue(child.exists(), "fake worker did not leave its orphan")
+        child_pid = int(child.read_text())
+        try:
+            r = self.launch("T-001", "devin")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("managed processes", r.stdout + r.stderr)
+            self.assertEqual(len(json.loads(self.rt_file.read_text())["attempts"]), 1)
+        finally:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(child_pid), "/F"], capture_output=True)
+            else:
+                os.kill(child_pid, 9)
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.wait_state("exited")
+
+    def test_resume_sha_keeps_drafts_bad_sha_refuses_and_start_fresh_resets(self):
+        """`Resume: <sha>` continues the preserved worktree (the commit must be an ancestor - drafts are
+        never silently discarded); `Resume: start fresh` resets and cleans only this worktree."""
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\necho draft> "%CD%\\draft.txt"\r\nexit /b 2',
+                        'if [ "$1" = "auth" ]; then exit 0; fi\necho draft > "$PWD/draft.txt"\nexit 2')
+        self.assertEqual(self.launch("T-001", "devin").returncode, 0)
+        self.wait_state("error")
+        task = self.flow / "tasks" / "T-001-probe.md"
+        src = task.read_text(encoding="utf-8")
+
+        def resume(value):
+            task.write_text(src.replace("Resume: none", f"Resume: {value}"), encoding="utf-8")
+
+        test_endcheck.git(self.root, "-c", "user.name=t", "-c", "user.email=t@t",
+                          "commit", "--allow-empty", "-qm", "elsewhere")
+        off_branch = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                                             text=True).strip()
+        resume(off_branch)
+        r = self.launch("T-001", "--manual")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not an ancestor", r.stdout + r.stderr)
+        self.assertTrue((self.wt / "draft.txt").exists())
+        head = subprocess.check_output(["git", "-C", str(self.wt), "rev-parse", "HEAD"], text=True).strip()
+        resume(head)
+        self.assertEqual(self.launch("T-001", "--manual").returncode, 0)
+        self.assertTrue((self.wt / "draft.txt").exists(), "Resume: <sha> must keep the draft")
+        self.assertIn("'implementation'", self.attempt()["handover"])
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        (self.wt / "draft.txt").write_text("draft again\n", encoding="utf-8")
+        (self.wt / "src").mkdir(exist_ok=True)
+        (self.wt / "src" / "a.txt").write_text("dirty\n", encoding="utf-8")  # untracked + nothing tracked
+        resume("start fresh")
+        self.assertEqual(self.launch("T-001", "--manual").returncode, 0)
+        self.assertFalse((self.wt / "draft.txt").exists())
+        self.assertFalse((self.wt / "src" / "a.txt").exists())
+        self.assertEqual(subprocess.run(["git", "-C", str(self.wt), "status", "--porcelain"],
+                                        capture_output=True, text=True).stdout.strip(), "")
+        self.assertIn("start fresh", self.attempt()["handover"])
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+
+    def test_group_scoped_limit_blocks_and_quota_group_is_recorded(self):
+        """A '<tool>:<group>' hold applies only to that quota group; the attempt records the group its
+        tool+model consumes so a successor on another group is not blocked."""
+        (self.flow / "docs").mkdir(exist_ok=True)
+        (self.flow / "docs" / "model-options.json").write_text(json.dumps({
+            "policy": "test", "options": {
+                "devin": {"tool": "devin", "quota_group": "dv"},
+                "devin-9": {"tool": "devin", "model_by_effort": {"high": "test-model-9"},
+                            "quota_group": "dg"}}}), encoding="utf-8")
+        task = self.flow / "tasks" / "T-001-probe.md"
+        task.write_text(task.read_text(encoding="utf-8")
+                        .replace("Tool: devin", "Tool: devin\nModel: test-model-9"), encoding="utf-8")
+        lim = self.flow / "tasks" / ".runtime" / "tool-limits.json"
+        lim.parent.mkdir(exist_ok=True)
+        until = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
+        rec = {"until": until, "reason": "test", "at": until}
+        self.fake_devin("exit /b 0", "exit 0")
+        lim.write_text(json.dumps({"devin:dg": rec}), encoding="utf-8")
+        r = self.launch("T-001", "devin")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("devin group dg is limited", r.stdout + r.stderr)
+        lim.write_text(json.dumps({"devin:other": rec}), encoding="utf-8")  # another group's hold stays out
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.wait_state("exited")
+        self.assertEqual(a["quotaGroup"], "dg")
+        self.assertEqual(a["resourceCheck"]["quotaGroup"], "dg")
+
+    def test_tool_wide_limit_names_the_tool_not_the_sessions_group(self):
+        """A bare '<tool>' hold blocks every session of that tool, and the refusal names the
+        tool-wide hold - not the session's own quota group."""
+        (self.flow / "docs").mkdir(exist_ok=True)
+        (self.flow / "docs" / "model-options.json").write_text(json.dumps({
+            "policy": "test", "options": {
+                "devin": {"tool": "devin", "quota_group": "dv"},
+                "devin-9": {"tool": "devin", "model_by_effort": {"high": "test-model-9"},
+                            "quota_group": "dg"}}}), encoding="utf-8")
+        task = self.flow / "tasks" / "T-001-probe.md"
+        task.write_text(task.read_text(encoding="utf-8")
+                        .replace("Tool: devin", "Tool: devin\nModel: test-model-9"), encoding="utf-8")
+        lim = self.flow / "tasks" / ".runtime" / "tool-limits.json"
+        lim.parent.mkdir(exist_ok=True)
+        until = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
+        self.fake_devin("exit /b 0", "exit 0")
+        lim.write_text(json.dumps({"devin": {"until": until, "reason": "test", "at": until}}),
+                       encoding="utf-8")
+        r = self.launch("T-001", "devin")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("devin is limited until", r.stdout + r.stderr)
+        self.assertNotIn("devin group dg is limited", r.stdout + r.stderr)
 
     # --- resource and permission preflight ----------------------------------------------------------------------
     def test_missing_executable_refuses_before_anything_is_created(self):

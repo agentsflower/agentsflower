@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger  # noqa: E402
+import quota_groups  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT, WORKSPACE_FILE  # noqa: E402
 
 ROOT = REPO_ROOT
@@ -209,7 +210,11 @@ def parse(tid):
         t["env"]["PORT"] = m.group(1)
 
     role = t["role"]
+    t["tool"] = field(head, "Tool")
+    rv = (field(head, "Resume") or "").strip()
+    t["resume"] = None if not rv or rv.lower() == "none" else rv
     t["model"], t["effort"] = parse_model(field(head, "Model"))
+    t["quotaGroup"] = quota_groups.group_for(t["tool"], t["model"])
     if role in ("tester", "deployer") and (tg := field(head, "Target")):
         if tg not in ("staging", "prod"):
             raise TaskError(f"Target '{tg}': expected staging or prod")
@@ -311,6 +316,8 @@ def preflight(tid, manual, live, tool=None):
         t = parse(tid)
     except TaskError as e:
         return None, [str(e)]
+    if tool and tool != t["tool"]:   # the launch tool decides which quota group the session consumes
+        t["quotaGroup"] = quota_groups.group_for(tool, t["model"])
     tpl = (TASKS / "_template.md").read_text(encoding="utf-8-sig")
     led = ledger_rows()
     status = {k: v.get("Status", "") for k, v in led.items()}

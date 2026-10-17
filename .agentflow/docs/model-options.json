@@ -68,6 +68,15 @@
       "examples": ["redesign a subsystem", "investigate a systemic race", "review a risky migration"],
       "quota_group": "codex"
     },
+    "agy": {
+      "tool": "agy",
+      "model_by_effort": {"low": "gemini-3.8-flash-low", "medium": "gemini-3.8-flash-medium", "high": "gemini-3.8-flash-high"},
+      "default_effort": "medium",
+      "roles": ["developer", "tester", "orchestrator"],
+      "what": "The Antigravity CLI's own default model (Gemini family): what an agy session consumes when a task names no model and what a background Orchestrator session runs",
+      "not_for": "tasks that must bind a recorded concrete model",
+      "quota_group": "agy-gemini"
+    },
     "agy-gemini-3.8-flash": {
       "tool": "agy",
       "model_by_effort": {"low": "gemini-3.8-flash-low", "medium": "gemini-3.8-flash-medium", "high": "gemini-3.8-flash-high"},
