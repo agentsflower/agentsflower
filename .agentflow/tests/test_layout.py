@@ -100,7 +100,7 @@ class LayoutTests(unittest.TestCase):
         commit = "e849d7c"
         with patch.object(dashboard, "git", side_effect=[f"{commit}\t2026-10-06T00:00:00+03:00\tlayout", "", old_ledger]) as git_mock:
             timeline, _, _ = dashboard.history()
-        self.assertEqual(timeline["T-900"][0][1], "В очереди")
+        self.assertEqual(timeline["T-900"][0][1], "Ready")
         self.assertEqual(git_mock.call_args_list[-1].args, ("show", f"{commit}:state/tasks.md"))
 
     def test_task_history_does_not_double_prefix_new_paths(self):

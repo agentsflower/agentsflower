@@ -67,3 +67,73 @@ class RouteReportTests(unittest.TestCase):
         self.assertEqual(result["groups"][0]["tasks"], 1)
         self.assertEqual(result["tasks"][0]["project"], str(installed.resolve()))
         self.assertIn(str(missing.resolve()), result["errors"])
+
+
+def write(runtime, name, value):
+    (runtime / name).write_text(json.dumps(value), encoding="utf-8")
+
+
+class MetricsTests(unittest.TestCase):
+    def test_first_pass_uses_first_verify_record_not_a_later_pass(self):
+        """A fail followed by a pass is not a first-pass: only record #1 counts."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write(root, "T-1.verify.json", [{"n": 1, "ok": False}, {"n": 2, "ok": True}])
+            write(root, "T-1.json", {"attempts": [{"tool": "codex", "status": "exited"}]})
+            rows = {"T-1": {"Role": "developer", "Status": "done", "Tool": "codex"}}
+            result = route_report.metrics(rows, root)
+        self.assertEqual(result["firstPassGateRate"],
+                         [{"role": "developer", "tool": "codex", "tasks": 1, "firstVerifyPass": 0}])
+
+    def test_tasks_without_evidence_are_not_failures(self):
+        """No verify file: excluded from the denominator, counted as missing evidence."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rows = {"T-1": {"Role": "developer", "Status": "done", "Tool": "codex"},
+                    "T-2": {"Role": "developer", "Status": "in progress", "Tool": "devin"}}
+            result = route_report.metrics(rows, root)
+        self.assertEqual(result["firstPassGateRate"], [])
+        self.assertEqual(result["tasksWithoutEvidence"], 2)
+
+    def test_denominator_groups_by_recorded_role_and_tool(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for tid, ok in (("T-1", True), ("T-2", False), ("T-3", True)):
+                write(root, f"{tid}.verify.json", [{"n": 1, "ok": ok}])
+                write(root, f"{tid}.json", {"attempts": [{"tool": "devin"}]})
+            rows = {"T-1": {"Role": "developer", "Status": "done"},
+                    "T-2": {"Role": "developer", "Status": "done"},
+                    "T-3": {"Role": "tester", "Status": "done"}}
+            with patch.object(route_report, "_tester_verdict", return_value="pass"):
+                result = route_report.metrics(rows, root)
+        groups = {(g["role"], g["tool"]): g for g in result["firstPassGateRate"]}
+        self.assertEqual(groups[("developer", "devin")]["tasks"], 2)
+        self.assertEqual(groups[("developer", "devin")]["firstVerifyPass"], 1)
+        self.assertEqual(groups[("tester", "devin")]["firstVerifyPass"], 1)
+
+    def test_fail_verdict_is_a_valid_negative_report_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rows = {"T-1": {"Role": "tester", "Status": "done"},
+                    "T-2": {"Role": "tester", "Status": "done"}}
+            verdicts = iter(["fail", "pass"])
+            with patch.object(route_report, "_tester_verdict", side_effect=lambda tid: next(verdicts)):
+                result = route_report.metrics(rows, root)
+        self.assertEqual(result["testerVerdicts"], {"fail": 1, "pass": 1})
+
+    def test_lead_time_is_none_without_attempt_history(self):
+        self.assertIsNone(route_report.lead_seconds([]))
+        self.assertIsNone(route_report.lead_seconds([{"tool": "codex"}]))
+        self.assertIsNone(route_report.lead_seconds(
+            [{"startedAt": "2026-10-12T10:00:00Z"}]))
+        self.assertEqual(route_report.lead_seconds(
+            [{"startedAt": "2026-10-12T10:00:00Z", "finishedAt": "2026-10-12T10:30:00Z"}]), 1800.0)
+
+    def test_fresh_clone_reports_absence_honestly(self):
+        """Empty runtime: no zero or invented metrics; cost is N/A, not a number."""
+        with tempfile.TemporaryDirectory() as temp:
+            result = route_report.metrics({"T-1": {"Role": "developer", "Status": "done"}}, Path(temp))
+        self.assertEqual(result["firstPassGateRate"], [])
+        self.assertEqual(result["leadSeconds"], [])
+        self.assertIsNone(result["cost"])
+        self.assertIn("N/A", result["definitions"]["cost"])

@@ -102,6 +102,93 @@ def report(rows=None, runtime=None):
     return aggregate(tasks)
 
 
+def _isots(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def lead_seconds(attempts):
+    """First attempt startedAt -> last attempt finishedAt; None when any endpoint is missing."""
+    times = [t for a in attempts if isinstance(a, dict)
+             for t in (_isots(a.get("startedAt")), _isots(a.get("finishedAt")))]
+    if not attempts or len(times) < 2 * len(attempts) or any(t is None for t in times):
+        return None
+    return round(max(0.0, (times[-1] - times[0]).total_seconds()), 1)
+
+
+def _tester_verdict(tid):
+    try:
+        return gate.result_field(gate.parse(tid), "Verdict") or "none-recorded"
+    except (gate.TaskError, OSError, ValueError):
+        return "none-recorded"
+
+
+DEFINITIONS = {
+    "firstPassGateRate": "First recorded `gate.py verify` result per task (.agentflow/tasks/.runtime/T-NNN.verify.json "
+                         "record #1, field `ok`). A later PASS never rewrites the first attempt. Denominator: only tasks "
+                         "with at least one verify record; tasks without records are counted in tasksWithoutEvidence, "
+                         "never as failures.",
+    "attempts": "Launcher attempts recorded in .agentflow/tasks/.runtime/T-NNN.json.",
+    "routingOutcomes": "Jev route recommendations (T-NNN.route.json) vs the tool of the last recorded attempt and the "
+                       "final ledger Status. Descriptive only; no causal model-quality or efficiency claim.",
+    "leadSeconds": "Last attempt finishedAt minus first attempt startedAt. null (N/A) when attempt history or "
+                   "timestamps are missing; zero is never substituted for missing evidence.",
+    "testerVerdicts": "Verdict line of tester Task Files. pass / partial / unverified / fail are all valid reports: a "
+                      "fail verdict is a completed negative review, not a worker failure.",
+    "cost": "Token, context and cost telemetry is not recorded by AgentFlow tools; reported as N/A.",
+}
+
+
+def metrics(rows=None, runtime=None):
+    """Evidence-based metrics over the ledger and runtime records; missing evidence is N/A, not zero."""
+    rows = gate.ledger_rows() if rows is None else rows
+    runtime = FLOW_ROOT / "tasks" / ".runtime" if runtime is None else Path(runtime)
+    gate_groups = defaultdict(lambda: {"tasks": 0, "firstVerifyPass": 0})
+    lead_groups = defaultdict(list)
+    verdicts = defaultdict(int)
+    no_evidence = 0
+    for tid, row in rows.items():
+        role = row.get("Role") or "unknown"
+        record = read_json(runtime / f"{tid}.json", {})
+        attempts = record.get("attempts", []) if isinstance(record, dict) else []
+        attempts = [a for a in attempts if isinstance(a, dict)] if isinstance(attempts, list) else []
+        tool = (attempts[-1].get("tool") if attempts else None) or row.get("Tool") or "unknown"
+        records = read_json(runtime / f"{tid}.verify.json", [])
+        records = [r for r in records if isinstance(r, dict)] if isinstance(records, list) else []
+        if records:
+            group = gate_groups[(role, tool)]
+            group["tasks"] += 1
+            group["firstVerifyPass"] += int(bool(records[0].get("ok")))
+        else:
+            no_evidence += 1
+        lead = lead_seconds(attempts)
+        if lead is not None:
+            lead_groups[(role, tool)].append(lead)
+        if role == "tester":
+            verdicts[_tester_verdict(tid)] += 1
+    return {
+        "definitions": DEFINITIONS,
+        "firstPassGateRate": [{"role": role, "tool": tool, **counts}
+                              for (role, tool), counts in sorted(gate_groups.items())],
+        "tasksWithoutEvidence": no_evidence,
+        "leadSeconds": [{"role": role, "tool": tool, "tasks": len(vals),
+                         "median": _median(vals), "min": min(vals), "max": max(vals)}
+                        for (role, tool), vals in sorted(lead_groups.items())],
+        "testerVerdicts": dict(sorted(verdicts.items())),
+        "cost": None,
+        "note": "Counts are descriptive evidence only. Missing history, runtime, cost or token telemetry is reported "
+                "as N/A; nothing here proves model quality or savings.",
+    }
+
+
+def _median(vals):
+    vals = sorted(vals)
+    n = len(vals)
+    return vals[n // 2] if n % 2 else round((vals[n // 2 - 1] + vals[n // 2]) / 2, 1)
+
+
 def report_all(projects=None, runner=subprocess.run):
     roots = projects if projects is not None else machine_capacity.known_projects()
     tasks, errors = [], {}
@@ -130,6 +217,9 @@ def main():
     parser.add_argument("--all-projects", action="store_true", help="combine installed projects using this report version")
     args = parser.parse_args()
     result = report_all() if args.all_projects else report()
+    m = metrics() if not args.all_projects else None
+    if m is not None:
+        result["metrics"] = m
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
@@ -138,6 +228,10 @@ def main():
             print(f"{group['role']} / {group['complexityBand']} / {group['primaryModel']}: "
                   f"{group['acceptedPass']}/{group['tasks']} accepted pass, "
                   f"{group['firstAttemptPass']} first-attempt pass, {group['backupUsed']} used backup")
+        if m is not None:
+            for g in m["firstPassGateRate"]:
+                print(f"first-pass gate rate {g['role']} / {g['tool']}: {g['firstVerifyPass']}/{g['tasks']}")
+            print(f"tasks without gate evidence: {m['tasksWithoutEvidence']}")
         print(result["note"])
 
 
