@@ -32,3 +32,5 @@ no scope/decision changes beyond contracts. Verified facts go to handoff/session
 log; design choices already dated in decisions.md. New human decisions -> questions.
 Root observes only while background holds heartbeat. Product URLs requested in
 chat may arrive; otherwise do not guess. Current-step/ledger are authoritative.
+
+Background session devin-background, 2026-10-17 07:35 UTC: T-003 dev completed 1849b2bf; wrote and launched Tester T-004 (devin, swe-2-medium) - awaiting verdict; pass is auto-accepted by next tick. Misnumbered T-027 cancelled unused. Waits: T-005 on T-003, T-007 on T-005, T-010 on T-007+T-008+T-026.
