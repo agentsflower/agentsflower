@@ -1,13 +1,64 @@
 # AgentFlow
 
+[![CI](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.12.0-blue.svg)](CHANGELOG.md)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![MCP ready](https://img.shields.io/badge/MCP-optional%20server-green.svg)](#mcp-server-optional)
+
 Project memory and four agent roles for running one software project with several AI coding sessions (Claude Code, Codex CLI, Antigravity, Devin) without losing state or overwriting each other's work.
 
-- **Orchestrator**: one session that splits the goal into tasks, launches workers, accepts results on evidence, and is the only writer of project memory.
-- **Developer, Tester, Deployer**: fresh sessions, one task each, started through `.agentflow/tools/run-task.ps1`.
+## Why
 
-All rules live in one file, [.agentflow/docs/ai-handoff-protocol.md](.agentflow/docs/ai-handoff-protocol.md). Everything else points there.
+Multi-agent coding fails in predictable ways: context drifts between sessions, parallel workers collide on the same files, and "done" gets reported without evidence. AgentFlow answers each failure with a small mechanism instead of a big framework:
 
-Everything AgentFlow puts into a project lives in one folder, `.agentflow/`, so it never collides with the project's own `docs/`, `tasks/` or `tools/`. The project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`; existing files keep their content.
+- **Context drift** → one canonical project memory with a single writer. All rules live in one file, [.agentflow/docs/ai-handoff-protocol.md](.agentflow/docs/ai-handoff-protocol.md); everything else points there.
+- **File collisions** → each task is one Task File, one branch, one isolated git worktree, one fresh session.
+- **Hallucinated done** → acceptance runs the task's own `## Checks` verbatim through `gate.py`; only then does `accept.py` merge and update the Task Ledger.
+
+Everything AgentFlow puts into a project lives in one folder, `.agentflow/`, so it never collides with the project's own `docs/`, `tasks/` or `tools/`. The project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`; existing files keep their content. The core is Python 3.10+ stdlib only — no third-party runtime dependencies.
+
+## How it works
+
+```mermaid
+flowchart LR
+    O[Orchestrator<br/>only writer of<br/>project memory] -->|writes| TF[Task File<br/>contract: role, files,<br/>checks, criteria]
+    TF -->|run_task.py / agentflow run| D[Developer<br/>fresh session,<br/>isolated worktree]
+    TF -->|Verifies: SHA| T[Tester<br/>disposable checkout,<br/>changes nothing]
+    D -->|Result + one commit| G[gate.py<br/>preflight / verify:<br/>checks run verbatim]
+    T -->|Verdict| G
+    G -->|pass| A[accept.py<br/>merge + Task Ledger<br/>worktree cleanup]
+    A -->|accepted SHA| DP[Deployer<br/>manual launch,<br/>deploys after the<br/>human's yes]
+    O -->|reads evidence| A
+```
+
+The Orchestrator splits the goal into task contracts, launches workers and accepts results on evidence; it is the only writer of project memory. Developers and Testers each work on an isolated artifact (worktree / disposable checkout); the Deployer consumes only an accepted SHA and starts manually after human approval. Isolation is by git worktree plus post-attempt checks — not a universal sandbox guarantee for every tool.
+
+## Battle-tested in production
+
+AgentFlow was built and is used to maintain real AI products. Maintainer-attested figures, October 2026:
+
+| Product | Scale | Store rating |
+|---|---|---|
+| [NotebookLM AI Sidebar](https://aisidebar.app) | 80,000+ users | 4.7/5 · 111 ratings · Google Featured |
+| Export Chat from Gemini to Word | 4,000+ users | 4.8/5 · 38 ratings · Google Featured |
+| YouTube Transcript extension | 1,600+ users | — |
+| AI Home Design | full-stack Generative AI SaaS in production | — |
+
+The combined "85,000+ users" headline is an aggregate snapshot across these listings, not a count of deduplicated unique people. Store listing links are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md); figures not independently re-measured are labeled as attested.
+
+## Dashboard
+
+```bash
+python .agentflow/dashboard/build.py          # real view -> .agentflow/dashboard/out/
+python .agentflow/dashboard/build.py --demo   # deterministic fixture, marked DEMO DATA
+```
+
+A read-only view for the human: task table, filters, Gantt, timeline, and evidence metrics (first-pass gate rate, lead time, verdict counts). Missing telemetry is shown as N/A — never a zero or an invented saving.
+
+![AgentFlow dashboard](.agentflow/docs/assets/dashboard.png)
+
+*Screenshot: this repository's own development dashboard — real task data, captured locally.*
 
 ## Contents
 
@@ -17,25 +68,49 @@ Everything AgentFlow puts into a project lives in one folder, `.agentflow/`, so 
 | `.agentflow/roles/` | one instruction file per role; `tool-routing.md`: which tool takes which task |
 | `.agentflow/commands/` | slash-command texts (`.claude/commands/` holds one-line pointers) |
 | `.agentflow/tasks/_template.md` | Task File template |
-| `.agentflow/tools/` | `install.py` installer and updater, `run-task.ps1` launcher, `gate.py` preflight / verify / Stage check, `accept.py` acceptance (verify, merge, ledger, cleanup), `ledger.py` Task Ledger |
-| `.agentflow/dashboard/` | read-only view for the human: task table, filters, Gantt, timeline (`python .agentflow/dashboard/build.py`) |
+| `.agentflow/tools/` | `install.py` installer/updater, `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified CLI, `gate.py` preflight/verify, `accept.py` acceptance, `ledger.py` Task Ledger, `mcp_server.py` optional MCP server |
+| `.agentflow/dashboard/` | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `.agentflow/tests/` | tests of the tools (`python -m unittest discover -s .agentflow/tests`) |
 | `.agentflow/VERSION`, `.agentflow/README.md` | version and folder map |
 | `AGENTS.md`, `CLAUDE.md`, `.claude/commands/` | entry points for the tools |
-| `GUIDE.md` | step-by-step guide (Russian): install, update, machine setup, daily use |
-| `CHANGELOG.md` | what changed in each version |
+| `GUIDE.md` | step-by-step guide: install, update, machine setup, daily use ([Russian version](GUIDE.ru.md)) |
+| `CHANGELOG.md`, `RELEASE_NOTES.md` | what changed in each version; latest release notes |
+| `.github/workflows/ci.yml` | CI matrix: ubuntu/macos/windows × Python 3.10–3.12 |
 
 The template's own memory (`.agentflow/state/`, `.agentflow/docs/project-plan.md`) describes the development of AgentFlow itself and is never copied into a project.
 
-Requirements: git, Python 3, PowerShell 7 on Windows, and the CLIs of the tools you use.
+Requirements: git, Python 3.10+, and the CLIs of the tools you use. PowerShell 7 only on Windows (compatibility wrapper and optional conductor). The conductor/autostart helpers are Windows-only.
 
-## Start
+## Quick start
 
-```powershell
-python <AgentFlow>\.agentflow\tools\install.py <project> --dry-run   # see what would change
-python <AgentFlow>\.agentflow\tools\install.py <project>             # install (later: --update)
+```bash
+python <AgentFlow>/.agentflow/tools/install.py <project> --dry-run   # see what would change
+python <AgentFlow>/.agentflow/tools/install.py <project>             # install (later: --update)
+```
+
+Or build the local package for the `agentflow` command (source install, not on PyPI):
+
+```bash
+python -m pip install build && python -m build
+python -m pip install dist/agentflow_sdlc-*.whl
+agentflow install <project>
 ```
 
 Then follow [GUIDE.md](GUIDE.md). In Claude Code the Orchestrator starts with `/start-role orchestrator` and your goal; a session without a role uses `/start-session`.
+
+## MCP server (optional)
+
+Expose project state to Claude Code, Cursor or any MCP client over stdio:
+
+```bash
+python -m pip install "agentflow-sdlc[mcp]"   # official SDK, opt-in extra
+python .agentflow/tools/install.py <project> --update --mcp
+```
+
+Read-only tools by default; `agentflow_accept_task` only behind the explicit operator flag `--enable-orchestrator-tools`. The core tools never need the SDK.
+
+## Verification status
+
+Local evidence: Windows and Linux test-suite runs are recorded in [.agentflow/docs/release-validation.md](.agentflow/docs/release-validation.md). The nine-job GitHub Actions matrix exists but is a separate release gate — there is no remote run or green macOS result yet, and none is claimed here.
 
 License: MIT.

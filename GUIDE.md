@@ -1,304 +1,213 @@
-# Инструкция: как пользоваться AgentFlow
+# Guide: how to use AgentFlow
 
-Шаблон памяти проекта с командой агентов: оркестратор, разработчик, тестировщик, деплоер. Как это устроено внутри — [README](README.md) и [протокол](.agentflow/docs/ai-handoff-protocol.md). Здесь только «что нажать и что ввести».
+A project-memory template with a team of agent roles: Orchestrator, Developer, Tester, Deployer. How it works inside: [README](README.md) and the [protocol](.agentflow/docs/ai-handoff-protocol.md). This file is only "what to type and where to click". A Russian version of this guide: [GUIDE.ru.md](GUIDE.ru.md).
 
-Шаблон — папка, куда склонирован этот репозиторий. Ниже она обозначена `<AgentFlow>`: подставь свой путь. Всё, что AgentFlow кладёт в проект, лежит в одной папке `.agentflow/`; в корне проекта появляются только маленькие указатели (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) и блок в `.gitignore`. Свои `docs/`, `tasks/`, `tools/` проекта не трогаются.
+The *template* is the folder where you cloned this repository, written below as `<AgentFlow>` — substitute your own path. Everything AgentFlow puts into a project lives in one folder, `.agentflow/`; the project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`. A project's own `docs/`, `tasks/`, `tools/` are never touched.
 
-Нужно на машине: git, Python 3, PowerShell 7, и те CLI, которыми будут работать исполнители (`claude`, `codex`, `agy`, `devin`).
+Requirements on the machine: git, Python 3.10+ (stdlib only — no third-party runtime dependencies), and the CLIs of the tools your workers will use (`claude`, `codex`, `agy`, `devin`). PowerShell 7 is needed only on Windows for the compatibility wrapper `run-task.ps1` and the optional conductor; the launcher itself is `run_task.py` (pure Python, cross-platform).
 
 ---
 
-# Часть 1. Установка
+# Part 1. Installation
 
-| Что в папке проекта | Вариант |
+| Your project folder | Path |
 |---|---|
-| Пусто, форк или существующий код без AgentFlow (даже если есть свои `AGENTS.md`, `tasks/`, `tools/`) | [А. Установить](#а-установить) |
-| Папка с несколькими репозиториями (например `code\` с `aihd-backend\`, `aihd-web\`…) | [А2. Несколько репозиториев](#а2-несколько-репозиториев) |
-| Уже есть `.agentflow/` | [Б. Обновить](#б-обновить) |
-| Старая версия 2.1: `docs/ai-handoff-protocol.md`, `tools/gate.py` в корне | [В. Переход со старой раскладки](#в-переход-со-старой-раскладки) |
+| Empty, a fork, or existing code without AgentFlow (its own `AGENTS.md`, `tasks/`, `tools/` are fine) | [A. Install](#a-install) |
+| One folder holding several repositories (a workspace, e.g. `code/` with `backend/`, `web/`…) | [A2. Workspace](#a2-workspace) |
+| `.agentflow/` already installed | [B. Update](#b-update) |
+| Old 2.1 layout: `docs/ai-handoff-protocol.md`, `tools/gate.py` at the root | [C. Migrate the old layout](#c-migrate-the-old-layout) |
+| You want the `agentflow` command | [D. Install from a package](#d-install-from-a-package) |
+| You want the MCP server in your IDE | [E. MCP server](#e-mcp-server-optional) |
 
-## А. Установить
+## A. Install
 
-### Шаг 1. Git
+### Step 1. Git
 
-Агентам нужен git с основной веткой и хотя бы одним коммитом, а установщик ставит шаблон только в **корень** git-репозитория. Для папки с несколькими репозиториями — [А2](#а2-несколько-репозиториев).
+The agents need git with a main branch and at least one commit, and the installer writes the template only into the **root** of a git repository. For a folder with several repositories see [A2](#a2-workspace).
 
-Пустая папка:
+Empty folder:
 
-```powershell
-cd D:\путь\к\проекту
+```bash
+cd /path/to/project          # Windows: cd D:\path\to\project
 git init -b main
 git commit --allow-empty -m "init"
 ```
 
-Существующий репозиторий: проверь, что всё закоммичено (`git status`), и создай ветку под установку: `git switch -c chore/agentflow`.
+Existing repository: commit everything (`git status`), then make an install branch: `git switch -c chore/agentflow`.
 
-### Шаг 2. Посмотреть, что будет сделано
+### Step 2. Preview what will change
 
-```powershell
-python <AgentFlow>\.agentflow\tools\install.py D:\путь\к\проекту --dry-run
+```bash
+python <AgentFlow>/.agentflow/tools/install.py /path/to/project --dry-run
 ```
 
-Ожидаемый результат: список действий, ничего не записано. Ничего не удаляется; свои `AGENTS.md`, `CLAUDE.md`, `.gitignore` не переписываются — в конец добавляется блок между `agentflow:begin` и `agentflow:end`. Свой файл в `.claude\commands\` с тем же именем остаётся и попадает в список «kept».
+Expected result: a list of actions; nothing is written. The installer deletes nothing; if `AGENTS.md`, `CLAUDE.md` or `.gitignore` already exist, their content stays and the managed block goes between `agentflow:begin` and `agentflow:end`. One-line pointers appear under `.claude/commands/`; files that already exist are kept.
 
-### Шаг 3. Установить и заполнить
+If the project folder is inside a repository rather than at its root, add `--inside-repo`.
 
-```powershell
-python <AgentFlow>\.agentflow\tools\install.py D:\путь\к\проекту
+### Step 3. Install and finish the setup
+
+```bash
+python <AgentFlow>/.agentflow/tools/install.py /path/to/project
 ```
 
-Затем открой проект в VS Code, запусти Claude Code и введи (подставь папку для worktree — вне проекта и вне OneDrive):
+Then start a session in the project (Claude Code, VS Code, any tool) and ask it to finish the install — pick a worktrees folder outside cloud sync, e.g. `D:\tmp` or `~/worktrees`:
 
 ```text
 AgentFlow is installed in .agentflow/. Finish the install:
 .agentflow/docs/ai-handoff-protocol.md, section "Installing or updating AgentFlow", "Install".
-Worktrees folder: <D:\tmp>.
+Worktrees folder: <your worktrees folder>.
 ```
 
-Ожидаемый результат: заполнены `.agentflow/docs/project-rules.md` (основная ветка, папка worktree, `## Preflight`, `## Tool routing`) и `.agentflow/docs/project-plan.md` с реальными этапами; `python .agentflow/tools/ledger.py show` работает; один commit. Если Claude сказал, что тестовый конфиг может уйти на staging или прод, — это задача на исправление до начала работы.
+The session fills in `.agentflow/docs/project-rules.md` (main branch, worktrees folder, `## Preflight`, `## Tool routing`) and `.agentflow/docs/project-plan.md` for your project; `python .agentflow/tools/ledger.py show` creates the Task Ledger; one commit. If a tool reports that a test config reaches staging or production by default, that is a decision for you — the installer does not change it.
 
-## А2. Несколько репозиториев
+## A2. Workspace
 
-Папка-«рабочее пространство» (например `E:\Projects\AIHomeDesign\code`) с репозиториями внутри. Память AgentFlow лежит в корне этой папки, в маленьком отдельном git-репозитории, который хранит только файлы AgentFlow и `AGENTS.md`/`CLAUDE.md`; сами репозитории остаются независимыми и не меняются.
+A workspace is one folder holding several product repositories (for example `code/` with `backend/` and `web/`). AgentFlow installs into the workspace root, which is itself a small git repository tracking only AgentFlow files and the root entry points; product repositories stay untouched.
 
-```powershell
-python <AgentFlow>\.agentflow\tools\install.py E:\Projects\AIHomeDesign\code --workspace --git-init --dry-run
-python <AgentFlow>\.agentflow\tools\install.py E:\Projects\AIHomeDesign\code --workspace --git-init
+```bash
+python <AgentFlow>/.agentflow/tools/install.py /path/to/code --workspace --git-init --dry-run
+python <AgentFlow>/.agentflow/tools/install.py /path/to/code --workspace --git-init
 ```
 
-Ожидаемый результат: в корне появились `.git` (репозиторий памяти), `.agentflow\workspace.json` со списком репозиториев (найдены сами: вложенные папки со своим `.git`; другой список — `--repos a,b`), блок в `.gitignore`, который скрывает от репозитория памяти всё, кроме файлов AgentFlow (своё можно добавить строкой `!/путь` вне блока). Затем: `git add -A`, `git commit -m "chore: install AgentFlow"` в корне и дальше как в шаге 3 варианта А.
+Afterwards check: the root has `.git` (the memory repository), `.agentflow/workspace.json` lists the product repositories (default: child folders with `.git`; override with `--repos a,b`), and `.gitignore` does not exclude folders AgentFlow needs (a `!/<folder>` negation is added where required). Commit `git add -A && git commit -m "chore: install AgentFlow"` in the memory repository and finish step 3 of [A](#a-install).
 
-В задачах появляется поле `Repo:` (какие репозитории меняет задача); пути в задачах пишутся с папкой репозитория впереди: `aihd-web/src/...`. Задача сразу в двух репозиториях получает одну ветку в каждом и принимается целиком: `accept.py` сначала пробует слияние во всех без записи и только потом сливает. Каждый репозиторий по-прежнему можно вести и отдельно — тогда ставь AgentFlow в него, как в варианте А.
+Task Files in a workspace name `Repo:` (which repositories the task may change), and paths in `Allowed files`, `Do not touch` and `## Checks` start with the repository folder: `web/src/...`. Each task gets one worktree folder holding one worktree per repository it touches. Acceptance merges the same branch name into the main branch of every affected repository.
 
-## Б. Обновить
+## B. Update
 
-```powershell
-python <AgentFlow>\.agentflow\tools\install.py D:\путь\к\проекту --update --dry-run
-python <AgentFlow>\.agentflow\tools\install.py D:\путь\к\проекту --update
+```bash
+python <AgentFlow>/.agentflow/tools/install.py /path/to/project --update --dry-run
+python <AgentFlow>/.agentflow/tools/install.py /path/to/project --update
 ```
 
-Установщик заменяет только файлы шаблона и откажется, если ты правил их и не закоммитил. Файлы, которые проект сам положил в `.agentflow/` (например свой скрипт), остаются и показываются как «kept». Память (`.agentflow/state/`, план, правила проекта, задачи) не трогается. Потом в Claude Code:
+The update replaces template-owned files and refuses to run while they have uncommitted changes; files the project added inside `.agentflow/` are reported and kept. Memory (`.agentflow/state/`, Task Files, Project rules, the runbook) is never overwritten. In a Claude Code session:
 
 ```text
 AgentFlow was updated in .agentflow/. Finish the update:
 .agentflow/docs/ai-handoff-protocol.md, section "Installing or updating AgentFlow", "Update".
 ```
 
-Ожидаемый результат: `.agentflow/VERSION` совпадает с шаблоном, в `decisions.md` есть запись о переходе, один commit.
+Afterwards: `.agentflow/VERSION` is new, migration notes of the in-between CHANGELOG entries were applied to open Task Files and the ledger, a dated entry went into `decisions.md`, one commit.
 
-Шаблон и проекты сверяются сами. `install.py` записывает, откуда ставился проект, в `.agentflow/template-source.json`, а `machine_capacity.py` помнит все проекты, которые запускали исполнителей на этой машине. Сторож раз в день запускает `python .agentflow\tools\upstream.py --check` и шлёт уведомление, если проект разошёлся с шаблоном. Отчёт вручную: `python .agentflow\tools\upstream.py` — из проекта сверяется этот проект, из папки шаблона — все известные проекты. Файл, который отличается при той же версии, — кандидат на перенос в шаблон; в шаблон изменения вносятся обобщённо (без путей, лимитов и правил конкретного проекта — они живут в project-owned файлах), с записью в CHANGELOG и bump версии.
+## C. Migrate the old layout
 
-## В. Переход со старой раскладки
+Version 2.1 kept `docs/ai-handoff-protocol.md`, `tools/gate.py` and `tasks/` at the repository root. The installer refuses that layout and asks you to move your own files into `.agentflow/` first, then runs a normal install. The 2.1 memory layout maps to `.agentflow/state/` and `.agentflow/docs/`; version 2.1 had no `roles/`, `commands/` or `dashboard/`.
 
-Версия 2.1 лежала в корне (`docs/`, `roles/`, `state/`, `tasks/`, `tools/`, `dashboard/`). Установщик такой проект не трогает. Перенос делается одной задачей в Claude Code:
+## D. Install from a package
 
-```text
-Move AgentFlow 2.1 from the project root into .agentflow/ with git mv (docs/ai-handoff-protocol.md,
-docs/project-plan.md, roles/, state/, tasks/, tools/, dashboard/; .claude/commands/*.md -> .agentflow/commands/),
-keep project files that only share a folder name, then run
-python <AgentFlow>\.agentflow\tools\install.py . --update --dry-run and continue with "Update".
+The repository also builds a local distribution `agentflow-sdlc` (source install — it is not published on PyPI under this name):
+
+```bash
+python -m pip install build          # development tooling, one time
+python -m build                      # writes dist/agentflow_sdlc-<ver>-py3-none-any.whl and a .tar.gz
+python -m pip install dist/agentflow_sdlc-*.whl
+agentflow --version                  # equals .agentflow/VERSION
 ```
 
-## Г. Один раз: подготовить машину
+The wheel bundles the whole installer-owned template under `agentflow/template/`, so the `agentflow` command works from any directory:
 
-1. **Python.** Если `python` открывает Microsoft Store: Параметры → Приложения → Псевдонимы выполнения приложений (в Windows 10: Приложения и возможности → ссылка «App execution aliases») → выключи `python.exe` и `python3.exe`. Или задай переменную `AGENTFLOW_PYTHON`.
-2. **Пути к инструментам.** Задавай как переменные пользователя (не в одном окне PowerShell): окно исполнителя получает их от скрипта запуска.
-   - Codex из настольного приложения: `AGENTFLOW_CODEX = %USERPROFILE%\.codex\plugins\.plugin-appserver\codex.exe` (копия в `.sandbox-bin` неполная и не умеет запускать команды).
-   - При необходимости: `AGENTFLOW_CLAUDE`, `AGENTFLOW_AGY`, `AGENTFLOW_DEVIN`.
-3. **Вход в аккаунты:** `devin auth login`; один раз запустить `agy` и войти через Google; Codex — через приложение.
-4. **Разрешение для оркестратора в Claude Code.** Оркестратор не может сам себе разрешить запуск исполнителей без подтверждений. Если хочешь, чтобы он запускал их сам, добавь в `.claude\settings.local.json` проекта (не коммитить):
-
-   ```json
-   { "permissions": { "allow": [ "PowerShell(.\\.agentflow\\tools\\run-task.ps1:*)" ] } }
-   ```
-
-   Без этого правила оркестратор даёт тебе готовую команду, а ты запускаешь её сам.
-
-## Г2. Выбор модели под задачу (TypeSafe)
-
-Необязательно. Оркестратор может спрашивать сервис TypeSafe AI, какой инструмент и какая модель лучше подходят задаче.
-
-1. Ключ храни вне репозитория, например `E:\Projects\AgentFlow\APIs\typesafe\agentflow_api.txt`, и укажи путь переменной пользователя `AGENTFLOW_TYPESAFE_KEY_FILE`.
-2. В проекте заполни `.agentflow\docs\model-options.json`: какие инструменты и модели можно брать, что бесплатно и до какой даты (`until`), когда вернётся квота (`from`), и одной-двумя фразами — как выбирать (`policy`).
-3. Оркестратор вызывает `python .agentflow\tools\route.py T-NNN --apply`. Уверенность 0,9 и выше — в задаче появятся `Tool:` и `Model:`; от 0,5 до 0,9 — рекомендация, которую оркестратор подтверждает сам; ниже 0,5, нет ключа или ошибка — выбор по обычной таблице `tool-routing.md`. Каждый вызов печатает расход токенов и номер запроса TypeSafe.
-4. Работа с TypeSafe ведётся по официальной документации: https://docs.typesafe.ai/introduction. Краткая выжимка правил и ссылки — `.agentflow\docs\typesafe.md`.
-
-Модель можно указать и вручную строкой в задаче: `Model: swe-2-high` (Devin), `Model: gpt-6.1-sol, effort=xhigh` (Codex).
-
-## Д. Один раз: проверить инструменты
-
-Командная строка каждого CLI в `.agentflow/tools/run-task.ps1` (таблица `$Tools`) — значения по умолчанию. Перед первой настоящей работой проверь каждый инструмент пустяковой задачей. Качество модели не проверяется, только запуск.
-
-1. Попроси оркестратора: «Сделай проверочную задачу T-000 для developer: прочитать README.md и записать в Result его первую строку, без коммита кода».
-2. Запусти её по очереди в каждом инструменте:
-
-```powershell
-.agentflow\tools\run-task.ps1 T-000 codex
-.agentflow\tools\run-task.ps1 -Status
+```bash
+agentflow install <project> [--update] [--dry-run] [--inside-repo] [--workspace] [--repos a,b] [--git-init] [--mcp [--mcp-client claude|cursor]]
+agentflow run T-NNN --role <developer|tester|deployer> [--project <dir>]
+agentflow gate <verify|preflight|endcheck|task> <T-NNN> [--project <dir>]
+agentflow accept T-NNN [--project <dir>]
+agentflow ledger <add|set|approve|show> [--project <dir>]
+agentflow mcp [--enable-orchestrator-tools] [--project <dir>]
+agentflow dashboard [--open] [--project <dir>]
 ```
 
-После каждого прогона: `.agentflow\tools\run-task.ps1 T-000 -Stop`, затем следующий (`claude`, `agy`, `devin`).
+`--project` may be any directory inside the project; project commands walk up to the installed `.agentflow` and run that project's own tool scripts. Without the package, every subcommand has a direct equivalent: `python .agentflow/tools/<tool>.py` from the project root.
 
-Для каждого инструмента должно быть:
+## E. MCP server (optional)
 
-| Проверка | Как видно |
-|---|---|
-| Окно открылось и видно работу | глазами |
-| Prompt дошёл, роль и задача прочитаны | в окне / в `.agentflow\tasks\.runtime\T-000.<n>.log` |
-| Рабочая папка — worktree задачи | агент пишет её в Result или видно в окне |
-| `## Result` записан в `.agentflow\tasks\T-000-*.md` основной папки | открыть файл |
-| `-Status`: `exited`, exit 0 | `.agentflow\tools\run-task.ps1 -Status` |
+`.agentflow/tools/mcp_server.py` exposes project state over the Model Context Protocol on stdio. It needs the official SDK — an opt-in extra, never required by the core tools:
 
-Что-то не сошлось — поправь строку инструмента в `$Tools` и повтори. Пути и постоянные аргументы задаются переменными окружения (`AGENTFLOW_*`), а не правкой `$Tools`. После проверки попроси оркестратора убрать T-000 (`cancelled`, worktree и ветку удалить).
+```bash
+python -m pip install "agentflow-sdlc[mcp]"   # or: python -m pip install "mcp>=2.3,<3"
+python .agentflow/tools/mcp_server.py         # or: agentflow mcp
+```
+
+Tools exposed by default (read-only): `agentflow_status`, `agentflow_get_task`, `agentflow_query_ledger`, plus `agentflow_run_gate` which runs the real `gate.py`. `agentflow_accept_task` exists only behind the explicit operator flag `--enable-orchestrator-tools`. The flag controls the server's surface; it is not proof of the caller's role — anything that can reach the server can call what it exposes.
+
+To wire a client into the project config, re-run the installer with the explicit opt-in flag:
+
+```bash
+python .agentflow/tools/install.py <project> --update --mcp                    # Claude Code: .mcp.json
+python .agentflow/tools/install.py <project> --update --mcp --mcp-client cursor  # Cursor: .cursor/mcp.json
+```
+
+`--mcp` merges an `agentflow` entry without touching unrelated keys or other servers, points at the project's own installed server with privileged tools off, and refuses a malformed file or an unmanaged conflicting `agentflow` entry before writing anything.
+
+## F. Machine resources (opt-in)
+
+Shared machine scheduling — how many tool slots this machine offers to AgentFlow projects — is opt-in per machine. `machine_capacity.py` keeps a registry of projects that claimed a slot; `dispatch.py` previews shared scheduling and issues grants a launcher can exchange (`run_task.py --dispatch-grant <token>`). If you never configure it, every command above works unchanged: launching a worker does not require a grant.
+
+The `conductor.ps1` / `conductor-panel.ps1` helpers (scheduled orchestrator ticks and autostart subscription on this machine) are **Windows-only** — they use PowerShell, `conductor.env.json` and Task Scheduler. They are not part of the core workflow and are never required on Linux or macOS.
+
+TypeSafe AI users: `.agentflow/docs/typesafe.md` holds the official documentation links and the rules `route.py` follows when picking tool/model options.
 
 ---
 
-# Часть 2. Работа каждый день
+# Part 2. Daily work
 
-## Как это работает
+## Who does what
 
-```text
-Ты: цель + лимиты ──> Оркестратор: план ──> Ты: «ок»
-                         │
-                         ▼
-        Оркестратор сам, без тебя:
-          запускает все задачи, которые можно делать параллельно
-          следит за ними (.agentflow\tools\run-task.ps1 -Status)
-          принимает результаты (.agentflow\tools\accept.py), сливает ветки
-          сразу запускает следующие
-                         │
-                         ▼
-        Ты нужен только для: входа в систему, решения по архитектуре,
-        опасного действия, «да» на выкладку в прод, отзыва о пробной сборке
+| Session | Started by | Does |
+|---|---|---|
+| Orchestrator | `/start-role orchestrator` | splits the goal into Task Files, launches workers, accepts on evidence; the only writer of project memory |
+| Developer / Tester / Deployer | `python .agentflow/tools/run_task.py T-NNN <tool>` (usually launched by the Orchestrator) | one task each in a fresh session; writes only `## Result` |
+| No role (Single Mode) | `/start-session` | does everything itself, including memory updates |
+
+The Orchestrator can also launch through the CLI: `agentflow run T-NNN --role developer` reads the `Tool:` field from the Task File and refuses if `--role` does not match the file. Deployer tasks always launch with `--manual`: the launcher prepares the attempt, a human starts the tool — a deployer never runs unattended.
+
+## A worker's lifecycle
+
+1. `run_task.py T-NNN <tool>` creates the worktree `worktrees/<repo>-t-NNN-slug` and branch `t-NNN-slug`, runs the gate's preflight (deny rules, file ownership, ledger state), records the attempt and starts the tool with the task prompt.
+2. The worker does the task, runs its `## Checks` verbatim, makes one commit `[T-NNN] <type>: <what>` and fills `## Result` in the Task File — in the main folder, never the copy inside the worktree.
+3. When the attempt exits, the end check verifies the worktree is clean and the Task File in the main folder gained a Result.
+4. The Orchestrator runs `python .agentflow/tools/gate.py verify T-NNN` — the `## Checks` commands run verbatim — and on a pass accepts with `python .agentflow/tools/accept.py T-NNN` (verify, merge, ledger `done`, worktree and branch cleanup).
+
+Process control for a stuck or manual attempt:
+
+```bash
+python .agentflow/tools/run_task.py --status          # state of the last attempt of every task
+python .agentflow/tools/run_task.py --stop            # kill a hung worker's whole process tree
+python .agentflow/tools/run_task.py --mark-finished   # a --manual attempt has finished
+python .agentflow/tools/run_task.py --recheck         # rerun the end check after fixing its cause
 ```
 
-- **Оркестратор** — одна сессия Claude Code (при нехватке лимита Claude — Codex). С ним ты разговариваешь. Сам код не пишет.
-- **Исполнители** — отдельные видимые окна, по одному на задачу. Их открывает оркестратор через `.agentflow\tools\run-task.ps1`.
-- Всё общение идёт через файлы: задача — `.agentflow/tasks/T-NNN-*.md`, результат исполнитель пишет в конец этого же файла.
+## Watching progress
 
-## Шаг 1. Запустить оркестратора
-
-VS Code → открыть папку проекта → новая сессия Claude Code → ввести:
-
-```text
-/start-role orchestrator
-Цель: <что хочешь получить>.
-Лимиты: Claude — <много/мало>, Codex — <…>, Antigravity — <…>, Devin — <…>.
-Деплоер: <какая сессия выкладывает, например «сессия 04»>.
+```bash
+python .agentflow/dashboard/build.py          # writes .agentflow/dashboard/out/index.html and graph.html
+python .agentflow/dashboard/build.py --demo   # same pages from a deterministic fixture, marked DEMO DATA
+agentflow dashboard --open                    # build and open in a browser
 ```
 
-Строку «Лимиты» можно пропустить — тогда оркестратор спросит.
+The dashboard is read-only for the human and invents nothing: statuses, roles and verdicts come from the ledger and Task Files; the metrics panel (first-pass gate rate, lead time, verdict counts) is computed only from recorded evidence — missing history, runtime or cost is shown as N/A, never zero or an invented saving. `--demo` exists for screenshots and layout review: it reads no project memory and writes only into `out/`.
 
-Ожидаемый результат: оркестратор пересказывает, где проект сейчас, и предлагает план: задачи, роли, инструменты и какие задачи пойдут параллельно.
+## Recovery
 
-## Шаг 2. Утвердить план
+- A dead or errored attempt is recorded per task in `.agentflow/tasks/.runtime/T-NNN.json`; the ledger stays `in progress` until the Orchestrator decides. Do not repeat a failed path recorded in `.agentflow/state/known-issues.md`.
+- `gate.py verify` failing on a `completed` Result means the task is rejected: the Orchestrator writes a successor Task File with the findings — it never edits the worker's code itself.
+- A `blocked` Result goes back to the Orchestrator with the worker's question.
+- Review isolation: a Tester works in a disposable checkout of the `Verifies` commit and changes nothing; after its attempt the launcher checks that branch, worktree and Task File are untouched.
 
-Прочитай план. Ответь «ок» или поправь его: «T-102 не нужна», «тестировщик через Devin» и т.п.
+## Permission boundaries (what is supported)
 
-Ожидаемый результат: оркестратор пишет файлы задач, запускает все независимые задачи сразу, открываются окна исполнителей.
+- Workers change only files listed in `Allowed files`; Preflight deny rules in `.agentflow/docs/project-rules.md` (`## Preflight`) are enforced by `gate.py` before a launch.
+- For Claude Code, allow only the launcher — not the whole project:
 
-Новые задачи до твоего «да» стоят в реестре как `blocked` с пометкой `awaiting approval`: их не запустит ни оркестратор, ни сторож, ни ручной `run-task.ps1`. После одобрения оркестратор переводит их в `ready` (`ledger.py approve`).
+  ```json
+  { "permissions": { "allow": [ "PowerShell(.\\.agentflow\\tools\\run-task.ps1:*)", "Bash(python .agentflow/tools/run_task.py:*)" ] } }
+  ```
 
-## Шаг 3. Не мешать
+- Isolation is by git worktree and by post-attempt checks, not by a universal sandbox: Codex runs sandboxed, Claude on Windows is checked after the attempt. Do not rely on the launcher alone to prevent writes outside `Allowed files` — verify with the end check.
+- No tool may push, merge to main, or deploy: merges belong to the Orchestrator's `accept.py`, deployment to a Deployer session that starts only after the human's explicit yes.
 
-Оркестратор работает сам: следит за окнами, принимает результаты, запускает следующие задачи, переводит задачу на другой инструмент, если кончился лимит.
+## If something goes wrong
 
-Окна исполнителей можно смотреть, но не закрывать: закрытое окно = оборванная задача. Окно закрывается само, когда исполнитель закончил. Щелчок мышью внутри окна работу не остановит: скрипт запуска отключает режим выделения.
-
-Отвечай, только если просят:
-
-- исполнитель — войти в систему или подтвердить опасное действие (прямо в его окне);
-- оркестратор — решение по архитектуре, данным, деньгам; отзыв о пробной сборке;
-- деплоер — «да» на прод (в его сессии).
-
-### Если у оркестратора кончился лимит
-
-Оркестратор отмечается после каждого шага (`tick.py heartbeat`). Отметка старше 20 минут = оркестратора нет.
-
-**Автоматически: сторож.** Один раз на проект:
-
-```powershell
-.agentflow\tools\conductor-panel.ps1 -Install
-```
-
-Это включает автозапуск сторожа при входе в Windows (Планировщик заданий, папка `AgentFlow`), кладёт на рабочий стол ярлык «AgentFlow - <проект>» и сразу запускает сторожа (свёрнутое окно на панели задач). Второй сторож для того же проекта не запустится: он видит первого и выходит.
-
-Ярлык открывает панель: включён ли автозапуск, работает ли сторож и когда был последний круг, кто сейчас оркестратор, идёт ли фоновая сессия, лимиты инструментов, вопросы к тебе, что ждёт решения. Кнопки: включить и выключить автозапуск, запустить и остановить сторожа, «Проверить сейчас» (что сторож сделал бы, без действий), открыть вопросы, журнал фоновой сессии, папку состояния, Планировщик. То же из консоли: `conductor-panel.ps1 -Status`, `-Start`, `-Stop`, `-Register`, `-Unregister`, `-Shortcut`.
-
-Раз в 3 минуты он делает механический шаг (`tick.py run`). Если нужно суждение, а оркестратора нет, он открывает окно фонового оркестратора на первом свободном инструменте (Claude, если лимит уже сбросился, иначе Codex → Devin → Antigravity) с полным доступом, как у разработчика. Если у этого инструмента кончился лимит, сразу переходит к следующему. Обо всём сообщает уведомлением Windows: что принято и запущено, кто взял оркестрацию, что все инструменты в лимите, что появился вопрос к тебе. Посмотреть без действий: `.agentflow\tools\conductor.ps1 -Once -DryRun`. Остановить: кнопкой в панели или закрыв окно сторожа. Если вернёшься к работе в Claude, сторож увидит свежую отметку и только наблюдает. Аргументы инструмента для сессии оркестратора задаются отдельно: `AGENTFLOW_ORCHESTRATOR_<TOOL>_ARGS` (по умолчанию `AGENTFLOW_<TOOL>_ARGS`). Claude Code сам не может разрешить себе запуск сторожа — добавь правило разрешения, как для `run-task.ps1`.
-
-**Вручную**, если сторож не запущен:
-
-1. Посмотреть, что делать: `python .agentflow\tools\tick.py run --dry-run` — что можно сделать без суждения (принять задачу тестера с `pass`, запустить готовые) и что требует оркестратора.
-2. Механический шаг: `python .agentflow\tools\tick.py run` — принимает и запускает через `accept.py` и `run-task.ps1`, со всеми проверками. Его можно повторять сколько угодно.
-3. Суждение нужно (провал теста, `blocked`, кончился лимит у исполнителя) — открой сессию оркестратора на первом свободном инструменте (`python .agentflow\tools\tick.py next-orchestrator`; порядок `AGENTFLOW_ORCHESTRATORS`, по умолчанию claude, codex, devin, agy) с промптом:
-
-   ```text
-   You are the Orchestrator in background mode, holder name '<tool>-background'. Your role: .agentflow/roles/orchestrator.md. First read .agentflow/docs/ai-handoff-protocol.md, section 'Autonomous orchestration': its limits override everything else.
-   ```
-
-   Такая сессия работает только в рамках утверждённого плана: без новых задач вне цели, без push, публикации и прода. Вопросы к тебе она пишет в `.agentflow/state/questions.md`.
-4. Вернулся: `python .agentflow\tools\tick.py status`, `.agentflow\state\questions.md`, `handoff.md`.
-
-## Шаг 4. Выкладка на сервер
-
-Выкладку делает деплоер — та сессия, которую ты назвал на шаге 1. Оркестратор готовит задачу (`-Manual`) и даёт строку запуска, ты запускаешь её в этой сессии. Для прода деплоер сам спросит твоё «да», показав commit и окружение. Без него на прод не пойдёт. Когда закончит — `.agentflow\tools\run-task.ps1 T-NNN -MarkFinished`.
-
-## Шаг 5. Закрыть день
-
-В чате оркестратора:
-
-```text
-/update-memory
-/handoff-cmd
-```
-
-Ожидаемый результат: `.agentflow/state/handoff.md`, `.agentflow/state/current-step.md` и `.agentflow/state/tasks.md` обновлены, `handoff.md` и `current-step.md` короткие (1–2 экрана). Сессии можно закрывать.
-
-На следующий день — снова шаг 1. Новый оркестратор продолжит с того места, где остановился прошлый.
-
----
-
-## Дашборд
-
-Дашборд — твой инструмент, не агентов: таблица задач, фильтры, Гант, сроки и связи между задачами. Он только читает `.agentflow/state/tasks.md`, `.agentflow/tasks/T-*.md` и git и ничего не меняет.
-
-1. Собери: `python .agentflow\dashboard\build.py`.
-2. Открой в браузере `.agentflow\dashboard\out\index.html` (обзор) или `.agentflow\dashboard\out\graph.html` (Гант и сроки). Страницы лежат вне git, пересобирай, когда нужен свежий вид.
-3. Хочешь поправить дашборд — дай задачу с описанием правки. Перед правкой: `python .agentflow\dashboard\snapshot.py save "что меняем"`; откат: `python .agentflow\dashboard\snapshot.py restore vN`. Правила интерфейса: `.agentflow\dashboard\UI-RULES.md`.
-
-Интерфейс русский (он для человека); статусы реестра (`ready`, `review`, `done`…) показаны русскими метками: В очереди, На приёмке, Принята и так далее.
-
-## Если что-то пошло не так
-
-| Ситуация | Что делать |
-|---|---|
-| Исполнитель написал `blocked` | Ничего: оркестратор увидит сам. Если вопрос к тебе — он спросит |
-| Кончился лимит у инструмента | Ничего: оркестратор переведёт задачу на запасной инструмент. Квота Antigravity может кончиться на несколько дней, сессии Claude-исполнителей — через минуты при нескольких окнах сразу |
-| Окно исполнителя закрылось | Ничего: закончил — `-Status` покажет `exited` или `error`; оборвалось — `dead`, оркестратор продолжит с последнего commit или начнёт заново |
-| Исполнитель завис | Скажи оркестратору «T-101 висит». Он остановит его (`.agentflow\tools\run-task.ps1 T-101 -Stop`) и перезапустит |
-| Окно исполнителя сразу закрылось с ошибкой про Python | Пункт «Python» в [Г](#г-один-раз-подготовить-машину) |
-| Оркестратор просит тебя написать «дальше» или закрыть окно | Это ошибка оркестратора: напомни про `.agentflow\tools\run-task.ps1 -Status` |
-| Ошибка «another run-task.ps1 launch is in progress» | Подожди минуту и повтори: идёт другой запуск |
-| Задача в Antigravity (IDE) или выкладка | Оркестратор готовит её (`-Manual`) и пишет папку и промпт; запускаешь ты; когда закончится — `.agentflow\tools\run-task.ps1 T-NNN -MarkFinished` |
-| Простая задача, команда не нужна | Работай без роли: `/start-session` в начале, `/update-memory` в конце |
-
-## Шпаргалка
-
-| Что | Команда |
-|---|---|
-| Установить в проект | `python <AgentFlow>\.agentflow\tools\install.py <проект> --dry-run`, затем без `--dry-run` |
-| Обновить | то же с `--update` |
-| Начать работу (оркестратор) | `/start-role orchestrator` + цель + лимиты + деплоер |
-| Что сейчас работает | `.agentflow\tools\run-task.ps1 -Status` |
-| Остановить зависшего исполнителя | `.agentflow\tools\run-task.ps1 T-NNN -Stop` |
-| Запустить задачу вручную | `.agentflow\tools\run-task.ps1 T-NNN <codex\|claude\|agy\|devin>` |
-| Принять задачу | `python .agentflow\tools\accept.py T-NNN` (сначала `--dry-run`) |
-| Механический шаг без оркестратора | `python .agentflow\tools\tick.py run` (сначала `--dry-run`) |
-| Кто оркестрирует, какие лимиты | `python .agentflow\tools\tick.py status` |
-| Сторож: продолжать без меня | один раз `.agentflow\tools\conductor-panel.ps1 -Install`, дальше ярлык «AgentFlow - <проект>» |
-| Таблица задач | `python .agentflow\tools\ledger.py show` |
-| Дашборд (обзор, Гант) | `python .agentflow\dashboard\build.py`, затем `.agentflow\dashboard\out\index.html` |
-| Проверить сам AgentFlow | `python -m unittest discover -s .agentflow\tests` |
-| Закрыть день | `/update-memory`, затем `/handoff-cmd` |
-| Работа без команды | `/start-session` … `/update-memory` |
+- The ledger row for a task is the source of truth for its state: `python .agentflow/tools/ledger.py show`.
+- The full test suite of the template: `python -m unittest discover -s .agentflow/tests` (stdlib only, offline). Packaging and MCP integrations run explicitly: `python .agentflow/tests/check_package.py`, `python .agentflow/tests/check_mcp.py`.
+- Platform evidence: `.agentflow/docs/release-validation.md` records which OS/Python cells are actually verified; a local green run is never a green macOS run.

@@ -2,6 +2,35 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.12.0 - 2026-10-17
+
+Public-release documentation milestone. No tool, protocol, role or dashboard
+behavior changes in this release; 2.12.0 collects the cross-platform launcher,
+unified CLI/package, optional MCP server, English evidence dashboard and the CI
+matrix delivered by 2.11.9-2.11.14 and ships the docs that describe them.
+
+- `GUIDE.md` is now in English; the previous text moved unchanged to
+  `GUIDE.ru.md`. The guide covers installing from source and from the locally
+  built `agentflow-sdlc` package, update preservation, workspace installs,
+  Windows/Linux/macOS paths, the optional MCP server and its
+  `--enable-orchestrator-tools` operator flag, opt-in machine resource sharing,
+  the worker lifecycle, honest dashboard metrics and `--demo`, recovery
+  commands and the supported permission boundaries. The conductor/autostart
+  helpers are documented as Windows-only.
+- `README.md` rewritten for the public release: value proposition, CI/license/
+  version/Python/MCP badges (no invented green results), a Mermaid diagram of
+  the single-writer Orchestrator, task contracts, isolated Developer/Tester
+  artifacts, gate and acceptance flow with the Deployer consuming an accepted
+  SHA only after human approval; maintainer-attested October 2026 production
+  figures presented as an aggregate snapshot; the real dashboard screenshot at
+  `.agentflow/docs/assets/dashboard.png` (T-008 evidence, real local build).
+- `RELEASE_NOTES.md` added: release contents, evidence limits (no remote CI
+  run, no green macOS result, store listing links unresolved), and the
+  human-only push, CI-verification, tag and GitHub Release commands.
+- Migration for installed projects: none required - no template-owned runtime
+  file changed. Optionally copy the new docs conventions; `install.py --update`
+  remains the way to receive template updates.
+
 ## 2.11.14 - 2026-10-17
 
 - Dashboard interface is English by default (human-approved): all labels, filters, roles,
