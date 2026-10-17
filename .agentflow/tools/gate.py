@@ -427,7 +427,7 @@ def preflight(tid, manual, live, tool=None):
 def worktree_copy_problems(t):
     """A developer wrote its Result into the Task File copy inside its worktree, or committed Task Files on its branch.
     The main Task File is the only one read at acceptance; a commit under .agentflow/tasks/ moves the branch past
-    Change and would merge memory through a product branch."""
+    Change and would merge memory through a product branch. _template.md is template-owned product, not a Task File."""
     bad = []
     for c in t["checkouts"]:
         copy = Path(c["path"]) / t["rel"]
@@ -444,14 +444,16 @@ def worktree_copy_problems(t):
                 if len(parents) > 2:
                     bad.append(f"cannot audit octopus merge {sha}: use two-parent merges")
                     continue
-                args = (("show", "--remerge-diff", "--format=", sha) if len(parents) == 2
-                        else ("diff-tree", "--root", "--no-commit-id", "-p", sha))
-                result = subprocess.run(["git", *args, "--", ".agentflow/tasks"], cwd=c["path"],
+                args = (("show", "--remerge-diff", "--format=", "--name-only", sha) if len(parents) == 2
+                        else ("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", sha))
+                result = subprocess.run(["git", *args, "--", ".agentflow/tasks",
+                                         ":(exclude).agentflow/tasks/_template.md"], cwd=c["path"],
                                         capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if result.returncode:
                     bad.append(f"cannot audit Task Files in {sha}: {result.stderr.strip()}")
-                elif result.stdout.strip():
-                    bad.append(f"branch {t['branch']} commits Task Files ({sha}): only the main folder holds them")
+                elif names := [n for n in result.stdout.splitlines() if n.strip()]:
+                    bad.append(f"branch {t['branch']} commits Task Files ({sha}): "
+                               f"{', '.join(names)}: only the main folder holds them")
     return bad
 
 
