@@ -1,5 +1,11 @@
 # Questions for the human
 
+- Roadmap dashboard mockup selection (UI-RULES A1.2 gate for T-044/T-046/T-048):
+  open .agentflow/dashboard/mockups/README.md and click the three variants
+  (roadmap-a-cards.html, roadmap-b-journey.html, roadmap-c-matrix.html).
+  Pick: variant A/B/C, plan source order vs numeric sort, diagnostics
+  placement, task-table depth, roadmap-specific filters. Implementation tasks
+  wait for the recorded selection.
 - Optional public README source input: exact AI Home Design SaaS URL and
   YouTube Transcript Extension listing URL. Never invent missing IDs/URLs.
 - External release gate: CI run 39026298541 on 50adf65 FAILED - all

@@ -1,5 +1,13 @@
 # Known Issues
 
+- 2026-10-17 - Codex CLI Windows sandbox denies every write outside the task
+  checkout: T-029 attempt 1 on codex completed a real review of 2c58157
+  (verdict fail, per-criterion evidence in .runtime/T-029.1.log) but could not
+  write the Result file despite the launcher's --add-dir tasks grant, and
+  unittest runs were environment-blocked because Python could not create temp
+  dirs (sandbox backend windows_sandbox permission_denied). Codex is therefore
+  unusable for AgentFlow worker tasks on this Windows machine until that
+  sandbox write path works; testers fall back to devin per Recovery.
 - 2026-10-17 - Remote CI run 39026298541 (main@50adf65) FAILED: all three
   windows-latest and all three macos-latest test jobs exit 1 at
   `python -m unittest discover`; all three ubuntu-latest jobs and both
