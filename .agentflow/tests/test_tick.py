@@ -1,4 +1,5 @@
 """tick.py: which steps it takes without judgment, which it leaves to an Orchestrator, limits and the heartbeat."""
+import json
 import os
 import subprocess
 import sys
@@ -334,6 +335,100 @@ class TickTests(unittest.TestCase):
         finally:
             p.kill()
             p.wait()
+
+
+class QuotaPolicyTests(TickTests):
+    """B-02: the declared quota policy bounds launches only on a fresh reading; without one it reports
+    'unknown' and the explicit time/attempt caps remain the bound. A malformed file fails closed."""
+
+    def policy(self, entries, readings=None):
+        p = Path(self.tmp.name) / "quota-policy.json"
+        p.write_text(json.dumps({"policies": entries}), encoding="utf-8")
+        if readings is not None:
+            (Path(self.tmp.name) / "quota-samples.json").write_text(
+                json.dumps(readings), encoding="utf-8")
+        return {"AGENTFLOW_QUOTA_POLICY": str(p)}
+
+    def states(self, entries, readings=None, at=AT):
+        with patch.dict(os.environ, self.policy(entries, readings)):
+            return tick.quota_policy_states(at)
+
+    def test_no_policy_declared_is_empty(self):
+        self.assertEqual(tick.quota_policy_states(AT), [])
+
+    def test_a_policy_without_a_reading_reports_unknown_and_never_blocks(self):
+        env = self.policy([{"tool": "codex", "remaining": {"percent_below": 10}, "action": "pause"}])
+        with patch.dict(os.environ, env):
+            states = tick.quota_policy_states(AT)
+            self.assertEqual(states[0]["state"], "unknown")
+            self.assertIn("no reading", states[0]["detail"])
+            out = self.decide({"T-1": dev("T-1", outcome="")}, {},
+                              {"T-1": {"Status": "ready", "Tool": "codex"}})
+        self.assertEqual(out["T-1"], ("launch", "codex"))   # unknown usage falls back to the caps
+
+    def test_a_fresh_reading_below_threshold_pauses_or_switches(self):
+        readings = {"codex": {"at": tick.iso(AT), "remaining_percent": 5}}
+        pause = self.states([{"tool": "codex", "remaining": {"percent_below": 10},
+                              "action": "pause"}], readings)
+        self.assertEqual(pause[0]["state"], "below")
+        env = self.policy([{"tool": "codex", "remaining": {"percent_below": 10}, "action": "pause"}],
+                          readings)
+        with patch.dict(os.environ, env):
+            out = self.decide({"T-1": dev("T-1", outcome="")}, {},
+                              {"T-1": {"Status": "ready", "Tool": "codex"}})
+            self.assertEqual(out["T-1"][0], "wait")
+            self.assertIn("quota policy", out["T-1"][1])
+        switch = self.policy([{"tool": "codex", "remaining": {"percent_below": 10},
+                               "action": "switch"}], readings)
+        with patch.dict(os.environ, switch), \
+                patch.dict(os.environ, {"AGENTFLOW_ORCHESTRATORS": "codex,devin"}):
+            out = self.decide({"T-1": dev("T-1", outcome="")}, {},
+                              {"T-1": {"Status": "ready", "Tool": "codex"}})
+            self.assertEqual(out["T-1"][0], "need")
+            self.assertIn("switch", out["T-1"][1])
+            self.assertEqual(tick.next_orchestrator(AT), "devin")  # the held tool is skipped
+
+    def test_a_group_scoped_policy_binds_only_its_group(self):
+        readings = {"codex:work": {"at": tick.iso(AT), "remaining_percent": 5}}
+        entries = [{"tool": "codex", "group": "work", "remaining": {"percent_below": 10}}]
+        with patch.dict(os.environ, self.policy(entries, readings)):
+            states = tick.quota_policy_states(AT)
+            self.assertEqual(states[0]["state"], "below")
+            self.assertIsNone(tick.policy_hold("codex", "personal", at=AT))
+            self.assertIsNotNone(tick.policy_hold("codex", "work", at=AT))
+
+    def test_stale_or_reset_readings_report_unknown(self):
+        stale = {"codex": {"at": tick.iso(AT - timedelta(hours=2)), "remaining_percent": 5}}
+        states = self.states([{"tool": "codex", "remaining": {"percent_below": 10},
+                               "sample_max_age_seconds": 300}], stale)
+        self.assertEqual(states[0]["state"], "unknown")
+        self.assertIn("stale", states[0]["detail"])
+        lapsed = {"codex": {"at": tick.iso(AT), "remaining_percent": 5,
+                            "resets_at": tick.iso(AT - timedelta(minutes=1))}}
+        states = self.states([{"tool": "codex", "remaining": {"percent_below": 10}}], lapsed)
+        self.assertEqual(states[0]["state"], "unknown")
+        self.assertIn("reset", states[0]["detail"])
+        fine = self.states([{"tool": "codex", "remaining": {"percent_below": 10}}],
+                           {"codex": {"at": tick.iso(AT), "remaining_percent": 50}})
+        self.assertEqual(fine[0]["state"], "ok")
+
+    def test_malformed_policy_or_readings_fail_closed(self):
+        p = Path(self.tmp.name) / "quota-policy.json"
+        for bad in ("{ broken", "[]", '{"policies": "x"}', '{"policies": [{}]}',
+                    '{"policies": [{"tool": "codex"}]}',
+                    '{"policies": [{"tool": "codex", "remaining": {"percent_below": 10},'
+                    ' "action": "explode"}]}'):
+            with self.subTest(bad=bad):
+                p.write_text(bad, encoding="utf-8")
+                with patch.dict(os.environ, {"AGENTFLOW_QUOTA_POLICY": str(p)}):
+                    with self.assertRaises(tick.StateError):
+                        tick.quota_policy_states(AT)
+        p.write_text('{"policies": [{"tool": "codex", "remaining": {"percent_below": 10}}]}',
+                     encoding="utf-8")
+        (Path(self.tmp.name) / "quota-samples.json").write_text("{ broken", encoding="utf-8")
+        with patch.dict(os.environ, {"AGENTFLOW_QUOTA_POLICY": str(p)}):
+            with self.assertRaises(tick.StateError):
+                tick.quota_policy_states(AT)
 
 
 if __name__ == "__main__":

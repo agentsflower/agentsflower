@@ -11,14 +11,20 @@ from paths import FLOW_ROOT  # noqa: E402
 import route  # noqa: E402
 
 
-def recommend(goal, config, current_tool=None, current_model=None, asker=route.ask, key=None):
+def recommend(goal, config, current_tool=None, current_model=None, asker=route.ask, key=None,
+              kind="plan"):
     options = route.available(config.get("options", {}), "orchestrator")
     options = {name: option for name, option in options.items() if route.cli_usable(option["tool"])}
     if not options:
         raise route.NoDecision("no configured CLI option is currently usable for planning")
-    state = {"planning_date": date.today().isoformat(), "planning": {"goal": route.clip(goal, 2500)}}
+    state = {"planning_date": date.today().isoformat(),
+             "planning": {"goal": route.clip(goal, 2500), "kind": kind}}
     policy = config.get("policy", "") + " Choose a model capable of planning this goal; the current chat is only the interface."
-    answers, meta = asker(state, route.questions(options, policy), key or route.api_key(),
+    qs = route.questions(options, policy)
+    if kind != "plan":
+        qs["effort"]["instructions"]["note"] += \
+            f" This is a {kind} decision: judge the effort the decision itself needs, not the task's."
+    answers, meta = asker(state, qs, key or route.api_key(),
                           config.get("jev_model", route.JEV_MODEL))
     chosen, escalation = route.combine(options, answers)
     if chosen not in options:
@@ -35,7 +41,8 @@ def recommend(goal, config, current_tool=None, current_model=None, asker=route.a
     confidence = min(float(option_answer.get("confidence", 0)),
                      float(effort_answer.get("confidence", 0)) if route.supported_efforts(options[chosen]) else 1)
     result = {"at": date.today().isoformat(), "goalHash": hashlib.sha256(goal.encode("utf-8")).hexdigest(),
-              "goalLength": len(goal), "jevModel": meta.get("model"), "requestId": meta.get("requestId"),
+              "goalLength": len(goal), "kind": kind,
+              "jevModel": meta.get("model"), "requestId": meta.get("requestId"),
               "usage": meta.get("usage"), "complexity": complexity.get("score"), "confidence": confidence,
               "band": route.band(confidence), "eligibleOptions": sorted(options), "choice": chosen,
               "tool": options[chosen]["tool"], "model": model, "effort": flag, "resolvedEffort": resolved,
@@ -53,11 +60,13 @@ def main():
     parser.add_argument("goal", help="brief description of the planning goal")
     parser.add_argument("--current-tool", choices=("claude", "codex", "devin", "agy"))
     parser.add_argument("--current-model")
+    parser.add_argument("--kind", default="plan",
+                        help="what kind of decision this recommendation feeds (default: plan)")
     args = parser.parse_args()
     config_path = FLOW_ROOT / "docs" / "model-options.json"
     try:
         config = json.loads(config_path.read_text(encoding="utf-8-sig"))
-        result = recommend(args.goal, config, args.current_tool, args.current_model)
+        result = recommend(args.goal, config, args.current_tool, args.current_model, kind=args.kind)
     except (OSError, ValueError, route.NoDecision) as error:
         print(f"no planning recommendation: {error}")
         return route.NO_DECISION

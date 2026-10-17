@@ -176,7 +176,7 @@ def main(argv=None) -> int:
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
 
     for name, script in (("gate", "gate.py"), ("accept", "accept.py"), ("ledger", "ledger.py"),
-                         ("mcp", "mcp_server.py")):
+                         ("mcp", "mcp_server.py"), ("hooks", "hooks.py")):
         p = sub.add_parser(name, help=f"pass arguments to .agentflow/tools/{script}")
         p.add_argument("args", nargs=argparse.REMAINDER, help=f"arguments of {script} (see its --help)")
         p.set_defaults(script=script)

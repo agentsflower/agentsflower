@@ -266,6 +266,9 @@ while ($true) {
         foreach ($w in @($rep.waits)) { Write-Host "  wait $($w.task): $($w.detail)" }
         $needs = @($rep.needs)
         foreach ($x in $needs) { Write-Host "  need $($x.task): $($x.detail)" }
+        foreach ($p in @($rep.quotaPolicy)) {   # declared quota expectations; 'ok' stays silent
+          if ($p.state -ne 'ok') { Write-Host "  quota policy $($p.key): $($p.state) ($($p.action)) - $($p.detail)" }
+        }
         if ($rep.live) { Write-Host "  Orchestrator $($rep.live.holder) is live (heartbeat $($rep.live.at))" }
         elseif ($needs.Count) {
           $key = Get-Hash (($needs | ForEach-Object { "$($_.task)|$($_.detail)" } | Sort-Object) -join "`n")
@@ -277,7 +280,9 @@ while ($true) {
           } elseif (-not $tool) {
             if ($state.allLimitedKey -ne $key) {
               $lim = @($rep.limited.PSObject.Properties | ForEach-Object { "$($_.Name) until $($_.Value)" }) -join ', '
-              $reason = if ($lim) { "No Orchestrator tool is free. $lim" } else { 'Orchestrator tools are busy in other AgentFlow projects; retry next round' }
+              $pol = @($rep.quotaPolicy | Where-Object { $_.state -eq 'below' -and $_.action -ne 'report' } |
+                       ForEach-Object { "$($_.key) ($($_.detail))" }) -join ', '
+              $reason = if ($lim -or $pol) { "No Orchestrator tool is free. $(@($lim, $pol) -ne '' -join '; ')" } else { 'Orchestrator tools are busy in other AgentFlow projects; retry next round' }
               Send-Notice 'AgentFlow: all tools limited' $reason
               if (-not $DryRun) { Set-Prop $state 'allLimitedKey' $key; Write-State $state }
             }

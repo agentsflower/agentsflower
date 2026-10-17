@@ -418,6 +418,33 @@ class DoneTests(Base):
                           .read_text(encoding="utf-8"))
         self.assertEqual(len(recs), 1, "a bound PASS is reused, not re-measured")
 
+    def test_done_reuse_is_bound_to_check_definitions_and_environment(self):
+        """B-06: a bound PASS is reused only while its checksHash - the check definitions, the task's
+        env and the OS/shell - still matches this evaluation; a changed input or a legacy record
+        without the field is re-measured, never trusted."""
+        root, wt = self.dev_project()
+        sha = self.commit_in(wt, "src/probe.txt")
+        self.finish(root, result=self.dev_result(sha))
+        r1, d1 = self.done(root)
+        self.assertTrue(d1["ok"])
+        vpath = root / ".agentflow" / "tasks" / ".runtime" / "T-001.verify.json"
+        recs = json.loads(vpath.read_text(encoding="utf-8"))
+        self.assertTrue(recs[0].get("checksHash"), "a done record binds its check definitions")
+        recs[0]["checksHash"] = "0" * 64  # a changed input: the same artifact is re-measured
+        vpath.write_text(json.dumps(recs), encoding="utf-8")
+        r2, d2 = self.done(root)
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertEqual(d2.get("reused"), 0)
+        self.assertEqual(len(json.loads(vpath.read_text(encoding="utf-8"))), 2)
+        recs = json.loads(vpath.read_text(encoding="utf-8"))
+        for rec in recs:
+            rec.pop("checksHash", None)    # a pre-checksHash record carries no evidence of that binding
+        vpath.write_text(json.dumps(recs), encoding="utf-8")
+        r3, d3 = self.done(root)
+        self.assertEqual(r3.returncode, 0, r3.stdout + r3.stderr)
+        self.assertEqual(d3.get("reused"), 0)
+        self.assertEqual(len(json.loads(vpath.read_text(encoding="utf-8"))), 3)
+
     def test_done_reports_a_merge_conflict(self):
         root, wt = self.dev_project()
         (root / "src").mkdir()

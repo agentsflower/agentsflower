@@ -1052,6 +1052,145 @@ Resume: none
         self.assertEqual((self.root / "assets" / "keep.txt").read_text(), "keep\n",
                          "cleanup followed the junction and emptied its target")
 
+    # --- bounded autonomy: recorded identity, launch budgets, nested sessions -----------------------------------
+    def test_attempt_records_launch_identity(self):
+        """B-01: every attempt stores the requested Model/effort, the resolved launch argv in safe
+        form (prompt and machine args masked, never serialized), the tool's CLI version, and the
+        model/effort the tool itself reported. The managed session carries the attempt marker."""
+        task = self.flow / "tasks" / "T-001-probe.md"
+        task.write_text(task.read_text(encoding="utf-8").replace(
+            "Tool: devin", "Tool: devin\nModel: test-model-x, effort=high"), encoding="utf-8")
+        self.fake_devin('if "%~1"=="--version" (echo fake-devin 9.9.9 & exit /b 0)\r\n'
+                        'if "%~1"=="auth" exit /b 0\r\n'
+                        'echo model: test-model-x\r\n'
+                        'echo reasoning effort: high\r\n'
+                        'echo attempt-marker %AGENTFLOW_ATTEMPT%\r\n',
+                        'if [ "$1" = "--version" ]; then echo fake-devin 9.9.9; exit 0; fi\n'
+                        'if [ "$1" = "auth" ]; then exit 0; fi\n'
+                        'echo "model: test-model-x"\n'
+                        'echo "reasoning effort: high"\n'
+                        'echo "attempt-marker $AGENTFLOW_ATTEMPT"\n')
+        self.env["AGENTFLOW_DEVIN_ARGS"] = "--token s3cr3t --model machine-default"
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.wait_state("exited")
+        self.assertEqual(a["requestedModel"], "test-model-x")
+        self.assertEqual(a["requestedEffort"], "high")
+        self.assertEqual(a["toolVersion"], "fake-devin 9.9.9")
+        self.assertEqual(a["effectiveModel"], "test-model-x")
+        self.assertEqual(a["effectiveEffort"], "high")
+        shown = a["launch"]["argv"]
+        self.assertIn("<prompt>", shown)
+        self.assertIn("test-model-x", shown)                  # the task's Model line is not secret
+        self.assertGreaterEqual(shown.count("<env arg>"), 2)  # --token s3cr3t (the machine --model was overridden)
+        self.assertNotIn("s3cr3t", " ".join(shown))           # machine args never reach the record
+        self.assertNotIn("machine-default", " ".join(shown))
+        self.assertIn("attempt-marker T-001#1", Path(a["log"]).read_text(encoding="utf-8", errors="replace"))
+
+    def test_attempt_identity_is_unknown_when_the_tool_reports_nothing(self):
+        """Unavailable runtime identity is 'unknown', never guessed; a missing Model line stays null."""
+        self.fake_devin('if "%~1"=="--version" exit /b 7\r\n'
+                        'if "%~1"=="auth" exit /b 0\r\n'
+                        'exit /b 0\r\n',
+                        'if [ "$1" = "--version" ]; then exit 7; fi\n'
+                        'if [ "$1" = "auth" ]; then exit 0; fi\n'
+                        'exit 0\n')
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.wait_state("exited")
+        self.assertIsNone(a["requestedModel"])
+        self.assertEqual(a["toolVersion"], "unknown")
+        self.assertEqual(a["effectiveModel"], "unknown")
+        self.assertEqual(a["effectiveEffort"], "unknown")
+
+    def test_manual_attempt_records_requested_model_and_unknown_runtime(self):
+        r = self.launch("T-001", "--manual")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.attempt()
+        self.assertIsNone(a["requestedModel"])
+        self.assertEqual(a["toolVersion"], "unknown")
+        self.assertEqual(a["effectiveModel"], "unknown")
+        self.assertNotIn("launch", a)  # nothing was launched: no resolved argv exists to record
+
+    def test_attempt_and_duration_budgets_refuse_new_attempts(self):
+        """B-03: attempts and overall task duration are bounded; a refused launch adds no attempt."""
+        env = {"AGENTFLOW_MAX_ATTEMPTS": "2"}
+        self.assertEqual(self.launch("T-001", "--manual", env=env).returncode, 0)
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        self.assertEqual(self.launch("T-001", "--manual", env=env).returncode, 0)
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        r = self.launch("T-001", "--manual", env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("attempt budget", r.stdout + r.stderr)
+        self.assertEqual(len(json.loads(self.rt_file.read_text())["attempts"]), 2)
+        rt = json.loads(self.rt_file.read_text())
+        rt["attempts"][0]["startedAt"] = "2020-01-01T00:00:00Z"   # task time is bound to attempt 1's start
+        self.rt_file.write_text(json.dumps(rt), encoding="utf-8")
+        r = self.launch("T-001", "--manual",
+                        env={"AGENTFLOW_MAX_ATTEMPTS": "9", "AGENTFLOW_TASK_TIMEOUT": "3600"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("duration budget", r.stdout + r.stderr)
+        self.assertEqual(len(json.loads(self.rt_file.read_text())["attempts"]), 2)
+
+    def test_repeated_identical_failures_stop_relaunching(self):
+        """B-03/B-06: the same failure signature repeated to the cap refuses another attempt."""
+        self.assertEqual(self.launch("T-001", "--manual").returncode, 0)
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        rt = json.loads(self.rt_file.read_text())
+        for i, secs in ((2, 12), (3, 99)):  # only the volatile detail differs: one signature
+            rt["attempts"].append({"n": i, "taskId": "T-001", "tool": "devin", "status": "error",
+                                   "exitCode": 1, "stopReason": "implementation",
+                                   "note": f"worker died after {secs}s"})
+        self.rt_file.write_text(json.dumps(rt), encoding="utf-8")
+        r = self.launch("T-001", "--manual", env={"AGENTFLOW_MAX_IDENTICAL_FAILURES": "2"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("identical failures", r.stdout + r.stderr)
+        self.assertEqual(len(json.loads(self.rt_file.read_text())["attempts"]), 3)
+        rt["attempts"].append({"n": 4, "taskId": "T-001", "tool": "devin", "status": "error",
+                               "exitCode": 1, "stopReason": "implementation",
+                               "note": "a different failure"})
+        self.rt_file.write_text(json.dumps(rt), encoding="utf-8")
+        r = self.launch("T-001", "--manual", env={"AGENTFLOW_MAX_IDENTICAL_FAILURES": "2"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # the chain is broken: launch again
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+
+    def test_tool_switch_budget(self):
+        """B-03: platform switches are bounded; a manual attempt is not a platform switch."""
+        self.assertEqual(self.launch("T-001", "--manual").returncode, 0)
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        rt = json.loads(self.rt_file.read_text())
+        for i, tool in enumerate(("codex", "claude"), start=2):
+            rt["attempts"].append({"n": i, "taskId": "T-001", "tool": tool, "status": "error",
+                                   "exitCode": 1, "stopReason": "implementation"})
+        self.rt_file.write_text(json.dumps(rt), encoding="utf-8")
+        env = {"AGENTFLOW_MAX_TOOL_SWITCHES": "2"}
+        r = self.launch("T-001", "devin", env=env)   # a third distinct platform exceeds the cap
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("platform", r.stdout + r.stderr)
+        r = self.launch("T-001", "--manual", env=env)  # the human's own session is not a switch
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+
+    def test_nested_launches_need_a_delegate_rule(self):
+        """B-04: a session marked AGENTFLOW_ATTEMPT/AGENTFLOW_ATTEMPT_ROOT is a worker; a launch whose own
+        root equals the marker is a nested helper - refused unless a project Preflight delegates it."""
+        nested = {"AGENTFLOW_ATTEMPT": "T-900#1", "AGENTFLOW_ATTEMPT_ROOT": str(Path(self.root).resolve())}
+        r = self.launch("T-001", "--manual", env=nested)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("delegat", r.stdout + r.stderr)
+        self.assertFalse(self.rt_file.exists())
+        r = self.launch("T-001", "--manual",
+                        env={"AGENTFLOW_ATTEMPT": "T-900#1",
+                             "AGENTFLOW_ATTEMPT_ROOT": str(Path(self.tmp.name) / "elsewhere")})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # another checkout is not this helper
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
+        docs = self.flow / "docs"
+        docs.mkdir(exist_ok=True)
+        (docs / "engineering-rules.md").write_text(
+            "# rules\n\n## Preflight\n\n- delegate: on\n", encoding="utf-8")
+        r = self.launch("T-001", "--manual", env=nested)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
 
 def clean_tool_args(**update):
     """Deterministic AGENTFLOW_<TOOL>_ARGS: clear the machine's real values, then apply the test's."""
