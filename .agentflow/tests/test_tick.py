@@ -1,5 +1,6 @@
 """tick.py: which steps it takes without judgment, which it leaves to an Orchestrator, limits and the heartbeat."""
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 FLOW = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FLOW / "tools"))
+import run_task  # noqa: E402
 import tick  # noqa: E402
 
 AT = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
@@ -254,6 +256,43 @@ class TickTests(unittest.TestCase):
         self.assertEqual(calls, ["T-1"])
         self.assertEqual(len(rep["needs"]), 1)
         self.assertIn("accept stopped", rep["needs"][0]["detail"])
+
+    def test_malformed_runtime_files_fail_closed(self):
+        """tool-limits.json / orchestrator.json: a bad file is a diagnosable error, never 'no limits'
+        or 'no live orchestrator' - and a corrupt T-NNN.json surfaces as a need, not a crash."""
+        rt = Path(self.tmp.name)
+        (rt / "tool-limits.json").write_text("{ broken", encoding="utf-8")
+        with self.assertRaises(tick.StateError):
+            tick.limit_end("codex")
+        (rt / "tool-limits.json").write_text('{"codex": "not-an-object"}', encoding="utf-8")
+        self.assertIsNone(tick.limit_end("codex"))  # a non-record entry is skipped, not a crash
+        (rt / "orchestrator.json").write_text('["not", "an", "object"]', encoding="utf-8")
+        with self.assertRaises(tick.StateError):
+            tick.live_orchestrator()
+
+    def test_an_unreadable_attempt_becomes_a_need_not_a_crash(self):
+        with patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
+                patch.object(tick.gate, "last_attempt",
+                             side_effect=tick.gate.TaskError("cannot read runtime state T-1.json: bogus")), \
+                patch.object(tick, "alive", return_value=False):
+            out = {t: (a, d) for t, a, d in tick.decide({"T-1": {"Status": "in progress", "Role": "developer"}})}
+        self.assertEqual(out["T-1"][0], "need")
+        self.assertIn("runtime state", out["T-1"][1])
+
+    def test_alive_requires_the_recorded_process_identity(self):
+        """tick judges a worker by the same pid + pidStart rule as the launcher: a live pid with a
+        wrong start is not the recorded worker (a reused pid cannot impersonate it)."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            self.assertTrue(tick.alive(p.pid))
+            start = run_task.pid_start(p.pid)
+            if start is None:
+                self.skipTest("process start identity is not measurable on this platform")
+            self.assertTrue(tick.alive(p.pid, start))
+            self.assertFalse(tick.alive(p.pid, start + 10_000_000))
+        finally:
+            p.kill()
+            p.wait()
 
 
 if __name__ == "__main__":

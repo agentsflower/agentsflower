@@ -107,6 +107,55 @@ class ApprovalTests(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("not awaiting approval", p.stdout + p.stderr)
 
+    def test_approval_gate_cannot_be_bypassed_by_a_direct_set(self):
+        """The flag is a gate, not a status: `set` cannot clear it, move the task, or claim it -
+        only `approve`, a terminal status, or a note that keeps the prefix is allowed."""
+        self.tool("ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer",
+                  "--tool", "codex", "--notes", "why")
+        for args in (("set", "T-001", "--status", "in progress"),
+                     ("set", "T-001", "--status", "ready"),
+                     ("set", "T-001", "--status", "review"),
+                     ("set", "T-001", "--notes", "no longer waiting")):
+            p = self.tool("ledger.py", *args, check=False)
+            self.assertNotEqual(p.returncode, 0, args)
+            self.assertIn("approval of the plan", p.stdout + p.stderr, args)
+        self.tool("ledger.py", "set", "T-001", "--notes", "awaiting approval; revised")
+        self.assertEqual(self.row()[8], "awaiting approval; revised")
+        self.tool("ledger.py", "approve", "T-001")
+        self.assertEqual(self.row()[5], "ready")
+        # a terminal status while awaiting stays allowed: the task can never launch anyway
+        self.tool("ledger.py", "add", "T-002", "--title", "Plan", "--stage", "1", "--role", "developer",
+                  "--tool", "codex")
+        self.tool("ledger.py", "set", "T-002", "--status", "cancelled", "--notes", "dropped")
+        self.assertIn("cancelled", self.tool("ledger.py", "show", "T-002").stdout)
+
+    def test_in_progress_claim_needs_a_running_attempt(self):
+        """Claims bind to the launcher's record: `set --status in progress` needs a running attempt in
+        tasks/.runtime/T-NNN.json. A corrupt file refuses the claim - never a silent yes."""
+        self.tool("ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer",
+                  "--tool", "codex", "--status", "ready")
+        p = self.tool("ledger.py", "set", "T-001", "--status", "in progress", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("running attempt", p.stdout + p.stderr)
+        rt = self.flow / "tasks" / ".runtime"
+        rt.mkdir(parents=True, exist_ok=True)
+        (rt / "T-001.json").write_text(json.dumps({"taskId": "T-001", "attempts": [
+            {"n": 1, "status": "running", "manual": True}]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-001", "--status", "in progress")
+        self.assertEqual(self.row()[5], "in progress")
+        # an attempt that is not running (exited, error) grants no claim either
+        self.tool("ledger.py", "add", "T-002", "--title", "Plan", "--stage", "1", "--role", "developer",
+                  "--tool", "codex", "--status", "ready")
+        (rt / "T-002.json").write_text(json.dumps({"taskId": "T-002", "attempts": [
+            {"n": 1, "status": "exited", "exitCode": 0}]}), encoding="utf-8")
+        p = self.tool("ledger.py", "set", "T-002", "--status", "in progress", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("running attempt", p.stdout + p.stderr)
+        (rt / "T-002.json").write_text("{ broken", encoding="utf-8")
+        p = self.tool("ledger.py", "set", "T-002", "--status", "in progress", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("cannot read runtime state", p.stdout + p.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

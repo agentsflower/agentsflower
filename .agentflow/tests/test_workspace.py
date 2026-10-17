@@ -123,8 +123,16 @@ class Base(unittest.TestCase):
     def finish(self, root, change):
         p = root / ".agentflow" / "tasks" / "T-001-probe.md"
         p.write_text(p.read_text(encoding="utf-8") + f"Outcome: completed\nChange: {change}\n", encoding="utf-8")
-        self.tool(root, "ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer", "--tool", "codex")
+        self.tool(root, "ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer", "--tool", "codex",
+                  "--status", "ready")
+        # the launcher records the running attempt, then moves the ledger to in progress; it flips to exited later
+        rt = root / ".agentflow" / "tasks" / ".runtime" / "T-001.json"
+        state = json.loads(rt.read_text(encoding="utf-8"))
+        state["attempts"][-1]["status"] = "running"
+        rt.write_text(json.dumps(state), encoding="utf-8")
         self.tool(root, "ledger.py", "set", "T-001", "--status", "in progress")
+        state["attempts"][-1]["status"] = "exited"
+        rt.write_text(json.dumps(state), encoding="utf-8")
         # like a real main folder: the memory is committed, then changes again before acceptance
         sh(root, "git", "add", ".agentflow")
         sh(root, "git", "commit", "-qm", "memory")

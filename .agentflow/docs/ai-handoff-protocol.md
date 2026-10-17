@@ -160,7 +160,7 @@ Each family has one owner, and a label means one thing only.
 | Role result | `## Result`; worker | Developer `Change: <SHA>` (workspace: `Change: <repo>@<SHA>, ...`, one per repository of `Repo:`); Tester `Verdict:` `pass`, `partial`, `unverified`, `fail` = the worst criterion; Deployer `Deployment:` `deployed`, `rolled-back`, `not-started` |
 | Stage state | `.agentflow/docs/project-plan.md`; Orchestrator | `planned`, `current`, `closed` |
 
-`.agentflow/tools/ledger.py` enforces the transitions: `ready` -> `in progress` / `blocked` / `cancelled`; `in progress` -> `review` / `blocked` / `rejected` / `cancelled`; `review` -> `done` / `rejected` / `in progress` / `blocked`; `blocked` -> `ready` / `in progress` / `review` / `cancelled`. `done`, `rejected`, `cancelled` are final. Task IDs are never reused.
+`.agentflow/tools/ledger.py` enforces the transitions: `ready` -> `in progress` / `blocked` / `cancelled`; `in progress` -> `review` / `blocked` / `rejected` / `cancelled`; `review` -> `done` / `rejected` / `in progress` / `blocked`; `blocked` -> `ready` / `in progress` / `review` / `cancelled`. `done`, `rejected`, `cancelled` are final. Task IDs are never reused. A direct `ledger.py set` keeps the launch gates too: an awaiting-approval row accepts only `approve`, a terminal `rejected`/`cancelled`, or a `--notes` update that keeps the prefix; `in progress` requires a running attempt recorded by the launcher.
 
 ### Flow
 
@@ -182,7 +182,7 @@ Each family has one owner, and a label means one thing only.
 
 ### Acceptance
 
-Acceptance is the event `review` -> `done`; `.agentflow/tools/ledger.py` allows it only after `gate.py verify` passed on that SHA. The verify record (`.agentflow/tasks/.runtime/T-NNN.verify.json`: attempt, SHA, target, check exit codes, log) is the evidence. Verify requires:
+Acceptance is the event `review` -> `done`; `.agentflow/tools/ledger.py` allows it only after `gate.py verify` passed on that SHA. The verify record (`.agentflow/tasks/.runtime/T-NNN.verify.json`: task ID, attempt, requirements hash (Task File header hash), full artifact SHA(s), target, check exit codes, log) is the evidence. Records written before those fields existed stay valid: a record without `taskId` belongs to the file it lives in. Verify requires:
 
 - the last attempt `exited`, the Task File above `## Result` unchanged, `Outcome: completed`;
 - Developer: branch, clean worktree, and `Change` at one SHA (workspace: in every repository); `git diff <main>...<SHA>` inside `Allowed files` (workspace: each repository's files with its folder in front); every `## Checks` command passing there with `AGENTFLOW_TARGET=local`; with `Independent check: tester`, a `done` Tester task with `Verdict: pass` for this SHA;
@@ -195,10 +195,10 @@ Beyond verify the Orchestrator does not investigate: a new measurement is a Test
 
 An `exited` attempt says nothing about the task: only the Result and the ledger do.
 
-1. `.agentflow/tasks/.runtime/T-NNN.json` is written only by the launcher (`.agentflow/tools/run_task.py`; `run-task.ps1` delegates to it): one entry per attempt (tool and arguments, times, exit code, `limitHit`, target, folder, baseline), appended, never overwritten; log `T-NNN.<n>.log`. Not committed.
+1. `.agentflow/tasks/.runtime/T-NNN.json` is written only by the launcher (`.agentflow/tools/run_task.py`; `run-task.ps1` delegates to it): one entry per attempt (task id, tool and arguments, times, exit code, `limitHit`, target, folder, baseline), appended, never overwritten; log `T-NNN.<n>.log`. Not committed. Runtime JSON (attempt, verify, `tick.json`, `tool-limits.json`, `orchestrator.json`, gate hand-off files) is written atomically (temp file + `os.replace`), and a malformed or structurally invalid record fails closed with a diagnosable error: it is never read as "no active work" or "no evidence".
 2. At the end of every attempt the launcher runs `gate.py endcheck`: the Task File above `## Result` unchanged (trailing blank lines do not count) and, for a Tester, review isolation held. For a Developer it also fails a Result written into the Task File copy inside the worktree (the main Task File is the only one read) and a branch commit under `.agentflow/tasks/`; recovery: copy the Result verbatim into the main Task File, move the branch back to the `Change` commit, `-Recheck`. A violation makes the attempt `error`. When the tool exited 0 and the violation was the check's own mistake, fixed since (an AgentFlow update), `run_task.py T-NNN --recheck` (or `run-task.ps1 T-NNN -Recheck` on Windows) runs the same check again; passing makes the attempt `exited`.
 3. The human is not a dispatcher: the Orchestrator polls `run_task.py --status` (`run-task.ps1 -Status` on Windows) slowly (every 2-3 minutes). Attempt ended (`exited`, `error`, `dead`): read the Result and decide. Result filled while an interactive tool is still `running`: read it, decide, then `--stop`.
-4. One task = one live worker. A `running` attempt is the task's lock; `.agentflow/tasks/.runtime/launch.lock` serializes launches from preflight until the attempt is recorded. Re-issue, Resume, and fallback happen only after the lock is released (the process ended, or `-Stop` on a hung worker). A worker is never declared dead by guess.
+4. One task = one live worker. A `running` attempt is the task's lock; `.agentflow/tasks/.runtime/launch.lock` serializes launches from preflight until the attempt is recorded. Re-issue, Resume, and fallback happen only after the lock is released (the process ended, or `-Stop` on a hung worker). A worker is declared dead or alive only through its pid plus recorded start identity (a reused pid cannot impersonate it), never by guess.
 
 ### Release order
 

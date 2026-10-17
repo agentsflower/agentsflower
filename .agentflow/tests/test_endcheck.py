@@ -117,6 +117,22 @@ class WorktreeCopyTests(unittest.TestCase):
         self.commit(self.wt, "merge with forbidden edit")
         self.assertTrue(any("commits Task Files" in x for x in self.problems()))
 
+    def test_octopus_merge_fails_closed_as_unauditable(self):
+        """A merge with three parents cannot be reconstructed by --remerge-diff; the audit refuses
+        instead of silently passing."""
+        (self.wt / "product.txt").write_text("work\n", encoding="utf-8")
+        self.commit(self.wt, "product")
+        for name in ("b1", "b2"):
+            git(self.wt, "checkout", "-q", "-b", name)
+            (self.wt / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
+            self.commit(self.wt, name)
+            git(self.wt, "checkout", "-q", "t-001-probe")
+        # a commit of our own, so neither merged head fast-forwards: the merge gets three parents
+        (self.wt / "head.txt").write_text("head\n", encoding="utf-8")
+        self.commit(self.wt, "own work")
+        git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "b1", "b2", "-m", "octopus")
+        self.assertTrue(any("octopus" in x for x in self.problems()), self.problems())
+
     def test_result_in_the_copy_and_its_commit_are_reported(self):
         copy = self.wt / ".agentflow" / "tasks" / "T-001-probe.md"
         copy.write_text(copy.read_text(encoding="utf-8") + "Outcome: completed\n", encoding="utf-8")

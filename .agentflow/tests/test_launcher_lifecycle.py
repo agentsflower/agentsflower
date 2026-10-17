@@ -8,6 +8,7 @@ import time
 import unittest
 from pathlib import Path
 import test_endcheck
+import gate  # noqa: E402  (tools dir is already on sys.path via test_endcheck)
 
 
 class LauncherLifecycleTests(unittest.TestCase):
@@ -47,7 +48,8 @@ class LauncherLifecycleTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("in progress", self.tool("ledger.py", "show", "T-001").stdout)
         rt = self.flow / "tasks/.runtime/T-001.json"
-        self.assertEqual(json.loads(rt.read_text())["attempts"][-1]["status"], "running")
+        att = json.loads(rt.read_text())["attempts"][-1]
+        self.assertEqual((att["status"], att["taskId"]), ("running", "T-001"))
         # Duplicate launch must not create a second attempt.
         self.assertNotEqual(self.launch(shell, "-Manual").returncode, 0)
         self.assertEqual(len(json.loads(rt.read_text())["attempts"]), 1)
@@ -81,6 +83,12 @@ class LauncherLifecycleTests(unittest.TestCase):
         self.assertIn("done", self.tool("ledger.py", "show", "T-001").stdout)
         self.assertTrue((self.root / "src/a.txt").exists())
         self.assertFalse(self.wt.exists())
+        # the verification record binds task, attempt, requirements hash and the full artifact SHA
+        rec = json.loads((self.flow / "tasks/.runtime/T-001.verify.json").read_text())[-1]
+        self.assertEqual((rec["taskId"], rec["attempt"]), ("T-001", 1))
+        self.assertRegex(rec["sha"], r"^[0-9a-f]{40}$")
+        self.assertEqual(rec["headerHash"], gate.sha256(gate.header(task.read_text(encoding="utf-8"))))
+        self.assertEqual(list((self.flow / "tasks/.runtime").glob("*.tmp")), [])  # atomic writes leave nothing
 
     def test_nonempty_live_list_in_both_shells(self):
         rt = self.flow / "tasks/.runtime"

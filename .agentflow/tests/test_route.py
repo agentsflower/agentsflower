@@ -249,7 +249,13 @@ class RouteTests(unittest.TestCase):
         self.assertIn("request req_test", r.stdout)
 
     def test_started_task_is_not_rewritten(self):
-        subprocess.run([sys.executable, self.root / ".agentflow" / "tools" / "ledger.py", "set", "T-001", "--status",
+        led = self.root / ".agentflow" / "tools" / "ledger.py"
+        subprocess.run([sys.executable, led, "approve", "T-001"], check=True, capture_output=True)
+        rt = self.root / ".agentflow" / "tasks" / ".runtime"
+        rt.mkdir(parents=True, exist_ok=True)
+        (rt / "T-001.json").write_text(json.dumps({"taskId": "T-001", "attempts": [
+            {"n": 1, "status": "running", "manual": True}]}), encoding="utf-8")
+        subprocess.run([sys.executable, led, "set", "T-001", "--status",
                         "in progress"], check=True, capture_output=True)
         Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96}),
                         "effort": effort("medium"), "complexity": complexity(0.4)}

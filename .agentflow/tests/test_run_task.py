@@ -199,6 +199,117 @@ class RunTaskTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("runtime state", r.stdout + r.stderr)
 
+    def test_structurally_invalid_runtime_state_fails_closed(self):
+        """A file that parses but is not an attempt history also refuses the launch and shows up in
+        --status: schema is checked at read time, never guessed as 'no active work'."""
+        self.rt_file.parent.mkdir(exist_ok=True)
+        cases = [
+            {"taskId": "T-999", "attempts": []},                                 # another task's state
+            {"taskId": "T-001"},                                                 # no attempts list
+            {"taskId": "T-001", "attempts": {"n": 1}},                           # attempts not a list
+            {"taskId": "T-001", "attempts": [{"n": "1", "status": "running"}]},  # n not an int
+            {"taskId": "T-001", "attempts": [{"n": 1, "status": "bogus"}]},      # unknown status
+            ["T-001"],                                                           # not an object
+        ]
+        for bad in cases:
+            with self.subTest(bad=bad):
+                self.rt_file.write_text(json.dumps(bad), encoding="utf-8")
+                r = self.launch("T-001", "--manual")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("runtime state", r.stdout + r.stderr)
+                self.assertIn("state-error", self.launch("--status").stdout)
+
+    def test_terminal_states_acquire_no_attempt(self):
+        """done/rejected/cancelled cannot launch a new attempt; the legacy verify record that proves
+        'done' (no taskId/headerHash fields) still counts - the migration path for old evidence."""
+        src = (self.flow / "tasks" / "T-001-probe.md").read_text(encoding="utf-8")
+        for tid in ("T-002", "T-003"):
+            (self.flow / "tasks" / f"{tid}-probe.md").write_text(
+                src.replace("T-001", tid).replace("t-001-probe", f"{tid.lower()}-probe"), encoding="utf-8")
+            self.tool("ledger.py", "add", tid, "--title", "Probe", "--stage", "1",
+                      "--role", "developer", "--tool", "devin", "--status", "ready")
+        # the claim path: a recorded running attempt, then the terminal ledger transitions
+        rt = self.flow / "tasks" / ".runtime"
+        rt.mkdir(exist_ok=True)
+        for tid in ("T-002", "T-003"):
+            (rt / f"{tid}.json").write_text(json.dumps({"taskId": tid, "attempts": [{"n": 1, "status": "running"}]}),
+                                           encoding="utf-8")
+            self.tool("ledger.py", "set", tid, "--status", "in progress")
+            state = json.loads((rt / f"{tid}.json").read_text(encoding="utf-8"))
+            state["attempts"][-1]["status"] = "exited"  # the worker ended; the ledger decides next
+            (rt / f"{tid}.json").write_text(json.dumps(state), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-002", "--status", "rejected", "--notes", "-> T-003: probe")
+        # 'done' needs a passing verify: a pre-2.12.1 record without the binding fields stays valid
+        self.tool("ledger.py", "set", "T-003", "--status", "review")
+        (rt / "T-003.verify.json").write_text(json.dumps([{
+            "n": 1, "at": "2026-10-17T00:00:00Z", "attempt": 1, "role": "developer",
+            "sha": "abc1234", "target": "local", "ok": True, "problems": [], "checks": [], "log": None}]),
+            encoding="utf-8")
+        self.tool("ledger.py", "set", "T-003", "--status", "done", "--commit", "abc1234")
+        for tid in ("T-002", "T-003"):
+            r = self.launch(tid, "--manual")
+            self.assertNotEqual(r.returncode, 0, tid)
+            self.assertIn("final ledger status", r.stdout + r.stderr, tid)
+            attempts = json.loads((rt / f"{tid}.json").read_text(encoding="utf-8"))["attempts"]
+            self.assertEqual(len(attempts), 1)  # no new attempt was acquired
+
+    def test_malformed_verify_records_fail_closed(self):
+        """A truncated or wrong-shaped verify file stops the gate with a diagnosable error -
+        it is never read as 'no evidence'."""
+        v = self.flow / "tasks" / ".runtime" / "T-001.verify.json"
+        v.parent.mkdir(exist_ok=True)
+        for bad in ("{ truncated", '{"n": 1}', '["x", 1]'):
+            with self.subTest(bad=bad):
+                v.write_text(bad, encoding="utf-8")
+                r = subprocess.run([sys.executable, str(self.flow / "tools" / "gate.py"), "verify", "T-001"],
+                                   cwd=self.root, env=self.env, capture_output=True, text=True)
+                self.assertEqual(r.returncode, 2, bad)
+                self.assertIn("verify records", r.stdout + r.stderr, bad)
+
+    def test_malformed_tool_limits_fail_closed(self):
+        """A corrupt tool-limits.json refuses the launch instead of reading as 'no limits'."""
+        lim = self.flow / "tasks" / ".runtime" / "tool-limits.json"
+        lim.parent.mkdir(exist_ok=True)
+        lim.write_text("{ broken", encoding="utf-8")
+        self.fake_devin("exit /b 0", "exit 0")
+        r = self.launch("T-001", "devin")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("tool-limits", r.stdout + r.stderr)
+
+    def test_live_argument_is_never_an_empty_string(self):
+        """Regression (PS 5.1): a trailing `--live ""` lost its value in Windows PowerShell 5.1, so gate.py
+        argparse failed with 'expected one argument'. The launcher emits --live only with a non-empty list.
+        Live shells: powershell 5.1 and pwsh in test_launcher_lifecycle; on POSIX run_task.py is the
+        launcher itself and needs no shell delegation."""
+        gate_calls, task = [], {"id": "T-001", "role": "developer", "workdir": str(self.wt),
+                                "worktree": str(self.wt), "checkouts": [], "setup": [], "env": {},
+                                "target": "local", "prompt": "p", "model": None, "effort": None,
+                                "repos": [""], "baseline": {}}
+
+        def fake_gate(cmd, tid, more=()):
+            gate_calls.append((cmd, list(more)))
+            return {"ok": True, "problems": [], "task": task} if cmd == "preflight" else task
+
+        def fake_run(argv, **kw):  # inside a manual launch the only subprocess is the ledger transition
+            self.assertIn("ledger.py", " ".join(map(str, argv)))
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        rt_dir = Path(self.tmp.name) / "rt"
+        rt_dir.mkdir()
+        with patch.object(run_task, "RT_DIR", rt_dir), \
+                patch.object(run_task, "invoke_gate", side_effect=fake_gate), \
+                patch.object(run_task.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(run_task.cmd_launch("T-001", None, True, None), 0)
+            preflight = [m for c, m in gate_calls if c == "preflight"][-1]
+            self.assertEqual(preflight, ["--manual"])
+            (rt_dir / "T-001.json").unlink()  # end the manual attempt cleanly for the next launch
+            (rt_dir / "T-009.json").write_text(json.dumps(
+                {"taskId": "T-009", "attempts": [{"n": 1, "manual": True, "status": "running"}]}))
+            self.assertEqual(run_task.cmd_launch("T-002", None, True, None), 0)
+        preflight = [m for c, m in gate_calls if c == "preflight"][-1]
+        self.assertEqual(preflight[:2], ["--live", "T-009"])
+        self.assertNotIn("", preflight)
+
     # --- real launches with a fake worker ----------------------------------------------------------------------
     def test_launch_status_and_stop_kills_the_tree(self):
         child = Path(self.tmp.name) / "child.pid"

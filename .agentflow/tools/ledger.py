@@ -12,6 +12,9 @@
 
 Only the Orchestrator (or a Single Mode session) runs this. Transitions follow .agentflow/docs/ai-handoff-protocol.md,
 "Task lifecycle". A '|' inside a value is replaced with '/'. Task IDs are never reused.
+A direct `set` keeps the same gates a launch does: an awaiting-approval row accepts only `approve`, a terminal
+`rejected`/`cancelled`, or a `--notes` update that keeps the prefix; `in progress` requires a running attempt
+recorded by the launcher (claims go through .agentflow/tools/run_task.py / run-task.ps1, not this CLI).
 """
 import argparse
 import json
@@ -82,13 +85,63 @@ def save(path: Path, lines, head, end, rows):
     path.write_text("\n".join(out), encoding="utf-8", newline="\n")
 
 
+# --- runtime state schema (shared with gate.py and run_task.py) -----------------------------------------------------
+ATTEMPT_STATES = ("running", "exited", "error")
+
+
+def check_runtime(rt, tid=None):
+    """Structural validity of tasks/.runtime/T-NNN.json; raises ValueError. Records with extra or newer
+    fields pass: only the shape a reader depends on is required, so older and newer records coexist."""
+    if not isinstance(rt, dict):
+        raise ValueError("runtime state is not an object")
+    if tid and rt.get("taskId") not in (None, tid):
+        raise ValueError(f"runtime state is for {rt.get('taskId')}, not {tid}")
+    attempts = rt.get("attempts")
+    if attempts is None:
+        if rt:
+            raise ValueError("runtime state has no attempts list")
+        return rt
+    if not isinstance(attempts, list):
+        raise ValueError("runtime attempts are not a list")
+    for a in attempts:
+        if not isinstance(a, dict) or not isinstance(a.get("n"), int) or a.get("status") not in ATTEMPT_STATES:
+            raise ValueError("malformed attempt record (needs n:int and status running|exited|error)")
+    return rt
+
+
+def check_verify(recs):
+    """Structural validity of T-NNN.verify.json: a list of objects; raises ValueError."""
+    if not isinstance(recs, list) or any(not isinstance(r, dict) for r in recs):
+        raise ValueError("verify records are not a list of objects")
+    return recs
+
+
+def claimed(tid: str):
+    """The launcher's recorded running attempt for this task, or None: a claim exists only while a real
+    attempt runs. A missing file is no claim; a corrupt one is a diagnosable refusal, never a silent yes."""
+    p = root() / "tasks" / ".runtime" / f"{tid}.json"
+    if not p.exists():
+        return None
+    try:
+        rt = check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), tid)
+    except (OSError, ValueError) as e:
+        sys.exit(f"{tid}: cannot read runtime state {p.name}: {e}")
+    a = rt["attempts"][-1] if rt["attempts"] else None
+    return a if a and a.get("status") == "running" else None
+
+
 def verified(tid: str, sha: str) -> bool:
-    """A passing `gate.py verify` record for this task on this commit (protocol: Acceptance)."""
+    """A passing `gate.py verify` record for this task on this commit (protocol: Acceptance). A record
+    without `taskId` is legacy evidence bound to the file it lives in; a record naming another task never counts."""
     p = root() / "tasks" / ".runtime" / f"{tid}.verify.json"
     if not p.exists() or not sha:
         return False
-    recs = json.loads(p.read_text(encoding="utf-8"))
-    last = [r for r in recs if r.get("sha") and (r["sha"].startswith(sha) or sha.startswith(r["sha"]))]
+    try:
+        recs = check_verify(json.loads(p.read_text(encoding="utf-8")))
+    except (OSError, ValueError) as e:
+        sys.exit(f"{tid}: cannot read verify records {p.name}: {e}")
+    last = [r for r in recs if r.get("taskId") in (None, tid) and r.get("sha")
+            and (r["sha"].startswith(sha) or sha.startswith(r["sha"]))]
     return bool(last) and last[-1]["ok"]
 
 
@@ -155,8 +208,17 @@ def main() -> None:
             sys.exit(f"{a.id} not in ledger")
         i = idx[a.id]
         cur = rows[i][cols.index("Status")]
+        notes = rows[i][cols.index("Notes")]
+        if notes.startswith(AWAITING) and a.status not in ("cancelled", "rejected") and (
+                (a.status and a.status != "blocked")
+                or (a.notes is not None and not a.notes.startswith(AWAITING))):
+            sys.exit(f"{a.id} awaits the human's approval of the plan: ledger.py approve {a.id} "
+                     "(only approve, a terminal status, or --notes keeping the prefix is allowed)")
         if a.status and a.status != cur and cur in NEXT and a.status not in NEXT[cur]:
             sys.exit(f"{a.id}: {cur} -> {a.status} is not allowed; from {cur}: {', '.join(sorted(NEXT[cur])) or 'final'}")
+        if a.status == "in progress" and cur != "in progress" and not claimed(a.id):
+            sys.exit(f"{a.id}: 'in progress' needs a running attempt recorded by the launcher "
+                     "(.agentflow/tools/run_task.py, run-task.ps1 on Windows). Nothing was changed")
         if a.status in NEEDS_NOTES and not a.notes:
             sys.exit(f"{a.status} needs --notes (reason; for rejected also the successor task)")
         if a.status == "done":

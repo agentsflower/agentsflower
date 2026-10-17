@@ -88,6 +88,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ledger  # noqa: E402
 import machine_capacity  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
@@ -402,8 +403,15 @@ def kill_tree(pid):
 
 # --- runtime state (tasks/.runtime/T-NNN.json; attempts appended, never overwritten) --------------------------------
 def read_rt(tid):
+    """The task's attempt history, or None. Malformed or structurally invalid state fails closed:
+    a corrupt file is a diagnosable error, never 'no active work'."""
     p = RT_DIR / f"{tid}.json"
-    return json.loads(p.read_text(encoding="utf-8-sig")) if p.exists() else None
+    if not p.exists():
+        return None
+    try:
+        return ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), tid)
+    except (OSError, ValueError) as e:
+        raise LaunchError(f"cannot read runtime state {p.name}: {e}")
 
 
 def write_rt(tid, obj):
@@ -433,11 +441,11 @@ def live_tasks():
         if not re.match(r"^T-\d+\.json$", p.name):
             continue
         try:
-            rt = json.loads(p.read_text(encoding="utf-8-sig"))
+            rt = ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
         except (OSError, ValueError) as e:
             raise LaunchError(f"cannot read active runtime state {p.name}: {e}")  # corrupted state fails closed
         if attempt_held(last_attempt(rt)):
-            out.append(rt["taskId"])
+            out.append(rt.get("taskId") or p.stem)
     return out
 
 
@@ -584,14 +592,18 @@ def worker_env(t):
 
 # --- resource and permission checks before a worker start -----------------------------------------------------------
 def limit_until(tool):
-    """Observed quota/access limits, project file and shared machine registry; earliest expiry wins."""
+    """Observed quota/access limits, project file and shared machine registry; earliest expiry wins.
+    A malformed project record fails closed: 'no limits known' is never inferred from a bad file."""
     ends = []
-    try:
-        rec = json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig")).get(tool) if LIMITS_FILE.exists() else None
-        if rec:
-            ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
-    except (OSError, ValueError, KeyError):
-        pass
+    if LIMITS_FILE.exists():
+        try:
+            lim = json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig"))
+            rec = lim.get(tool) if isinstance(lim, dict) else None
+            if rec:
+                ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ")
+                            .replace(tzinfo=timezone.utc))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: {e}")
     machine = machine_capacity.limit_until(tool)
     if machine:
         ends.append(machine)
@@ -709,14 +721,18 @@ def cmd_status():
         for p in sorted(RT_DIR.glob("T-*.json")):
             if not re.match(r"^T-\d+\.json$", p.name):
                 continue
-            rt = json.loads(p.read_text(encoding="utf-8-sig"))
+            try:
+                rt = ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
+            except (OSError, ValueError) as e:
+                print(f"{p.stem}  state-error: cannot read runtime state ({e})")
+                continue
             a = last_attempt(rt)
             if not a:
                 continue
             state = a.get("status")
             if state == "running" and not a.get("manual") and not attempt_alive(a):
                 state = "dead"
-            print(f"{rt['taskId']}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
+            print(f"{rt.get('taskId') or p.stem}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
                   f"exit={a.get('exitCode') if a.get('exitCode') is not None else ''}  "
                   f"limitHit={a.get('limitHit')}  finished={a.get('finishedAt') or ''}")
     return 0
@@ -857,10 +873,7 @@ def cmd_launch(tid, tool, manual, grant):
         raise LaunchError(f"another launcher run is in progress ({lock}). Wait and check --status.")
     lease, worker_started, a, rt = None, False, None, None
     try:
-        try:
-            rt = read_rt(tid)  # a corrupted state file fails closed here
-        except (OSError, ValueError) as e:
-            raise LaunchError(f"cannot read active runtime state for {tid}: {e}")
+        rt = read_rt(tid)  # corrupted state fails closed in read_rt
         prev = last_attempt(rt)
         if attempt_held(prev):
             raise LaunchError(f"{tid} already has a running attempt ({prev.get('tool')}, pid {prev.get('pid')}). "
@@ -902,7 +915,7 @@ def cmd_launch(tid, tool, manual, grant):
         if not rt:
             rt = {"taskId": tid, "attempts": []}
         n = len(rt["attempts"]) + 1
-        a = {"n": n, "tool": tool or "manual",
+        a = {"n": n, "taskId": tid, "tool": tool or "manual",
              "toolArgsHash": argv_hash(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")))
              if tool else None,
              "role": t["role"], "manual": manual, "status": "running", "pid": None, "pidStart": None,

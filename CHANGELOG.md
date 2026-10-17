@@ -2,6 +2,38 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.12.1 - 2026-10-17
+
+Trustworthy task lifecycle (improvement plan section 1): claims, attempts and ledger
+transitions now pass verified state only, and malformed runtime state fails closed
+instead of reading as "no active work".
+
+- `ledger.py set` can no longer bypass the approval gate: a row whose Notes still start
+  with "awaiting approval" accepts only `approve`, a terminal `rejected`/`cancelled`, or a
+  `--notes` update that keeps the prefix. `--status in progress` additionally requires a
+  running attempt recorded by the launcher - a claim exists only while a real attempt runs.
+- Runtime JSON is written atomically everywhere (attempt `T-NNN.json`, `T-NNN.verify.json`,
+  `tick.json`, `tool-limits.json`, `orchestrator.json`, gate `--out` hand-off files), and a
+  malformed or structurally invalid record fails closed with a diagnosable error at read
+  time - never as "no active work" or "no evidence". Attempt and verify records are
+  schema-checked on read; `run_task.py --status` marks an unreadable file `state-error`
+  instead of skipping or crashing.
+- Verify records now bind task ID, attempt number, requirements hash (Task File header
+  hash) and the full artifact SHA; attempt records carry `taskId`. Legacy records stay
+  valid evidence: a record without `taskId` belongs to the file it lives in.
+- `tick.py` judges a worker process by pid plus recorded start identity - the same rule
+  the launcher uses, on every platform - so a reused pid can no longer impersonate a live
+  worker.
+- Regression coverage: the empty `--live` argv defect (PowerShell 5.1), octopus-merge
+  audit refusal and ordinary-merge history audit in disposable repositories, approval-bypass
+  and terminal-state launch refusals, schema validation and malformed-state fail-closed tests.
+- Migration for installed projects: `install.py --update`. In-flight attempts and legacy
+  verify records remain valid; nothing is rewritten. A corrupt `T-NNN.json` now blocks
+  launches and the ledger `in progress` transition until repaired or removed - that is the
+  intended fail-closed behavior, not a regression. A direct `ledger.py set --status
+  in progress` used outside the launcher stops working by design: issue attempts through
+  `run_task.py` (or `run-task.ps1`).
+
 ## 2.12.0 - 2026-10-17
 
 Public-release documentation milestone. No tool, protocol, role or dashboard
