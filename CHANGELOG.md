@@ -2,6 +2,35 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.13 - 2026-10-17
+
+- Optional MCP server `.agentflow/tools/mcp_server.py` on the official released SDK
+  (`pip install "agentflow-sdlc[mcp]"` == `mcp>=2.3,<3`, PyPI 2.x, Python >=3.10). Core stays
+  stdlib-only: without the extra the script exits 2 with an install-extra diagnostic on stderr
+  (no hidden installation, no homegrown JSON-RPC fallback). Stdio tools: `agentflow_status`,
+  `agentflow_get_task`, `agentflow_query_ledger` (read-only hints set), `agentflow_run_gate`
+  (runs the real gate.py, not labelled read-only) and `agentflow_accept_task` only behind an
+  explicit `--enable-orchestrator-tools` startup flag -- an operator control of the server
+  surface, not proof of the caller's role. All subprocesses run without a shell; stdout is
+  protocol traffic only. `agentflow mcp` starts the server of a discovered project.
+- `install.py --mcp` (explicit opt-in) merges an `agentflow` entry into the client's project
+  MCP config: `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor (`--mcp-client`;
+  a project `.mcp.json` is not auto-discovered by Cursor). The merge preserves unrelated keys
+  and foreign servers, refuses malformed JSON and an unmanaged conflicting `agentflow` entry
+  before writing anything, points at the target's own installed server with privileged tools
+  off, and persists no credentials.
+- `.agentflow/tests/check_mcp.py` is the explicit optional-SDK integration (not in unittest
+  discover): disposable venvs provision `mcp>=2.3,<3` and the packaged wheel, prove the
+  missing-SDK diagnostic, a real stdio handshake/list-tools/read-only tool calls, rejection of
+  invalid input, the privileged tool absent by default and present with the flag, and the
+  packaged `agentflow mcp` entry. `test_mcp_server.py` covers SDK-independent validation;
+  `test_install.py` covers config preservation and refusals. CI adds an `mcp` job on
+  ubuntu/windows after the core suite.
+- Migration: update the installed template with `install.py --update` (delivers
+  `tools/mcp_server.py` and the installer flags). To expose the server to a client, run
+  `install.py --update --mcp [--mcp-client cursor]` in the project and install the `mcp` extra
+  in the interpreter that will run it. No configuration changes are needed otherwise.
+
 ## 2.11.12 - 2026-10-17
 
 - New distributable package `agentflow-sdlc` (`pyproject.toml` + `setup.py`, setuptools; local project

@@ -18,6 +18,10 @@ never presented as a green macOS run.
   `ubuntu-latest` and `windows-latest` (Python 3.12): it provisions `build`/`setuptools`
   into disposable venvs, builds the `agentflow-sdlc` wheel and sdist, and exercises the
   installed CLI outside the source tree. The unit-test job stays stdlib-only and offline.
+- A third job `mcp` (`needs: tests`) runs `python .agentflow/tests/check_mcp.py` on
+  `ubuntu-latest` and `windows-latest` (Python 3.12): it provisions the released `mcp` SDK
+  (`>=2.3,<3`) and the packaged wheel into disposable venvs and drives a real stdio MCP
+  session against an installed project. The core unit-test job stays stdlib-only and offline.
 - `AGENTFLOW_MACHINE_STATE_DIR` is pointed into `${{ runner.temp }}`, so the machine
   registry is isolated per job and no real AgentFlow credentials or host machine
   state are touched. Platform-specific tests keep their existing skips
