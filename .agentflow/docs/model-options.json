@@ -1,0 +1,128 @@
+{
+  "policy": "Judge the task's own requirements first, independent of availability. The project floor and preference is Devin swe-2-high: it is the minimum permitted default, never an override of a task that needs more. Prefer adequate Devin models in this CLI first; use another CLI only when no adequate Devin option exists. Codex capacity is deliberately conserved for tasks that justify it or for independent checks when Devin is unsuitable. Antigravity (agy) Claude and GPT families are quota-limited until about 2026-10-21; agy Gemini is a separately billed group that may still work - never treat one family's hold as proof the whole tool is dead, and never bypass an observed hold. Claude Code subscription access is disabled by the organization. A tester should run on a different tool than the developer it checks whenever another adequate option remains. Never lower the required capability or effort to fit a free slot: no adequate model means the task waits, with its reason recorded.",
+  "jev_model": "jev-1.13.0",
+  "options": {
+    "devin-swe-2": {
+      "tool": "devin",
+      "model_by_effort": {"medium": "swe-2-medium", "high": "swe-2-high", "max": "swe-2-max"},
+      "default_effort": "high",
+      "roles": ["developer", "tester", "orchestrator"],
+      "what": "Agentic software-engineering model for development, debugging, review and orchestration; high is the project floor, max for the hardest long-horizon or subtle concurrency/security work",
+      "not_for": "trivial mechanical steps where medium effort suffices, or tasks beyond its maximum tier",
+      "examples": ["implement a feature across several files", "debug a state/lifecycle defect", "independent code review", "run orchestration mechanics"],
+      "quota_group": "devin"
+    },
+    "devin-gpt-6-astra": {
+      "tool": "devin",
+      "model_by_effort": {"low": "gpt-6-astra-low", "medium": "gpt-6-astra-medium", "high": "gpt-6-astra-high", "xhigh": "gpt-6-astra-xhigh", "max": "gpt-6-astra-max"},
+      "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Highest-intelligence Devin-hosted GPT model for the hardest, most ambiguous or highest-risk tasks",
+      "not_for": "routine changes where swe-2 or a lower astra tier is sufficient",
+      "examples": ["redesign a subsystem", "investigate a systemic race", "review a risky migration"],
+      "quota_group": "devin"
+    },
+    "devin-claude-opus-5.5": {
+      "tool": "devin",
+      "model_by_effort": {"low": "claude-opus-5-5-low", "medium": "claude-opus-5-5-medium", "high": "claude-opus-5-5-high", "xhigh": "claude-opus-5-5-xhigh", "max": "claude-opus-5-5-max"},
+      "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Devin-hosted Claude Opus model for demanding implementation, debugging and review work",
+      "not_for": "small mechanical tasks or work swe-2 handles at floor cost",
+      "examples": ["cross-cutting refactor", "subtle integration debugging", "critical-path review"],
+      "quota_group": "devin"
+    },
+    "devin-gpt-6-sol": {
+      "tool": "devin",
+      "model_by_effort": {"low": "gpt-6-sol-low", "medium": "gpt-6-sol-medium", "high": "gpt-6-sol-high", "xhigh": "gpt-6-sol-xhigh", "max": "gpt-6-sol-max"},
+      "default_effort": "medium",
+      "roles": ["developer", "tester"],
+      "what": "Devin-hosted general-purpose GPT model for ordinary implementation and review work",
+      "not_for": "the hardest ambiguous tasks (use astra or swe-2 max) or trivial mechanical steps",
+      "examples": ["ordinary multi-file implementation", "code review with test execution"],
+      "quota_group": "devin"
+    },
+    "devin-adaptive": {
+      "tool": "devin", "model": "adaptive",
+      "roles": ["developer", "tester"],
+      "what": "Devin's own model routing: the CLI picks the backend; use only when a task explicitly allows provider choice",
+      "not_for": "tasks whose contract names a concrete model, or evidence that must bind a recorded model identity",
+      "quota_group": "devin"
+    },
+    "codex-gpt-6.1-sol": {
+      "tool": "codex", "model": "gpt-6.1-sol",
+      "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Current general-purpose Codex model for complex software work; conserved capacity, spend on tasks that justify it",
+      "not_for": "tiny mechanical tasks or work the Devin floor handles adequately",
+      "examples": ["implement a feature across several files", "debug an integration", "perform an independent code review"],
+      "max_complexity": 1, "escalate_to": "codex-gpt-6-astra",
+      "quota_group": "codex"
+    },
+    "codex-gpt-6-astra": {
+      "tool": "codex", "model": "gpt-6-astra",
+      "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Highest-intelligence Codex model for the hardest, longest, most ambiguous or highest-risk tasks",
+      "not_for": "routine changes where a smaller model is sufficient",
+      "examples": ["redesign a subsystem", "investigate a systemic race", "review a risky migration"],
+      "quota_group": "codex"
+    },
+    "agy-gemini-3.8-flash": {
+      "tool": "agy",
+      "model_by_effort": {"low": "gemini-3.8-flash-low", "medium": "gemini-3.8-flash-medium", "high": "gemini-3.8-flash-high"},
+      "default_effort": "medium",
+      "roles": ["developer", "tester"],
+      "what": "Antigravity-hosted Gemini flash model for ordinary implementation and review; billed in its own quota group, independent of agy Claude/GPT",
+      "not_for": "the hardest reasoning tasks or work requiring long uninterrupted quota",
+      "examples": ["a contained feature task", "an independent tester pass"],
+      "quota_group": "agy-gemini"
+    },
+    "agy-gemini-3.1-pro": {
+      "tool": "agy",
+      "model_by_effort": {"low": "gemini-3.1-pro-low", "high": "gemini-3.1-pro-high"},
+      "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Antigravity-hosted Gemini pro model for harder tasks when its quota group is free",
+      "not_for": "mechanical work or when the group hold is active",
+      "quota_group": "agy-gemini"
+    },
+    "agy-claude-opus-4.6-thinking": {
+      "tool": "agy", "model": "claude-opus-4-6-thinking",
+      "roles": ["developer", "tester"],
+      "what": "Antigravity-hosted Claude Opus thinking model for hard implementation and review tasks",
+      "not_for": "work while the observed agy Claude/GPT quota hold is active (until about 2026-10-21)",
+      "quota_group": "agy-claude-gpt"
+    },
+    "agy-claude-sonnet-4.6": {
+      "tool": "agy", "model": "claude-sonnet-4-6",
+      "roles": ["developer", "tester"],
+      "what": "Antigravity-hosted Claude Sonnet model for ordinary implementation and review",
+      "not_for": "work while the observed agy Claude/GPT quota hold is active",
+      "quota_group": "agy-claude-gpt"
+    },
+    "agy-gpt-oss-120b": {
+      "tool": "agy", "model": "gpt-oss-120b-medium",
+      "roles": ["developer", "tester"],
+      "what": "Antigravity-hosted open GPT model for contained implementation and review tasks",
+      "not_for": "work while the observed agy Claude/GPT quota hold is active",
+      "quota_group": "agy-claude-gpt"
+    },
+    "claude-sonnet-5.5": {
+      "tool": "claude", "model": "sonnet",
+      "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "medium",
+      "roles": ["developer", "tester"],
+      "what": "Claude Code subscription model for routine implementation, UI work and review; organization subscription access is currently disabled, so it is usually ineligible",
+      "not_for": "anything while the disabled-access observation holds",
+      "quota_group": "claude"
+    },
+    "claude-opus-5.5": {
+      "tool": "claude", "model": "opus",
+      "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Claude Code subscription model for demanding implementation and review; disabled-access observation applies",
+      "not_for": "anything while the disabled-access observation holds",
+      "quota_group": "claude"
+    }
+  }
+}

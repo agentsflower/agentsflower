@@ -35,6 +35,11 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-030 | Recoverable handover + limit detection/quota groups upstream generalization | 5 | developer | devin | ready | T-028 |  |  | 2026-10-17 11:08 |
 | T-032 | Evidence and completion gate: criterion IDs, artifact binding, integrated checks | 5 | developer | devin | ready | T-030 |  |  | 2026-10-17 11:08 |
 | T-034 | Bounded autonomy: recorded model identity, quota policy, stop-hook prototype | 5 | developer | devin | ready | T-032 |  |  | 2026-10-17 11:08 |
-| T-036 | Concise instructions and full documentation alignment | 5 | developer | devin | ready | T-034 |  |  | 2026-10-17 11:08 |
+| T-036 | Concise instructions and full documentation alignment | 5 | developer | devin | ready | T-040 |  |  | 2026-10-17 11:40 |
 | T-038 | Evaluation scenarios, open-task migration, Stage 5 release metadata | 5 | developer | devin | ready | T-036 |  |  | 2026-10-17 11:08 |
+| T-040 | Mandatory assessed adequacy routing: persisted Jev assessment, floor, launch admission | 5 | developer | devin | ready | T-034 |  |  | 2026-10-17 11:40 |
+| T-042 | Clickable roadmap-view mockup for human selection | 5 | developer | devin | in progress |  |  |  | 2026-10-17 11:41 |
+| T-044 | Roadmap data layer: plan parser, stage records, payload schema, diagnostics | 5 | developer | devin | ready | T-038 |  |  | 2026-10-17 11:40 |
+| T-046 | Roadmap view UI: stage cards, drill-down, diagnostics, themes | 5 | developer | devin | ready | T-044 |  |  | 2026-10-17 11:40 |
+| T-048 | Dashboard integration: packaged assets, installer preservation, docs | 5 | developer | devin | ready | T-046 |  |  | 2026-10-17 11:40 |
 

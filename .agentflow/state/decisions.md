@@ -1,5 +1,34 @@
 # Decision Log
 
+## 2026-10-17: Mandatory assessed-adequacy routing adopted; task pool extended
+
+New explicit human instruction (runtime file
+tasks/.runtime/required-routing-policy-2026-10-17.md) supersedes default-only
+worker routing; imported into docs/project-rules.md "Mandatory assessed-
+adequacy routing". Created docs/model-options.json (project-owned) from the
+pilot's proven schema plus this project's policy and per-family quota_group
+fields (agy-gemini vs agy-claude-gpt) matching the machine registry's scoped
+holds. TypeSafe key-file variable validated by existence only; first real
+route.py call succeeded (jev-1.13.0).
+Jev assessments (all persisted in .runtime/T-NNN.route.json): T-028/030/032/034/
+036/040/044 -> devin-swe-2 at max effort (swe-2-max), family confidence
+0.89-0.97, hard complexity; T-038/042/046/048 -> swe-2-high adequate. Headers
+set to the assessed adequate model; T-046/T-048 lowered from a guessed max to
+the assessed high (adequacy floor is a minimum, and the policy prefers the
+cheaper sufficient tier).
+T-028 keeps its running attempt on swe-2-high: it launched before the mandatory
+policy (recorded, not retro-fitted), already committed 2c58157 and entered
+Result-writing when the policy arrived; per instruction, sufficient in-flight
+work is not stopped for paperwork - adequacy is judged by its independent
+exact-SHA tester, and any successor runs the assessed model.
+New approved contracts: T-040 routing enforcement (depends T-034, inserted
+before T-036 so the docs task covers it), T-042 clickable mockup (independent,
+parallel-safe), T-044 data layer -> T-046 UI -> T-048 integration (after T-038
+and the human's mockup selection; tester IDs reserved odd-after-developer).
+Launcher/env verified: Task File Model wins over AGENTFLOW_DEVIN_ARGS via
+remove_overridden, so a stronger declared model cannot be silently downgraded
+by the swe-2-high machine default; process-level override clearing not needed.
+
 ## 2026-10-17: Stage 4 bounded cycle outcome and Stage 5 decomposition
 
 Drift audit (upstream.py --check): every installed project sits at 2.11.8
