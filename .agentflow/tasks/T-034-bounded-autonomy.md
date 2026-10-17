@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-max
 Stage: 5
-Depends on: T-032
+Depends on: T-064
 Branch: t-034-bounded-autonomy
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-034-bounded-autonomy
 Independent check: tester

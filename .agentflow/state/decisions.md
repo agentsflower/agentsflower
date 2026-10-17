@@ -1,5 +1,18 @@
 # Decision Log
 
+## 2026-10-17: Contract-authoring rules learned from two scope rejections
+
+- Allowed files must declare the whole `git diff main...HEAD` file set,
+  including the inherited base when a successor branches from an unmerged
+  commit - scope verification diffs the branch, not the delta commit.
+- One path per bullet: the parser takes the first token of each line, so a
+  comma-separated list or a trailing "(note)" becomes a literal path that
+  matches nothing.
+- `Depends on:` may only point at `done` tasks; when a predecessor is
+  rejected, unstarted successors re-point at the accepted successor task.
+- A Do-not-touch path that contains an allowed path trips the overlap check;
+  exclude other Task Files via the `t-*.md` glob, not the whole tasks/ dir.
+
 ## 2026-10-17: 2.12.2 lifecycle trust round 2 - fixes T-029's confirmed defects
 
 Every runtime-state reader now validates the shape it depends on: wrong-shaped
