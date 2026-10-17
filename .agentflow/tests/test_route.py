@@ -11,6 +11,7 @@ import unittest
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 FLOW = Path(__file__).resolve().parents[1]
 KEY = "test-key-never-printed"
@@ -263,6 +264,24 @@ class RouteTests(unittest.TestCase):
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.task(), before)
+
+    def test_route_log_is_written_atomically(self):
+        """T-NNN.route.json goes through temp file + os.replace like every runtime record: a failed
+        replace keeps the previous history and strands no temp file."""
+        sys.path.insert(0, str(FLOW / "tools"))
+        import route  # noqa: E402
+        rt = self.root / ".agentflow" / "tasks" / ".runtime" / "T-001.route.json"
+        # the shared module cache points route.FLOW_ROOT at the real .agentflow: aim it at the fixture
+        with patch.object(route, "FLOW_ROOT", self.root / ".agentflow"):
+            route._log("T-001", {"n": 1, "choice": "devin"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 1)
+            with patch.object(os, "replace", side_effect=OSError("locked")):
+                with self.assertRaises(OSError):
+                    route._log("T-001", {"n": 2, "choice": "codex"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 1)  # the old history survived
+            route._log("T-001", {"n": 2, "choice": "codex"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 2)
+            self.assertEqual(list(rt.parent.glob("*.tmp")), [])
 
     def test_tester_never_gets_the_developer_tool(self):
         sys.path.insert(0, str(self.root / ".agentflow" / "tools"))

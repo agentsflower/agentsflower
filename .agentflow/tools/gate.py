@@ -16,7 +16,6 @@ lists product repositories (folders under the workspace root, which is a small m
 its repositories in `Repo:`, and commits are written `<repo>@<sha>, ...`.
 """
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -53,13 +52,11 @@ def field(text, name):
 
 
 def header(text):  # everything above "## Result": the worker must not change it
-    # Trailing blank lines do not count: a worker that adds the missing "## Result" heading after an empty line
-    # changes nothing above it.
-    return re.sub(r"(?ms)^## Result[ \t]*$.*\Z", "", text.replace("\r\n", "\n")).rstrip() + "\n"
+    return ledger.header(text)
 
 
 def sha256(s):
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+    return ledger.sha256(s)
 
 
 def bullets(body):

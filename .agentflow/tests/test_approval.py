@@ -155,6 +155,29 @@ class ApprovalTests(unittest.TestCase):
         p = self.tool("ledger.py", "set", "T-002", "--status", "in progress", check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("cannot read runtime state", p.stdout + p.stderr)
+        for bad in ("{}", "[]", "null"):  # an empty container is not 'no attempts' either
+            with self.subTest(bad=bad):
+                (rt / "T-002.json").write_text(bad, encoding="utf-8")
+                p = self.tool("ledger.py", "set", "T-002", "--status", "in progress", check=False)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("cannot read runtime state", p.stdout + p.stderr)
+
+    def test_tasks_md_writes_are_atomic(self):
+        """The ledger file goes through temp file + os.replace like the runtime records: a failed
+        replace leaves the last good tasks.md untouched, never a half-written table."""
+        sys.path.insert(0, str(FLOW / "tools"))
+        import ledger  # noqa: E402
+        path = Path(self.tmp.name) / "tasks.md"
+        lines, cols, rows, head, end = ledger.load(path)
+        rows.append(["T-001", "Probe", "1", "developer", "codex", "ready", "", "", "", ""])
+        before = path.read_text(encoding="utf-8")
+        with patch.object(os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                ledger.save(path, lines, head, end, rows)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)  # the previous ledger is preserved
+        ledger.save(path, lines, head, end, rows)
+        self.assertIn("T-001", path.read_text(encoding="utf-8"))
+        self.assertEqual(list(path.parent.glob("*.tmp")), [])
 
 
 if __name__ == "__main__":

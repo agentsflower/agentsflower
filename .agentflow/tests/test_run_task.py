@@ -14,6 +14,7 @@ import test_endcheck  # noqa: E402
 
 FLOW = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FLOW / "tools"))
+import gate  # noqa: E402
 import run_task  # noqa: E402
 
 
@@ -205,11 +206,14 @@ class RunTaskTests(unittest.TestCase):
         self.rt_file.parent.mkdir(exist_ok=True)
         cases = [
             {"taskId": "T-999", "attempts": []},                                 # another task's state
+            {"attempts": []},                                                    # names no task at all
             {"taskId": "T-001"},                                                 # no attempts list
             {"taskId": "T-001", "attempts": {"n": 1}},                           # attempts not a list
             {"taskId": "T-001", "attempts": [{"n": "1", "status": "running"}]},  # n not an int
             {"taskId": "T-001", "attempts": [{"n": 1, "status": "bogus"}]},      # unknown status
+            {"taskId": "T-001", "attempts": [{"n": 1, "status": "exited", "taskId": "T-999"}]},  # other task's attempt
             ["T-001"],                                                           # not an object
+            {},                                                                  # empty container is not 'no attempts'
         ]
         for bad in cases:
             with self.subTest(bad=bad):
@@ -253,6 +257,93 @@ class RunTaskTests(unittest.TestCase):
             attempts = json.loads((rt / f"{tid}.json").read_text(encoding="utf-8"))["attempts"]
             self.assertEqual(len(attempts), 1)  # no new attempt was acquired
 
+    def test_acceptance_is_bound_to_the_current_attempt_and_task_file(self):
+        """`set --status done` takes only a PASS bound to this task, its last attempt, the current
+        requirements hash and the artifact SHA. A stale PASS (earlier attempt, changed header) or a
+        different artifact never accepts; a truthy non-boolean `ok` is a diagnosable error, not evidence."""
+        rt_dir = self.rt_file.parent
+        rt_dir.mkdir(exist_ok=True)
+        sha = "a" * 40
+
+        def task_file(tid):
+            return (self.flow / "tasks" / f"{tid}-probe.md").read_text(encoding="utf-8")
+
+        def rec(tid, hh, **kw):
+            return {"n": 1, "at": "2026-10-17T00:00:00Z", "taskId": tid, "attempt": 1,
+                    "role": "developer", "headerHash": hh, "sha": sha, "target": "local",
+                    "ok": True, "problems": [], "checks": [], "log": None, **kw}
+
+        def done(tid, commit=sha):
+            return subprocess.run([sys.executable, str(self.flow / "tools" / "ledger.py"), "set",
+                                   tid, "--status", "done", "--commit", commit],
+                                  cwd=self.root, env=self.env, capture_output=True, text=True)
+
+        # T-001: a fully bound PASS accepts
+        self.rt_file.write_text(json.dumps({"taskId": "T-001", "attempts": [
+            {"n": 1, "status": "running", "taskId": "T-001"}]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-001", "--status", "in progress")
+        self.rt_file.write_text(json.dumps({"taskId": "T-001", "attempts": [
+            {"n": 1, "status": "exited", "taskId": "T-001"}]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-001", "--status", "review")
+        hh = gate.sha256(gate.header(task_file("T-001")))
+        (rt_dir / "T-001.verify.json").write_text(json.dumps([rec("T-001", hh)]), encoding="utf-8")
+        r = done("T-001")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+        # T-002 carries the refusal cases; a refused acceptance leaves it at review
+        (self.flow / "tasks" / "T-002-probe.md").write_text(
+            task_file("T-001").replace("T-001", "T-002").replace("t-001-probe", "t-002-probe"), encoding="utf-8")
+        self.tool("ledger.py", "add", "T-002", "--title", "Probe", "--stage", "1",
+                  "--role", "developer", "--tool", "devin", "--status", "ready")
+        rt2, v2 = rt_dir / "T-002.json", rt_dir / "T-002.verify.json"
+        rt2.write_text(json.dumps({"taskId": "T-002", "attempts": [
+            {"n": 1, "status": "running", "taskId": "T-002"}]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-002", "--status", "in progress")
+        rt2.write_text(json.dumps({"taskId": "T-002", "attempts": [
+            {"n": 1, "status": "exited", "taskId": "T-002"},
+            {"n": 2, "status": "exited", "taskId": "T-002"}]}), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-002", "--status", "review")
+        hh2 = gate.sha256(gate.header(task_file("T-002")))
+
+        def rec2(**kw):
+            r = rec("T-002", hh2, attempt=2)
+            r.update(kw)
+            return r
+
+        v2.write_text(json.dumps([rec2(attempt=1)]), encoding="utf-8")  # PASS from the earlier attempt
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("stale", r.stdout + r.stderr)
+        v2.write_text(json.dumps([rec2(sha="b" * 40)]), encoding="utf-8")  # a different artifact
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("artifact", r.stdout + r.stderr)
+        v2.write_text(json.dumps([rec2(headerHash="0" * 64)]), encoding="utf-8")  # changed requirements
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("stale", r.stdout + r.stderr)
+        v2.write_text(json.dumps([rec2(taskId="T-999")]), encoding="utf-8")  # another task's record
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        v2.write_text(json.dumps([rec2(ok="yes")]), encoding="utf-8")  # truthy ok is not a PASS
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("verify records", r.stdout + r.stderr)
+        # a live last attempt cannot be accepted even with a fully bound record
+        rt2.write_text(json.dumps({"taskId": "T-002", "attempts": [
+            {"n": 1, "status": "exited", "taskId": "T-002"},
+            {"n": 2, "status": "running", "taskId": "T-002"}]}), encoding="utf-8")
+        v2.write_text(json.dumps([rec2()]), encoding="utf-8")
+        r = done("T-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("exited", r.stdout + r.stderr)
+        # the bound record passes once the attempt is exited
+        rt2.write_text(json.dumps({"taskId": "T-002", "attempts": [
+            {"n": 1, "status": "exited", "taskId": "T-002"},
+            {"n": 2, "status": "exited", "taskId": "T-002"}]}), encoding="utf-8")
+        r = done("T-002")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_malformed_verify_records_fail_closed(self):
         """A truncated or wrong-shaped verify file stops the gate with a diagnosable error -
         it is never read as 'no evidence'."""
@@ -267,14 +358,16 @@ class RunTaskTests(unittest.TestCase):
                 self.assertIn("verify records", r.stdout + r.stderr, bad)
 
     def test_malformed_tool_limits_fail_closed(self):
-        """A corrupt tool-limits.json refuses the launch instead of reading as 'no limits'."""
+        """A corrupt or wrong-shaped tool-limits.json refuses the launch instead of reading as 'no limits'."""
         lim = self.flow / "tasks" / ".runtime" / "tool-limits.json"
         lim.parent.mkdir(exist_ok=True)
-        lim.write_text("{ broken", encoding="utf-8")
         self.fake_devin("exit /b 0", "exit 0")
-        r = self.launch("T-001", "devin")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("tool-limits", r.stdout + r.stderr)
+        for bad in ("{ broken", "[]", "null", '{"devin": "not-an-object"}', '{"devin": {"until": 5}}'):
+            with self.subTest(bad=bad):
+                lim.write_text(bad, encoding="utf-8")
+                r = self.launch("T-001", "devin")
+                self.assertNotEqual(r.returncode, 0, bad)
+                self.assertIn("tool-limits", r.stdout + r.stderr, bad)
 
     def test_live_argument_is_never_an_empty_string(self):
         """Regression (PS 5.1): a trailing `--live ""` lost its value in Windows PowerShell 5.1, so gate.py
@@ -337,6 +430,71 @@ class RunTaskTests(unittest.TestCase):
             time.sleep(0.2)
         self.assertFalse(run_task.alive(a["pid"]), "worker survived --stop")
         self.assertFalse(run_task.alive(child_pid), "managed descendant survived --stop")
+
+    def test_stop_with_unconfirmed_pid_identity_keeps_the_lock(self):
+        """Regression (T-029): a live process on the recorded pid whose start identity cannot be confirmed
+        may be a reused pid. --stop must refuse instead of closing the attempt and freeing the lock, and
+        no second claim can start beside it. Verified identity (or the process ending) releases it."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        try:
+            rt = self.rt_file
+            rt.parent.mkdir(exist_ok=True)
+            att = {"n": 1, "tool": "devin", "manual": False, "status": "running",
+                   "pid": p.pid, "pidStart": None, "taskId": "T-001"}
+            rt.write_text(json.dumps({"taskId": "T-001", "attempts": [att]}), encoding="utf-8")
+            self.tool("ledger.py", "set", "T-001", "--status", "in progress")
+            # --stop refuses: the pid is alive but its identity is unconfirmed - a diagnosable block
+            r = self.launch("T-001", "--stop")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("start identity", r.stdout + r.stderr)
+            self.assertEqual(self.attempt()["status"], "running", "the attempt must not be closed")
+            self.assertTrue(run_task.alive(p.pid), "--stop sent a signal to a possibly reused pid")
+            # a second claim beside a possibly live worker is refused the same way
+            r = self.launch("T-001", "--manual")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("unconfirmed", r.stdout + r.stderr)
+            self.assertEqual(len(json.loads(rt.read_text())["attempts"]), 1)
+            self.assertIn("blocked", self.launch("--status").stdout)  # the lock shows as a diagnosable block
+            # a recorded start that does not match (a reused pid) blocks identically
+            start = run_task.pid_start(p.pid)
+            if start is not None:
+                att["pidStart"] = start + 10_000_000
+                rt.write_text(json.dumps({"taskId": "T-001", "attempts": [att]}), encoding="utf-8")
+                r = self.launch("T-001", "--stop")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertEqual(self.attempt()["status"], "running")
+            # the process is really gone: --stop closes the dead attempt and releases the lock
+            p.kill()
+            p.wait()
+            r = self.launch("T-001", "--stop")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(self.attempt()["status"], "error")
+        finally:
+            p.kill()
+            p.wait()
+
+    def test_stop_with_a_confirmed_identity_kills_the_worker(self):
+        """A verified identity still releases the lock: recorded pid + matching start is ours to kill."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        try:
+            start = run_task.pid_start(p.pid)
+            if start is None:
+                self.skipTest("process start identity is not measurable on this platform")
+            att = {"n": 1, "tool": "devin", "manual": False, "status": "running",
+                   "pid": p.pid, "pidStart": start, "taskId": "T-001"}
+            self.rt_file.parent.mkdir(exist_ok=True)
+            self.rt_file.write_text(json.dumps({"taskId": "T-001", "attempts": [att]}), encoding="utf-8")
+            self.tool("ledger.py", "set", "T-001", "--status", "in progress")
+            r = self.launch("T-001", "--stop")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(self.attempt()["status"], "error")
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and run_task.alive(p.pid):
+                time.sleep(0.2)
+            self.assertFalse(run_task.alive(p.pid), "confirmed worker survived --stop")
+        finally:
+            p.kill()
+            p.wait()
 
     def test_wall_clock_timeout_kills_the_tree_and_records_an_error(self):
         """A tool that ignores any CLI timeout is still bounded: the launcher kills the managed tree,

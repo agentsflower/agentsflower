@@ -426,11 +426,23 @@ def last_attempt(rt):
 
 
 def attempt_alive(a):
-    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) and alive(a["pid"], a.get("pidStart"))
+    """Confirmed live: the attempt runs and a live process sits on its recorded pid whose start identity
+    matches the recorded one. Anything less is not proof the worker is alive."""
+    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) \
+        and a.get("pidStart") is not None and alive(a["pid"], a["pidStart"])
+
+
+def attempt_uncertain(a):
+    """A live process occupies the recorded pid but its identity cannot be confirmed (no start was recorded,
+    or it cannot be re-measured now): the pid may be the worker or a reused one. This is a diagnosable block,
+    never 'dead' and never a kill target - the task stays locked."""
+    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) \
+        and not attempt_alive(a) and alive(a["pid"])
 
 
 def attempt_held(a):
-    return bool(a) and a.get("status") == "running" and (a.get("manual") or not a.get("pid") or attempt_alive(a))
+    return bool(a) and a.get("status") == "running" and (a.get("manual") or not a.get("pid")
+                                                       or attempt_alive(a) or attempt_uncertain(a))
 
 
 def live_tasks():
@@ -597,13 +609,17 @@ def limit_until(tool):
     ends = []
     if LIMITS_FILE.exists():
         try:
-            lim = json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig"))
-            rec = lim.get(tool) if isinstance(lim, dict) else None
-            if rec:
+            lim = ledger.check_limits(json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig")))
+        except (OSError, ValueError) as e:
+            raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: {e}")
+        rec = lim.get(tool)
+        if rec:
+            try:
                 ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ")
                             .replace(tzinfo=timezone.utc))
-        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: {e}")
+            except ValueError as e:
+                raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: "
+                                  f"bad 'until' for {tool}: {e}")
     machine = machine_capacity.limit_until(tool)
     if machine:
         ends.append(machine)
@@ -731,7 +747,7 @@ def cmd_status():
                 continue
             state = a.get("status")
             if state == "running" and not a.get("manual") and not attempt_alive(a):
-                state = "dead"
+                state = "blocked" if attempt_uncertain(a) else "dead"
             print(f"{rt.get('taskId') or p.stem}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
                   f"exit={a.get('exitCode') if a.get('exitCode') is not None else ''}  "
                   f"limitHit={a.get('limitHit')}  finished={a.get('finishedAt') or ''}")
@@ -741,15 +757,16 @@ def cmd_status():
 def cmd_stop(tid):
     rt = read_rt(tid)
     a = last_attempt(rt)
-    if attempt_alive(a) and a.get("pidStart") is not None:
+    if attempt_alive(a):
         kill_tree(a["pid"])
-    elif a and a.get("status") == "running" and a.get("pid") and alive(a["pid"]):
-        # A process sits on the recorded pid but its start identity was never recorded or cannot be
-        # confirmed now: it may be a reused pid, so no kill is sent to it (refused unsafe takeover).
-        print(f"warning: {tid} pid {a['pid']} is alive but its start identity cannot be confirmed; "
-              "not killing it (a possibly reused pid). The attempt is closed as dead.", file=sys.stderr)
-        a["note"] = "; ".join(x for x in [a.get("note"),
-                                          "worker lost: pid alive but identity unconfirmed, not killed"] if x)
+    elif attempt_uncertain(a):
+        # A process sits on the recorded pid but its identity cannot be confirmed: it may be a reused pid,
+        # so no kill is sent to it - and closing the attempt would free the lock while the worker may
+        # still run. The lock releases only on a verified stop or a verified process identity.
+        raise LaunchError(f"{tid}: pid {a['pid']} is alive but its start identity cannot be confirmed "
+                          "(none recorded, or not measurable now) - a possibly reused pid is never killed "
+                          "and the task stays locked. If the process really is this worker, end it and run "
+                          f"run_task.py {tid} --stop again.")
     if a and a.get("status") == "running":
         a["exitCode"], a["note"] = -1, "; ".join(x for x in [a.get("note"), "stopped with --stop"] if x)
         complete_attempt(tid, rt, "error")
@@ -875,6 +892,10 @@ def cmd_launch(tid, tool, manual, grant):
     try:
         rt = read_rt(tid)  # corrupted state fails closed in read_rt
         prev = last_attempt(rt)
+        if attempt_uncertain(prev):
+            raise LaunchError(f"{tid}: a process is alive on the recorded pid {prev.get('pid')} but its start "
+                              "identity is unconfirmed (a possibly reused pid) - the task stays locked until "
+                              "the process ends or its identity is verified")
         if attempt_held(prev):
             raise LaunchError(f"{tid} already has a running attempt ({prev.get('tool')}, pid {prev.get('pid')}). "
                               f"One task = one worker. Stop it first: run_task.py {tid} --stop")

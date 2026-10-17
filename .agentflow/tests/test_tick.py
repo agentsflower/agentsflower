@@ -261,14 +261,29 @@ class TickTests(unittest.TestCase):
         """tool-limits.json / orchestrator.json: a bad file is a diagnosable error, never 'no limits'
         or 'no live orchestrator' - and a corrupt T-NNN.json surfaces as a need, not a crash."""
         rt = Path(self.tmp.name)
-        (rt / "tool-limits.json").write_text("{ broken", encoding="utf-8")
-        with self.assertRaises(tick.StateError):
-            tick.limit_end("codex")
-        (rt / "tool-limits.json").write_text('{"codex": "not-an-object"}', encoding="utf-8")
-        self.assertIsNone(tick.limit_end("codex"))  # a non-record entry is skipped, not a crash
+        for bad in ("{ broken", "[]", "null", '{"codex": "not-an-object"}', '{"codex": {"until": 5}}'):
+            with self.subTest(bad=bad):
+                (rt / "tool-limits.json").write_text(bad, encoding="utf-8")
+                with self.assertRaises(tick.StateError):
+                    tick.limit_end("codex")
         (rt / "orchestrator.json").write_text('["not", "an", "object"]', encoding="utf-8")
         with self.assertRaises(tick.StateError):
             tick.live_orchestrator()
+        for bad in ("{}", '{"holder": "claude"}', '{"at": "2026-10-08T12:00:00Z"}'):
+            with self.subTest(bad=bad):  # a record without holder+at hides a live holder: never 'none live'
+                (rt / "orchestrator.json").write_text(bad, encoding="utf-8")
+                with self.assertRaises(tick.StateError):
+                    tick.live_orchestrator()
+
+    def test_a_malformed_heartbeat_blocks_the_claim_and_force_takes_over(self):
+        """A wrong-shaped heartbeat file may hide a live holder: claiming refuses instead of silently
+        overwriting it; only --force (the human's own session) takes over."""
+        rt = Path(self.tmp.name)
+        (rt / "orchestrator.json").write_text('{"holder": "ghost"}', encoding="utf-8")
+        with self.assertRaises(tick.StateError):
+            tick.heartbeat("claude")
+        self.assertIsNone(tick.heartbeat("claude", force=True))
+        self.assertEqual(tick.live_orchestrator()["holder"], "claude")
 
     def test_an_unreadable_attempt_becomes_a_need_not_a_crash(self):
         with patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
@@ -290,6 +305,32 @@ class TickTests(unittest.TestCase):
                 self.skipTest("process start identity is not measurable on this platform")
             self.assertTrue(tick.alive(p.pid, start))
             self.assertFalse(tick.alive(p.pid, start + 10_000_000))
+        finally:
+            p.kill()
+            p.wait()
+
+    def test_an_unconfirmed_pid_is_a_need_and_keeps_the_lock(self):
+        """A live process on the recorded pid whose start identity cannot be confirmed (none recorded,
+        or a reused pid) is a diagnosable need - never treated as dead, never a silent wait."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            start = run_task.pid_start(p.pid)
+            tasks = {"T-1": dev("T-1", outcome="")}
+            rows = {"T-1": {"Role": "developer", "Status": "in progress", "Tool": "codex"}}
+            cases = [None] + ([start + 10_000_000] if start is not None else [])
+            for pid_start in cases:
+                att = {"n": 1, "status": "running", "pid": p.pid, "pidStart": pid_start, "tool": "devin"}
+                with patch.object(tick.gate, "parse", side_effect=lambda t: tasks[t]), \
+                        patch.object(tick.gate, "last_attempt", side_effect=lambda t: att):
+                    out = {t: (a, d) for t, a, d in tick.decide(rows, AT)}
+                self.assertEqual(out["T-1"][0], "need")
+                self.assertIn("unconfirmed", out["T-1"][1])
+            if start is not None:
+                att = {"n": 1, "status": "running", "pid": p.pid, "pidStart": start, "tool": "devin"}
+                with patch.object(tick.gate, "parse", side_effect=lambda t: tasks[t]), \
+                        patch.object(tick.gate, "last_attempt", side_effect=lambda t: att):
+                    out = {t: (a, d) for t, a, d in tick.decide(rows, AT)}
+                self.assertEqual(out["T-1"][0], "wait")  # confirmed identity: the worker really is running
         finally:
             p.kill()
             p.wait()

@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
+import ledger  # noqa: E402
 import machine_capacity  # noqa: E402
 import route  # noqa: E402
 import dispatch  # noqa: E402
@@ -118,8 +119,17 @@ def parse_reset(text, at=None):
     return at + timedelta(hours=1)
 
 
+def read_limits():
+    """The tool-limits map; a wrong shape fails closed (StateError): 'no limits' is never inferred from
+    a bad file. '_seen' is internal metadata, not a limit record, and is tolerated as-is."""
+    try:
+        return ledger.check_limits(read(LIMITS, {}))
+    except ValueError as e:
+        raise StateError(f"cannot read {LIMITS.name}: {e}")
+
+
 def record_limit(tool, text, at=None, seen=None):
-    lim = read_map(LIMITS)
+    lim = read_limits()
     until = parse_reset(text, at)
     lim[tool] = {"until": iso(until), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
     if seen:
@@ -133,8 +143,8 @@ def record_limit(tool, text, at=None, seen=None):
 
 
 def limit_end(tool):
-    local = read_map(LIMITS).get(tool)
-    if isinstance(local, dict) and local.get("until"):
+    local = read_limits().get(tool)
+    if local:
         try:
             local_end = parse_iso(local["until"])
         except ValueError as e:
@@ -157,8 +167,15 @@ def next_orchestrator(at=None, skip=()):
 
 # --- heartbeat ---------------------------------------------------------------------------------------------------
 def heartbeat(holder, force=False):
-    """Claim or refresh orchestration. Refused (returns the other holder) while a different holder is live."""
-    other = live_orchestrator()
+    """Claim or refresh orchestration. Refused (returns the other holder) while a different holder is live.
+    A malformed heartbeat file blocks the claim - it may hide a live holder and is never silently
+    overwritten; --force takes over anyway (the human's own session)."""
+    try:
+        other = live_orchestrator()
+    except StateError:
+        if not force:
+            raise
+        other = None
     if other and other.get("holder") != holder and not force:
         return other
     write(HEARTBEAT, {"holder": holder, "at": iso(now())})
@@ -172,9 +189,11 @@ def release(holder=None):
 
 
 def live_orchestrator(at=None):
-    hb = read_map(HEARTBEAT)
-    if not hb.get("at"):
+    if not HEARTBEAT.exists():
         return None
+    hb = read_map(HEARTBEAT)
+    if not isinstance(hb.get("holder"), str) or not hb["holder"] or not isinstance(hb.get("at"), str):
+        raise StateError(f"{HEARTBEAT.name}: malformed heartbeat record (needs holder and at)")
     try:
         at_hb = parse_iso(hb["at"])
     except ValueError as e:
@@ -238,8 +257,15 @@ def decide(rows, at=None):
             out.append((tid, "need", f"runtime state: {e}"))
             continue
         running = bool(att) and att.get("status") == "running"
-        if running and not (att.get("manual") or alive(att.get("pid"), att.get("pidStart"))):
-            out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
+        if running and not att.get("manual"):
+            if run_task.attempt_alive(att):
+                out.append((tid, "wait", f"{att.get('tool')} is working (attempt {att.get('n')})"))
+            elif run_task.attempt_uncertain(att):
+                out.append((tid, "need", f"attempt {att.get('n')}: pid {att['pid']} is alive but its start "
+                                         "identity is unconfirmed (a possibly reused pid) - the task stays "
+                                         "locked; verify and stop it with run_task.py --stop"))
+            else:
+                out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
             continue
         if running:
             out.append((tid, "wait", f"{att.get('tool')} is working (attempt {att.get('n')})"))
@@ -289,7 +315,7 @@ def decide(rows, at=None):
 # --- acting ------------------------------------------------------------------------------------------------------
 def learn_limits(rows):
     """Record limits from finished attempts once, so later launches and the conductor skip those tools."""
-    seen = read_map(LIMITS).get("_seen", {})
+    seen = read_limits().get("_seen", {})
     if not isinstance(seen, dict):
         seen = {}
     for tid in rows:
@@ -435,8 +461,8 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "would": [{"task": t, "action": a, "detail": d} for t, a, d in plan if a in ("accept", "launch")] if report_only else [],
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
-                  "limited": {k: v["until"] for k, v in read_map(LIMITS).items()
-                              if k != "_seen" and isinstance(v, dict) and limited(k)}}
+                  "limited": {k: v["until"] for k, v in read_limits().items()
+                              if k != "_seen" and limited(k)}}
         if dispatch_mode == "active":
             report["dispatchMode"] = "active"
         if shadow is not None:
@@ -512,8 +538,8 @@ def dispatch_cmd(a):
     if a.cmd == "status":
         hb = live_orchestrator()
         print(f"orchestrator: {hb['holder']} (heartbeat {hb['at']})" if hb else "orchestrator: none live")
-        for k, v in read_map(LIMITS).items():
-            if k != "_seen" and isinstance(v, dict) and limited(k):
+        for k, v in read_limits().items():
+            if k != "_seen" and limited(k):
                 print(f"limited: {k} until {v['until']} - {(v.get('reason') or '')[-80:]}")
         return 0 if hb else 1
     if a.cmd == "next-orchestrator":
