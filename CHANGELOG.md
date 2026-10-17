@@ -2,6 +2,29 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.14.1 - 2026-10-18
+
+Evidence-scope check fix: Result prose that merely looks path-like
+(`verify/done`, `launch.argv`, `decisions.md`, or where a schema lives,
+e.g. `.agentflow/docs/quota-policy.json`) was reported as declared
+evidence outside the task's scope, blocking valid Results. Only evidence
+claims are now validated: a path after an `evidence:`/`evidence=` marker,
+or a bare path list.
+
+- `gate.py` `evidence_tokens` splits claimed paths from mentions: the
+  `evidence:`/`evidence=` marker makes following path-looking tokens
+  claims, and an unmarked evidence text claims paths only when it is
+  nothing but a repository-relative path list (first segment a top-level
+  folder or an existing file, with `and`/`or` connectors). Prose mentions
+  are skipped. The scope/existence checks for claimed evidence are
+  unchanged: a declared file outside the task's Allowed files or missing
+  on disk still fails.
+- Migration for installed projects: `install.py --update` ships the new
+  `gate.py` and the protocol wording. Results already written keep their
+  shape; prose path mentions no longer fail verify. Declare evidence
+  explicitly (`- X-NN: pass - evidence: <path>`) so it is still checked.
+  No data migration is needed.
+
 ## 2.14.0 - 2026-10-17
 
 Acceptance becomes an artifact-bound, criteria-covered completion gate
