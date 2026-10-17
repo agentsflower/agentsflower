@@ -17,6 +17,10 @@ dependencies = []
 
 [project.optional-dependencies]
 build = ["build>=1.2", "setuptools>=68"]
+# Official MCP SDK for .agentflow/tools/mcp_server.py; bounded to the released
+# 2.x major line (2.3.0 declares Python >=3.10 and MCPServer). Core stays free
+# of third-party runtime dependencies.
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 agentflow = "agentflow.cli:main"

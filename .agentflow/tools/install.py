@@ -30,6 +30,13 @@ folder that merely sits inside a larger repository, such as a home folder under 
 it refuses to
 install over an existing `.agentflow/` without --update; --update refuses while a template-owned file it would
 replace has uncommitted changes. Files the project added inside `.agentflow/` are kept and listed.
+
+Optional MCP client configuration (explicit `--mcp`, never implicit): merges an `agentflow` server entry into the
+client's project config - `.mcp.json` for Claude Code (`--mcp-client claude`, default) or `.cursor/mcp.json` for
+Cursor (`--mcp-client cursor`; project `.mcp.json` is Claude Code's location, not auto-discovered by Cursor).
+Unrelated keys and other servers are preserved byte-for-byte; a malformed file or an `agentflow` entry the
+installer did not write is refused and nothing is written. The entry points at the target's own installed
+`.agentflow/tools/mcp_server.py` without privileged tools or credentials; it needs the optional `mcp` extra.
 """
 import argparse
 import filecmp
@@ -76,6 +83,7 @@ STUBS = {
 }
 
 COMMANDS = ["handoff-cmd", "start-role", "start-session", "update-memory", "update-runbook"]
+MCP_CONFIGS = {"claude": ".mcp.json", "cursor": ".cursor/mcp.json"}
 GITIGNORE = [".agentflow/tasks/.runtime/", ".agentflow/dashboard/out/", ".agentflow/dashboard/versions/", "__pycache__/"]
 NOT_REPOS = {".git", ".agentflow", ".claude", "node_modules", ".worktrees"}
 BEGIN, END = "<!-- agentflow:begin -->", "<!-- agentflow:end -->"
@@ -179,8 +187,39 @@ def merge_block(existing: str | None, block: str, begin: str, end: str, new_file
     return existing.rstrip("\n") + "\n\n" + block + "\n"
 
 
+def mcp_entry(target: Path) -> dict:
+    """The MCP client config entry: run the target's own installed server, no credentials."""
+    return {"command": sys.executable,
+            "args": [str(target / ".agentflow" / "tools" / "mcp_server.py")]}
+
+
+def plan_mcp_config(plan: Plan, target: Path, client: str):
+    """Merge the `agentflow` server into the client's project MCP config, preserving
+    unrelated keys and servers. Refuses malformed JSON and an `agentflow` entry this
+    installer did not write - before anything is written."""
+    cfg = target / MCP_CONFIGS[client]
+    entry = mcp_entry(target)
+    data = {}
+    if cfg.exists():
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as e:
+            raise SystemExit(f"STOP: {cfg} is not valid JSON ({e}); fix or remove it, then run --mcp again")
+        if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
+            raise SystemExit(f"STOP: {cfg} must hold a JSON object with an 'mcpServers' object; refusing to change it")
+        existing = data["mcpServers"].get("agentflow") if data.get("mcpServers") else None
+        if existing is not None and existing != entry:
+            raise SystemExit(f"STOP: {cfg} holds an 'agentflow' MCP server this installer did not write "
+                             f"({existing}); refusing to overwrite it")
+    merged = {**data, "mcpServers": {**data.get("mcpServers", {}), "agentflow": entry}}
+    want = json.dumps(merged, indent=2) + "\n"
+    if not cfg.exists() or cfg.read_text(encoding="utf-8-sig") != want:
+        plan.write(cfg, want, f"merge AgentFlow MCP server into {client} config")
+
+
 def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
-            workspace: bool = False, repos=None, git_init: bool = False) -> Plan:
+            workspace: bool = False, repos=None, git_init: bool = False,
+            mcp: bool = False, mcp_client: str = "claude") -> Plan:
     plan = Plan(dry)
     target = target.resolve()
     if not target.is_dir():
@@ -321,6 +360,11 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
                 plan.write(p, want, "replace AgentFlow pointer")
             else:
                 plan.notes.append(f"kept (not an AgentFlow file): {p}")
+
+    if mcp:
+        if mcp_client not in MCP_CONFIGS:
+            raise SystemExit(f"STOP: unknown MCP client '{mcp_client}' (one of: {', '.join(MCP_CONFIGS)})")
+        plan_mcp_config(plan, target, mcp_client)
     return plan
 
 
@@ -333,9 +377,14 @@ def main():
     ap.add_argument("--workspace", action="store_true", help="the target holds several git repositories")
     ap.add_argument("--repos", help="workspace repositories, comma-separated (default: child folders with .git)")
     ap.add_argument("--git-init", action="store_true", help="create the workspace memory repository")
+    ap.add_argument("--mcp", action="store_true",
+                    help="merge the AgentFlow MCP server into the client's project config (opt-in)")
+    ap.add_argument("--mcp-client", choices=sorted(MCP_CONFIGS), default="claude",
+                    help="which client config --mcp edits: claude -> .mcp.json, cursor -> .cursor/mcp.json "
+                         "(default: claude)")
     a = ap.parse_args()
     plan = install(a.target, a.update, a.dry_run, a.inside_repo, a.workspace,
-                   a.repos.split(",") if a.repos else None, a.git_init)
+                   a.repos.split(",") if a.repos else None, a.git_init, a.mcp, a.mcp_client)
     head = "Would do" if a.dry_run else "Done"
     print(f"AgentFlow {version()} -> {a.target.resolve()}{' (dry run, nothing written)' if a.dry_run else ''}")
     print(f"{head}: {len(plan.actions)} action(s)")

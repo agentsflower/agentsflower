@@ -121,6 +121,60 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(own.read_text(encoding="utf-8"), "my own command\n")
         self.assertTrue(any("start-session.md" in n for n in plan.notes))
 
+    def plan_mcp(self, client="claude", dry=False):
+        plan = install.Plan(dry)
+        install.plan_mcp_config(plan, self.repo, client)
+        return plan
+
+    def test_mcp_flag_is_opt_in_and_writes_config(self):
+        self.run_install(dry=True)  # baseline without the flag
+        self.assertFalse((self.repo / ".mcp.json").exists())
+        install.install(self.repo, False, True, mcp=True)
+        self.assertFalse((self.repo / ".mcp.json").exists(), "dry-run writes nothing")
+        install.install(self.repo, False, False, mcp=True)
+        data = json.loads((self.repo / ".mcp.json").read_text(encoding="utf-8"))
+        entry = data["mcpServers"]["agentflow"]
+        self.assertEqual(entry["args"],
+                         [str(self.repo.resolve() / ".agentflow" / "tools" / "mcp_server.py")])
+        self.assertNotIn("env", entry, "no credentials are persisted")
+        self.assertNotIn("--enable-orchestrator-tools", entry["args"], "privileged tools stay off")
+
+    def test_mcp_merge_preserves_foreign_config_and_is_idempotent(self):
+        cfg = self.repo / ".mcp.json"
+        foreign = {"note": "keep me", "mcpServers": {"other": {"command": "othertool", "args": ["--x"]}}}
+        cfg.write_text(json.dumps(foreign), encoding="utf-8")
+        self.plan_mcp()
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        self.assertEqual(data["note"], "keep me")
+        self.assertEqual(data["mcpServers"]["other"], foreign["mcpServers"]["other"])
+        self.assertIn("agentflow", data["mcpServers"])
+        self.assertEqual(self.plan_mcp().actions, [], "merging the same entry is a no-op")
+
+    def test_mcp_refuses_malformed_json_and_conflicting_entry(self):
+        cfg = self.repo / ".mcp.json"
+        cfg.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            self.plan_mcp()
+        self.assertEqual(cfg.read_text(encoding="utf-8"), "{not json")
+        cfg.write_text(json.dumps({"mcpServers": {"agentflow": {"command": "other", "args": []}}}),
+                       encoding="utf-8")
+        with self.assertRaises(SystemExit) as stop:
+            self.plan_mcp()
+        self.assertIn("agentflow", str(stop.exception))
+        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["mcpServers"]["agentflow"]["command"],
+                         "other", "the unmanaged entry is left untouched")
+        cfg.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            self.plan_mcp()
+
+    def test_mcp_cursor_path_and_dry_run(self):
+        self.assertEqual(self.plan_mcp(client="cursor", dry=True).actions, ["merge AgentFlow MCP server into cursor config: " + str(self.repo / ".cursor" / "mcp.json")])
+        self.assertFalse((self.repo / ".cursor").exists(), "dry-run creates nothing")
+        self.plan_mcp(client="cursor")
+        data = json.loads((self.repo / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+        self.assertIn("agentflow", data["mcpServers"])
+        self.assertFalse((self.repo / ".mcp.json").exists(), "cursor writes its own config path")
+
     def test_refusals(self):
         plain = Path(self.tmp.name) / "plain"  # not a repository root (possibly inside an unrelated repository)
         plain.mkdir()

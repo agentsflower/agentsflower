@@ -14,6 +14,7 @@ and bundles the whole template under agentflow/template/):
   agentflow gate <task|preflight|endcheck|verify|stage> ... [--project <dir>]
   agentflow accept T-NNN [--dry-run] [--project <dir>]
   agentflow ledger <add|set|approve|show> ... [--project <dir>]
+  agentflow mcp [--enable-orchestrator-tools] [--project <dir>]
   agentflow dashboard [--open] [--project <dir>]
 
 Project commands find the project root by walking up from --project (or the
@@ -157,7 +158,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("install", help="install or update AgentFlow in a project (bundled template)")
     p.add_argument("args", nargs=argparse.REMAINDER,
                    help="installer arguments: <target> [--update] [--dry-run] [--inside-repo] "
-                        "[--workspace] [--repos a,b] [--git-init]")
+                        "[--workspace] [--repos a,b] [--git-init] [--mcp [--mcp-client claude|cursor]]")
 
     p = sub.add_parser("run", help="start the worker of a Task File (role must match it)")
     p.add_argument("task", help="task id T-NNN")
@@ -165,7 +166,8 @@ def main(argv=None) -> int:
                    help="must equal the Task File's Role: field; a mismatch starts nothing")
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
 
-    for name, script in (("gate", "gate.py"), ("accept", "accept.py"), ("ledger", "ledger.py")):
+    for name, script in (("gate", "gate.py"), ("accept", "accept.py"), ("ledger", "ledger.py"),
+                         ("mcp", "mcp_server.py")):
         p = sub.add_parser(name, help=f"pass arguments to .agentflow/tools/{script}")
         p.add_argument("args", nargs=argparse.REMAINDER, help=f"arguments of {script} (see its --help)")
         p.set_defaults(script=script)
