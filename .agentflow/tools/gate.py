@@ -459,7 +459,8 @@ def preflight(tid, manual, live, tool=None):
 def worktree_copy_problems(t):
     """A developer wrote its Result into the Task File copy inside its worktree, or committed Task Files on its branch.
     The main Task File is the only one read at acceptance; a commit under .agentflow/tasks/ moves the branch past
-    Change and would merge memory through a product branch."""
+    Change and would merge memory through a product branch. The product _template.md is template-owned, not a
+    Task File, so the audit excludes it; Task Files and .runtime/ state stay flagged."""
     bad = []
     for c in t["checkouts"]:
         copy = Path(c["path"]) / t["rel"]
@@ -478,7 +479,8 @@ def worktree_copy_problems(t):
                     continue
                 args = (("show", "--remerge-diff", "--format=", sha) if len(parents) == 2
                         else ("diff-tree", "--root", "--no-commit-id", "-p", sha))
-                result = subprocess.run(["git", *args, "--", ".agentflow/tasks"], cwd=c["path"],
+                result = subprocess.run(["git", *args, "--", ".agentflow/tasks",
+                                         ":(exclude).agentflow/tasks/_template.md"], cwd=c["path"],
                                         capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if result.returncode:
                     bad.append(f"cannot audit Task Files in {sha}: {result.stderr.strip()}")

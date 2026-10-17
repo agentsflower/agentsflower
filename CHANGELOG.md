@@ -31,6 +31,10 @@ on the trial-merge result before any repository merges.
   per repository, and `.agentflow/tasks/.runtime/T-NNN.accept.json` records
   per-repository progress so an interrupted multi-repository acceptance
   resumes without claiming cross-repository atomicity.
+- The `gate.py endcheck` merge-history audit scopes Task Files correctly: the
+  product `.agentflow/tasks/_template.md` is template-owned, not a worker
+  Task File, so a branch commit touching only it no longer fails the audit.
+  Committed `T-*.md` files and `tasks/.runtime/` state still do.
 - `python .agentflow/tools/gate.py done T-NNN` (or `agentflow done T-NNN`) is
   the single completion check acceptance, the launcher and an optional
   platform hook call: structured pass/fail reasons via `--out`, a still-bound
