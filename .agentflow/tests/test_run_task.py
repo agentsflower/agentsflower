@@ -29,6 +29,49 @@ def fake_tool(tmp, name, body_cmd, body_sh):
     return p
 
 
+class ModelProbeArgvTests(unittest.TestCase):
+    def test_bootstrap_probe_argv_and_denial(self):
+        expected = {
+            "devin": ["-p", "reply with the single word ok", "--respect-workspace-trust", "false",
+                      "--permission-mode", "auto", "--model", "test-model"],
+            "codex": ["exec", "--sandbox", "read-only", "--skip-git-repo-check",
+                      "reply with the single word ok", "-m", "test-model"],
+        }
+        for tool, argv in expected.items():
+            for denied in (False, True):
+                with self.subTest(tool=tool, denied=denied):
+                    calls = []
+
+                    def fake_capture(args, timeout, cwd=None):
+                        calls.append(args)
+                        if cwd is None:
+                            self.assertEqual(args[1:], run_task.PROBE_ARGS[tool])
+                            return 0, "authenticated"
+                        self.assertEqual(list(Path(cwd).iterdir()), [])
+                        self.assertEqual(args, ["fake-cli"] + argv)
+                        self.assertEqual(timeout, 17)
+                        return (4 if denied else 0), "never serialize probe output"
+
+                    with patch.dict(os.environ, {f"AGENTFLOW_{tool.upper()}_MODEL_PROBE": "on",
+                                                 "AGENTFLOW_MODEL_PROBE_TIMEOUT": "17"}, clear=True), \
+                            patch.object(run_task, "tool_exe", return_value="fake-cli"), \
+                            patch.object(run_task.shutil, "which", return_value="fake-cli"), \
+                            patch.object(run_task, "limit_until", return_value=None), \
+                            patch.object(run_task, "run_capture", side_effect=fake_capture):
+                        if denied:
+                            with self.assertRaisesRegex(run_task.LaunchError, "was denied.*exit 4"):
+                                run_task.resource_check(tool, "test-model")
+                        else:
+                            evidence = run_task.resource_check(tool, "test-model")["modelProbe"]
+                            self.assertEqual(evidence["argv"], argv)
+                            self.assertEqual(evidence["model"], "test-model")
+                            self.assertEqual(evidence["source"], "builtin")
+                            self.assertEqual(evidence["result"], "ok")
+                            self.assertTrue(evidence["at"])
+                            self.assertNotIn("never serialize", str(evidence))
+                    self.assertEqual(len(calls), 2)
+
+
 class RunTaskTests(unittest.TestCase):
     def setUp(self):
         test_endcheck.WorktreeCopyTests.setUp(self)  # temp repo root "p" + worktree self.wt on t-001-probe

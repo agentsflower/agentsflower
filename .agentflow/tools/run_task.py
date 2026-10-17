@@ -114,10 +114,12 @@ PROBE_TIMEOUT = 45
 # unless the operator opts in, and only these audited built-ins count as model evidence - custom argv cannot be
 # told apart from an auth/catalog check, so it fails closed. Built-ins are minimal noninteractive calls that
 # request no repository tools and write nothing (they run in an empty temp cwd with stdin closed).
-MODEL_PROBE_ARGS = {"codex": ["exec", "--sandbox", "read-only", "reply with the single word ok"],
+MODEL_PROBE_ARGS = {"codex": ["exec", "--sandbox", "read-only", "--skip-git-repo-check",
+                             "reply with the single word ok"],
                     "claude": ["-p", "reply with the single word ok", "--allowedTools", ""],
                     "agy": ["-p", "reply with the single word ok", "--output-format", "stream-json"],
-                    "devin": ["-p", "reply with the single word ok"]}
+                    "devin": ["-p", "reply with the single word ok", "--respect-workspace-trust", "false",
+                              "--permission-mode", "auto"]}
 MODEL_PROBE_TIMEOUT = 60
 
 # Evidence stores safe metadata only: an operator-supplied probe argv can carry a secret anywhere (a flag value,

@@ -2,6 +2,15 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.10 - 2026-10-17
+
+- Built-in Devin model probes explicitly use `--respect-workspace-trust false` and `--permission-mode auto`
+  so noninteractive inference can run in the empty untrusted temporary directory with read-only tool approval.
+- Built-in Codex model probes add `--skip-git-repo-check` while retaining the `read-only` sandbox.
+  Model selection, opt-in, timeouts, refusal on denial and safe evidence remain unchanged.
+- Migration: update the installed template with `install.py --update` before retrying automatic workers.
+  No workspace trust or credential configuration changes are needed; model probes still require explicit opt-in.
+
 ## 2.11.9 - 2026-10-15
 
 - Ported the worker launcher to Python 3.10+ stdlib: `.agentflow/tools/run_task.py` now owns launch, `-Status`,
