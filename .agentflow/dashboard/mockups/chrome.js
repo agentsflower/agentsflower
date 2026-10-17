@@ -178,7 +178,8 @@ const M=(function(){
       body:{get:()=>qBody,set:v=>{qBody=v}},
       shown:()=>`Showing ${T.filter(t=>pass(t)).length} of ${T.length} tasks · stage list unaffected`,
       clear:()=>{dims.forEach(d=>sel[d.k].clear());flags.wait=false;query="";},
-      onChange});
+      onChange:()=>{onChange(); fb.render();}});
+    fb.render();
     return {fb,pass,filtered:()=>T.filter(t=>pass(t))};
   }
 

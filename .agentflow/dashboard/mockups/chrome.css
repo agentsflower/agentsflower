@@ -20,6 +20,12 @@ th{font-size:12px;color:var(--mut);white-space:nowrap}
    at normal widths it is pixel-identical to the real header */
 @media (max-width:1100px){.topbar{flex-wrap:wrap;row-gap:6px}}
 
+/* app rows: on the real pages template.html gives header/fbar/fchosen a full-width
+   span; the mockup needs the same spans here, or .app's four explicit rows
+   (common.css) get consumed by auto-placement */
+.app>header{grid-column:1/-1;margin:0}
+.fbcard,.fbchosen{grid-column:1/-1}
+
 /* app columns: same grid as the real pages (.app comes from common.css) */
 .side{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
 .side .card{margin:0;flex:0 0 auto}
