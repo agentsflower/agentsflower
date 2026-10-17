@@ -1,5 +1,16 @@
 # Known Issues
 
+- 2026-10-17 - Remote CI run 39026298541 (main@50adf65) FAILED: all three
+  windows-latest and all three macos-latest test jobs exit 1 at
+  `python -m unittest discover`; all three ubuntu-latest jobs and both
+  package-integration jobs pass; mcp job skipped by dependency. Local Windows
+  10 / Python 3.13 reproduces green (204 tests) even with the CI env
+  (AGENTFLOW_MACHINE_STATE_DIR, PYTHONUTF8), so the failure is specific to the
+  windows-2025/macos-arm64 runner environments. Job logs are not publicly
+  readable (API 403) - exact failing tests need authenticated log access or a
+  rerun. Candidates: the never-verified Darwin ps/killpg fallback, the Windows
+  registry os.replace flake, junction/symlink privilege assumptions. No macOS
+  pass is claimed anywhere.
 - 2026-10-17 - T-022/T-023 independently verified bounded registry replacement
   retry and removal of conductor plaintext env handover at 0420265 (main 2.11.11).
   Earlier registry/conductor entries are mitigated by this accepted fix; reopen

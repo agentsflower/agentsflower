@@ -31,4 +31,10 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-006 | Independently verify optional MCP server and installer config | 6 | tester | devin | done | T-005 | 1665318db8c99b2a893ce367a843dfd740a76b5d | Tester for T-005 @ 1665318; same tool per resource policy (agy/claude limited, codex conserved); ID reserved in approved plan | 2026-10-17 08:04 |
 | T-008 | Independently verify honest telemetry and English dashboard | 6 | tester | devin | done | T-007 | f282ab7a7414c7fc17d7eb216a6d83ee95b1281c | Tester for T-007 @ f282ab7; same tool per resource policy (agy/claude limited, codex conserved); ID reserved in approved plan; captures real dashboard screenshot | 2026-10-17 08:34 |
 | T-011 | Final local review of v2.12.0 release preparation | 6 | tester | devin | done | T-010 | 0fcd77398b7d0ce42466c35a4b24d05b8d214762 | Tester for T-010 @ 0fcd7739; reserved ID per approved plan; same tool per resource policy (agy/claude limited, codex conserved) | 2026-10-17 08:55 |
+| T-028 | Trustworthy lifecycle: state enforcement, atomic runtime, PS5.1 --live, merge audit | 5 | developer | devin | in progress |  |  |  | 2026-10-17 11:08 |
+| T-030 | Recoverable handover + limit detection/quota groups upstream generalization | 5 | developer | devin | ready | T-028 |  |  | 2026-10-17 11:08 |
+| T-032 | Evidence and completion gate: criterion IDs, artifact binding, integrated checks | 5 | developer | devin | ready | T-030 |  |  | 2026-10-17 11:08 |
+| T-034 | Bounded autonomy: recorded model identity, quota policy, stop-hook prototype | 5 | developer | devin | ready | T-032 |  |  | 2026-10-17 11:08 |
+| T-036 | Concise instructions and full documentation alignment | 5 | developer | devin | ready | T-034 |  |  | 2026-10-17 11:08 |
+| T-038 | Evaluation scenarios, open-task migration, Stage 5 release metadata | 5 | developer | devin | ready | T-036 |  |  | 2026-10-17 11:08 |
 

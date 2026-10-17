@@ -155,3 +155,33 @@ Final pre-push regression on 2026-10-17: 204 tests in 138.107s, OK (3 skipped); 
 
 2026-10-17: Prepared handover for human-delegated Devin swe-2-high foreground orchestration of sequential Stages 3-5. Built-in bounded selected-model inference passed; agy family resource probes pending. Local v2.12.0 scope already accepted; no new publication authorization.
 Fresh bounded checks: Devin swe-2-high inference OK; agy Gemini Flash inference OK, remaining quota unknown; agy Sonnet/Opus/GPT-OSS denied RESOURCE_EXHAUSTED. Existing tool-wide agy limit must not be bypassed; evaluate scoped repair if needed.
+
+## 2026-10-17: Foreground orchestration - handover checkpoint, CI triage, Stage 4 cycle, Stage 5 launched (devin swe-2-high)
+
+Claimed heartbeat as devin. Committed pending handover memory on
+chore/memory-handover-2026-10-17 after a 204-test green suite, merged to main
+(5f613e8). Configured continuation: user env AGENTFLOW_ORCHESTRATORS=devin,
+AGENTFLOW_DEVIN_ARGS=--model swe-2-high, probe opt-ins and WORKER_TIMEOUT=2400
+persisted; conductor restarted with no active writers (all attempts exited);
+next-orchestrator resolves devin.
+CI run 39026298541 triaged: ubuntu tests and both package jobs pass; all
+windows-latest and macos-latest test jobs fail at the unittest step; logs not
+publicly readable; recorded in known-issues.
+Stage 3 evidence verified: pilot at 2.11.8 via install.py --update
+(template-source.json), 49-ledger task cycle (37 done / 12 rejected), findings
+recorded.
+Stage 4 bounded cycle: upstream.py --check over all machine-registry projects -
+all at 2.11.8 behind 2.12.0 (version lag only) except one real upstream
+candidate set in Transcript Youtube site\code (tools/limit_detection.py,
+tools/quota_groups.py + tests; folded into T-030). Pilot rollout: installer
+dry-run clean (42 actions); applied install.py --update to WatermarkRemover
+2.11.8 -> 2.12.0, deleted stale plaintext env handover files per 2.11.11
+migration, kept launch.ps1/settings.local.json untracked, decisions entry added,
+committed master@3fa1efb; installed suite 204 pass (3 skipped); conductor was
+not running and was not restarted.
+Stage 5 decomposed into six serialized developer contracts (T-028 lifecycle
+trust -> T-030 recovery + upstream generalization -> T-032 completion gate ->
+T-034 bounded autonomy -> T-036 instructions/docs alignment -> T-038 evaluation/
+migration/release record), each with an independent tester contract written at
+result time. Approved under the dated human authorization. T-028 attempt 1
+launched on devin swe-2-high. No push, tag, publication or deployment.
