@@ -2,6 +2,32 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.14 - 2026-10-17
+
+- Dashboard interface is English by default (human-approved): all labels, filters, roles,
+  Gantt, timeline and the summary view in `index.html`/`graph.html`. Machine values stay
+  separate next to the display labels (`statusKey`, `roleKey`, `verdict`), and the three
+  distinct fields ledger `Status` / worker `Outcome` / tester `Verdict` are unchanged.
+  `UI-RULES.md`, the data contract in `dashboard/README.md` and the protocol Dashboard
+  section document the English default; other project communication stays as configured.
+- Tester check links now come from the Task File `Verifies:` field and its SHA, not a
+  title regex. `checkedBy` entries carry `{id, verdict, status, sha, stale}`; a SHA that no
+  longer matches the checked task's current commit is flagged as a stale link.
+- Evidence metrics via `tools/route_report.py metrics()`: first-pass gate rate = first
+  recorded `gate.py verify` record per task (`.runtime/T-NNN.verify.json`), denominator
+  only tasks with that evidence, grouped by recorded role/tool; lead time from attempt
+  timestamps; tester verdict counts (a `fail` verdict is a valid negative report).
+  Missing history, runtime, cost or token telemetry is N/A, never zero or an invented
+  saving; no causal model-quality claims. The metrics render in the graph page summary view.
+- `python .agentflow/dashboard/build.py --demo` builds the same pages from a deterministic
+  fixture with a DEMO DATA badge — no reads of project memory, no writes outside `out/`,
+  safe for screenshots and layout review. Layout preserved; `test_dashboard.py` covers
+  labels, Verifies links, stale detection and demo isolation; `test_route_report.py`
+  covers first-record semantics, absent evidence, denominators and verdict separation.
+- Migration: installed projects get the new dashboard and `route_report.py` through
+  `install.py --update`. Re-run `python .agentflow/dashboard/build.py` to refresh the view;
+  `--demo` needs no project state. Nothing else changes.
+
 ## 2.11.13 - 2026-10-17
 
 - Optional MCP server `.agentflow/tools/mcp_server.py` on the official released SDK
