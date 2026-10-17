@@ -46,6 +46,8 @@ class ConductorTests(unittest.TestCase):
         shutil.copy(FLOW / "tools" / "conductor.ps1", tools)
         shutil.copy(FLOW / "tools" / "conductor-panel.ps1", tools)
         shutil.copy(FLOW / "tools" / "machine_capacity.py", tools)
+        for helper in ("paths.py", "limit_detection.py", "quota_groups.py"):  # the conductor's shared tools
+            shutil.copy(FLOW / "tools" / helper, tools)
         (tools / "tick.py").write_text(FAKE_TICK, encoding="utf-8")
         self.rt = self.root / ".agentflow" / "tasks" / ".runtime"
         self.rt.mkdir(parents=True)

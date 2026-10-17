@@ -130,7 +130,7 @@ class TickTests(unittest.TestCase):
     def test_disabled_subscription_access_temporarily_skips_the_tool(self):
         message = ("Your organization has disabled Claude subscription access for Claude Code · "
                    "Use an Anthropic API key instead, or ask your admin to enable access")
-        self.assertIsNotNone(tick.LIMIT_RE.search(message))
+        self.assertIsNotNone(tick.limit_detection.detect(message))
         with patch.dict(tick.os.environ, {"AGENTFLOW_ORCHESTRATORS": "claude,codex,devin,agy"}):
             entry = tick.record_limit("claude", message, at=AT)
             self.assertEqual(tick.next_orchestrator(AT), "codex")
@@ -210,7 +210,7 @@ class TickTests(unittest.TestCase):
                 patch.object(tick.gate, "ledger_rows", side_effect=lambda: {k: dict(v) for k, v in rows.items()}), \
                 patch.object(tick.gate, "parse", return_value=dev("T-1", outcome="")), \
                 patch.object(tick.gate, "last_attempt", return_value=None), \
-                patch.object(tick.machine_capacity, "has_capacity", side_effect=lambda tool, *_: tool != "codex"), \
+                patch.object(tick.machine_capacity, "has_capacity", side_effect=lambda tool, *_, **__: tool != "codex"), \
                 patch.object(tick, "use_backup", side_effect=switch):
             report = tick.run(launch=lambda tid, tool: launches.append((tid, tool)) or (True, tool))
         self.assertEqual(launches, [("T-1", "devin")])

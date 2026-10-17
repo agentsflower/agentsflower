@@ -42,12 +42,15 @@ $flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $root = (Resolve-Path (Join-Path $flowRoot '..')).Path
 $rtDir = Join-Path $flowRoot 'tasks\.runtime'
 $machine = Join-Path $PSScriptRoot 'machine_capacity.py'
+$detector = Join-Path $PSScriptRoot 'limit_detection.py'
+$groups = Join-Path $PSScriptRoot 'quota_groups.py'
 $stateFile = Join-Path $rtDir 'conductor.json'
 $questions = Join-Path $flowRoot 'state\questions.md'
 # Keep the configured tool order intact. Account-level access failures use the
 # same temporary-unavailability path as quotas, so the next tool takes over now
 # and the preferred tool is retried after the recorded reset/backoff time.
-$limitPattern = 'usage limit|rate limit|quota|session limit|hit your limit|out of credits|disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|ask your admin to enable access'
+# Whether log wording is a real provider limit: limit_detection.py, shared with
+# run_task.py and tick.py.
 New-Item -ItemType Directory -Force $rtDir | Out-Null
 $env:PYTHONUTF8 = '1'
 [Console]::OutputEncoding = $OutputEncoding = [Text.UTF8Encoding]::new($false)   # tick.py prints UTF-8
@@ -77,6 +80,16 @@ function Invoke-Machine([string[]]$argv) {
   $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
   $reply = & $py @pyArgs $machine @argv 2>&1
   return [pscustomobject]@{ code = $LASTEXITCODE; text = (@($reply) -join "`n").Trim() }
+}
+function Get-DefaultGroup([string]$tool) {   # the quota group of the tool's own default model ('' = tool-wide only)
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  return (@(& $py @pyArgs $groups $tool 2>$null) -join '').Trim()
+}
+function Test-LimitLog([string]$log, [int]$exitCode) {   # shared detector: the tool's own provider limit?
+  if (-not (Test-Path $log)) { return $false }
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  & $py @pyArgs $detector $log '--exit-code' "$exitCode" | Out-Null
+  return ($LASTEXITCODE -eq 0)
 }
 function Invoke-Upstream([string[]]$argv) {
   $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
@@ -164,7 +177,7 @@ if ($Orchestrate) {
     $code = $LASTEXITCODE
   } catch { "launch error: $_" | Tee-Object -FilePath $log -Append }
   $tail = if (Test-Path $log) { (Get-Content $log -Tail 50) -join "`n" } else { '' }
-  $limit = [bool]($tail -match $limitPattern)
+  $limit = Test-LimitLog $log $code
   if ($limit) { Invoke-Tick @('limit', $Orchestrate, $tail) | Out-Null }
   Invoke-Tick @('release', '--holder', $holder) | Out-Null
   $s = Read-State
@@ -177,7 +190,10 @@ if ($Orchestrate) {
 
 function Start-Orchestrator([string]$tool, $state, [string]$why) {
   $launcherStart = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
-  $claim = Invoke-Machine @('claim', $tool, $root, 'orchestrator', '--pid', "$PID", '--pid-start', "$launcherStart")
+  $claimArgs = @('claim', $tool, $root, 'orchestrator', '--pid', "$PID", '--pid-start', "$launcherStart")
+  $group = Get-DefaultGroup $tool
+  if ($group) { $claimArgs += @('--group', $group) }   # a hold on one quota group must not hold the whole tool
+  $claim = Invoke-Machine $claimArgs
   if ($claim.code -eq 4) { Write-Host "  waiting for shared machine capacity: $($claim.text)"; return $null }
   if ($claim.code) { throw "machine capacity failed: $($claim.text)" }
   $leaseToken = $claim.text

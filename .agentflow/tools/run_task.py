@@ -70,6 +70,17 @@ remaining quota is unknown it stays unknown, and the bound on one worker is a wa
 itself - AGENTFLOW_WORKER_TIMEOUT seconds (default 1200 = 20 minutes, 0 or a non-number disables it). On expiry
 the launcher kills the managed process tree, records a timeout error and releases the machine lease. All tools
 above run non-interactively, so every worker obeys this bound; an interactive session is a --manual attempt.
+
+Recovery (protocol: Recovery). Every attempt classifies its end in `stopReason` (completed, limit, timeout,
+stopped, dead, environment, implementation, verification) from launcher facts - never from free text alone.
+An attempt that did not complete also carries a bounded `recovery` record: per checkout the branch, HEAD,
+tracked modifications and untracked paths (paths/status only - file contents never enter runtime state), so a
+successor launched on the same Task File continues from the preserved draft instead of starting blind, and the
+record includes whether a Result exists. A new attempt is refused while a managed child of the previous worker
+still runs (the worker's descendants by parent chain plus, on POSIX, processes still in the recorded tool
+session): a possibly-live writer blocks the handover with a diagnosable error, never a concurrent write.
+`Resume: <sha>` keeps the worktree and its drafts and requires the commit to be an ancestor of its HEAD;
+`Resume: start fresh` discards only that worktree's draft state.
 """
 import argparse
 import ctypes
@@ -89,7 +100,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger  # noqa: E402
+import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
+import quota_groups  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
 ROOT = REPO_ROOT
@@ -100,10 +113,10 @@ MACHINE = FLOW_ROOT / "tools" / "machine_capacity.py"
 LIMITS_FILE = RT_DIR / "tool-limits.json"
 TOOLS = ("codex", "claude", "agy", "devin")
 
-LIMIT_RE = re.compile(
-    r"usage limit|rate limit|quota|session limit|hit your limit|out of credits|"
-    r"disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|"
-    r"ask your admin to enable access", re.I)
+# Whether a session log shows the tool's own provider/account limit: limit_detection.py, shared with
+# tick.py and conductor.ps1. Strong provider-directed phrases count at any exit code; weak quota/status
+# words need failure evidence (nonzero exit, an error-prefixed line, an outer error event); quoted
+# subject matter is skipped. The former local LIMIT_RE regex is superseded by it.
 
 # Free model-access checks (extra args for the tool exe; exit 0 = authenticated). `agy models` lists account models.
 # CLI help or --version alone is not proof of model access, so those are never used here.
@@ -336,6 +349,60 @@ def alive(pid, start=None):
     return True
 
 
+def _proc_table():
+    """Live process table as pid -> (ppid, pgid, sid); {} when it cannot be measured. POSIX reads /proc or
+    falls back to `ps`; Windows walks a Toolhelp32 snapshot (process groups and sessions do not exist there,
+    so those positions are None)."""
+    if os.name == "nt":
+        kernel = ctypes.windll.kernel32
+        snap = kernel.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+        if snap in (-1, ctypes.c_void_p(-1).value):
+            return {}
+        try:
+            class PROCESSENTRY32(ctypes.Structure):
+                _fields_ = [("dwSize", ctypes.c_ulong), ("cntUsage", ctypes.c_ulong),
+                            ("th32ProcessID", ctypes.c_ulong), ("th32DefaultHeapID", ctypes.c_void_p),
+                            ("th32ModuleID", ctypes.c_ulong), ("cntThreads", ctypes.c_ulong),
+                            ("th32ParentProcessID", ctypes.c_ulong), ("pcPriClassBase", ctypes.c_long),
+                            ("dwFlags", ctypes.c_ulong), ("szExeFile", ctypes.c_wchar * 260)]
+            table = {}
+            entry = PROCESSENTRY32()
+            entry.dwSize = ctypes.sizeof(entry)
+            ok = kernel.Process32First(snap, ctypes.byref(entry))
+            while ok:
+                table[int(entry.th32ProcessID)] = (int(entry.th32ParentProcessID), None, None)
+                ok = kernel.Process32Next(snap, ctypes.byref(entry))
+            return table
+        finally:
+            kernel.CloseHandle(snap)
+    proc = Path("/proc")
+    if proc.is_dir():
+        table = {}
+        for d in proc.iterdir():  # Linux: /proc/<pid>/stat holds ppid, pgrp and sid after the comm field
+            if not d.name.isdigit():
+                continue
+            try:
+                stat = (d / "stat").read_text().rsplit(")", 1)[1].split()
+                table[int(d.name)] = (int(stat[1]), int(stat[2]), int(stat[3]))
+            except (OSError, IndexError, ValueError):
+                continue
+        return table
+    table = {}
+    try:
+        out = subprocess.run(["ps", "-eo", "pid=,ppid=,pgid=,sid="], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return table
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) == 4:
+            try:
+                table[int(f[0])] = (int(f[1]), int(f[2]), int(f[3]))
+            except ValueError:
+                continue
+    return table
+
+
 def tree_pgroups(pid):
     """Process-group ids of the tree rooted at pid: the root's group plus the group of every live
     descendant, so a managed child that leads its own session is reached too."""
@@ -344,41 +411,171 @@ def tree_pgroups(pid):
         groups.add(os.getpgid(int(pid)))
     except OSError:
         pass
-    kids = {}  # ppid -> [(pid, pgrp)]
-    proc = Path("/proc")
-    if proc.is_dir():
-        for d in proc.iterdir():  # Linux: /proc/<pid>/stat holds ppid and pgrp after the comm field
-            if not d.name.isdigit():
-                continue
-            try:
-                stat = (d / "stat").read_text().rsplit(")", 1)[1].split()
-                kids.setdefault(int(stat[1]), []).append((int(d.name), int(stat[2])))
-            except (OSError, IndexError, ValueError):
-                continue
-    else:
-        try:
-            out = subprocess.run(["ps", "-eo", "pid=,ppid=,pgid="], capture_output=True, text=True,
-                                 timeout=10).stdout
-        except (OSError, subprocess.SubprocessError):
-            return groups
-        for line in out.splitlines():
-            f = line.split()
-            if len(f) == 3:
-                kids.setdefault(int(f[1]), []).append((int(f[0]), int(f[2])))
+    kids = {}
+    for child, (ppid, grp, _sid) in _proc_table().items():
+        kids.setdefault(ppid, []).append((child, grp))
     stack, seen = [int(pid)], {int(pid)}
     while stack:
         for child, grp in kids.pop(stack.pop(), []):
             if child not in seen:
                 seen.add(child)
                 stack.append(child)
-                groups.add(grp)
+                if grp is not None:
+                    groups.add(grp)
     return groups
+
+
+def descendants(pid):
+    """Live descendants of pid by parent chain; the pid itself is not included. On POSIX an orphaned
+    grandchild is reparented and leaves the chain - the tool-session scan covers those."""
+    kids = {}
+    for child, (ppid, _grp, _sid) in _proc_table().items():
+        kids.setdefault(ppid, []).append(child)
+    out, stack, seen = [], [int(pid)], {int(pid)}
+    while stack:
+        for child in kids.pop(stack.pop(), []):
+            if child not in seen:
+                seen.add(child)
+                stack.append(child)
+                out.append(child)
+    return out
+
+
+# Windows job objects: the worker is assigned to a job named after its pid at spawn. Children of job
+# members inherit membership, so even an orphaned grandchild (whose parent chain is already broken)
+# still counts against the job - that is the Windows equivalent of the POSIX session scan below.
+def _job_name(pid):
+    return rf"Local\AgentFlow-Worker-{pid}"
+
+
+def _job_assign(pid):
+    """Assign the worker process to its named job; best-effort (an already-exited process or a Windows
+    that disallows nesting simply leaves the parent-chain scan as the fallback)."""
+    if os.name != "nt":
+        return
+    k = ctypes.windll.kernel32
+    job = k.CreateJobObjectW(None, _job_name(pid))
+    if not job:
+        return
+    handle = k.OpenProcess(0x0100 | 0x0001, False, int(pid))  # PROCESS_SET_QUOTA | PROCESS_TERMINATE
+    if handle:
+        k.AssignProcessToJobObject(job, handle)
+        k.CloseHandle(handle)
+    k.CloseHandle(job)  # the object persists while any member process lives
+
+
+def _job_active(pid):
+    """Members still alive in the worker's job, or None when there is no job for this pid."""
+    if os.name != "nt" or not pid:
+        return None
+    k = ctypes.windll.kernel32
+    job = k.OpenJobObjectW(0x0004, False, _job_name(pid))  # JOB_OBJECT_QUERY
+    if not job:
+        return None
+    try:
+        class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+            _fields_ = [("TotalUserTime", ctypes.c_ulonglong), ("TotalKernelTime", ctypes.c_ulonglong),
+                        ("ThisPeriodTotalUserTime", ctypes.c_ulonglong),
+                        ("ThisPeriodTotalKernelTime", ctypes.c_ulonglong),
+                        ("TotalPageFaultCount", ctypes.c_ulong), ("TotalProcesses", ctypes.c_ulong),
+                        ("ActiveProcesses", ctypes.c_ulong), ("TotalTerminatedProcesses", ctypes.c_ulong)]
+        info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+        if k.QueryInformationJobObject(job, 1, ctypes.byref(info), ctypes.sizeof(info), None):
+            return int(info.ActiveProcesses)
+        return None
+    finally:
+        k.CloseHandle(job)
+
+
+def _job_terminate(pid):
+    """End every process in the worker's job, including orphans that left the parent chain."""
+    if os.name != "nt":
+        return
+    k = ctypes.windll.kernel32
+    job = k.OpenJobObjectW(0x0001, False, _job_name(pid))  # JOB_OBJECT_TERMINATE
+    if job:
+        k.TerminateJobObject(job, 1)
+        k.CloseHandle(job)
+
+
+def _tool_session_path(tid):
+    return RT_DIR / f"{tid}.toolsession.json"
+
+
+def write_tool_session(tid, pid):
+    """Record the tool process the worker spawned: takeover checks read it after the worker is gone.
+    POSIX: the tool leads its own session, and orphaned grandchildren keep that session id after
+    reparenting, so a stray writer is still found when the parent chain is broken."""
+    sid = None
+    if os.name != "nt":
+        try:
+            sid = os.getsid(int(pid))
+        except OSError:
+            sid = None
+    p = _tool_session_path(tid)
+    tmp = p.parent / (p.name + ".tmp")
+    tmp.write_text(json.dumps({"pid": int(pid), "sid": sid}), encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def read_tool_session(tid):
+    try:
+        data = json.loads(_tool_session_path(tid).read_text(encoding="utf-8"))
+        return data if isinstance(data.get("pid"), int) and not isinstance(data.get("pid"), bool) else None
+    except (OSError, ValueError):
+        return None
+
+
+def leftover_processes(tid, a, grace=0.0):
+    """(stray pids, job members) of a dead or stopped attempt: the worker's descendants by parent chain
+    plus, on POSIX, every process still in the recorded tool session (orphans keep their session id after
+    reparenting); on Windows the worker's job reports members that already left the parent chain.
+    `grace` seconds lets a just-killed tree finish dying before the answer counts. Identity is
+    best-effort: an unrelated process sitting on a reused pid is a diagnosable block for the operator,
+    never a kill target."""
+    deadline = time.time() + grace
+    while True:
+        out = set()
+        pid = a.get("pid")
+        if pid:
+            out.update(descendants(pid))
+        meta = read_tool_session(tid)
+        if meta:
+            tpid = meta.get("pid")
+            if tpid:
+                if alive(tpid):
+                    out.add(tpid)
+                out.update(descendants(tpid))
+            sid = meta.get("sid")
+            if sid is not None and os.name != "nt":
+                for p, (_ppid, _grp, s) in _proc_table().items():
+                    if s == sid:
+                        out.add(p)
+        out.discard(pid)
+        members = _job_active(pid) if os.name == "nt" else 0
+        if (not out and not members) or time.time() >= deadline:
+            return sorted(out), members or 0
+        time.sleep(0.1)
+
+
+def _leftover_error(tid, strays, members=0, what="a new attempt"):
+    shown = ", ".join(str(p) for p in strays[:5])
+    if len(strays) > 5:
+        shown += f" (+{len(strays) - 5} more)"
+    if not shown:
+        shown = "no visible pid"
+    if members:
+        shown += f"; {members} member(s) in the worker's job"
+    return LaunchError(f"{tid}: managed processes of the previous worker still run ({shown}) - they "
+                       f"may still write the worktree, so {what} is refused. Verify they belong to this "
+                       "task (a reused pid can imitate one) and end them, then retry.")
 
 
 def kill_tree(pid):
     """Kill the worker and its managed descendants (the tool process and what it spawned)."""
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        _job_terminate(pid)  # orphans that already left the parent chain still belong to the job
         return
     # Only the tree rooted at pid is signalled: the tool leads its own group, so the caller's group
     # (which is also the worker's) is never targeted.
@@ -565,6 +762,7 @@ def init_workdir(t):
                 if cur != c["branch"]:
                     raise LaunchError(f"worktree {c['path']} is on branch '{cur}', task needs '{c['branch']}'. "
                                       "Not this task's: stop.")
+                apply_resume(t, c)
                 print(f"worktree {c['path']} exists on {c['branch']}: resume")
             else:
                 Path(c["path"]).parent.mkdir(parents=True, exist_ok=True)
@@ -603,32 +801,37 @@ def worker_env(t):
 
 
 # --- resource and permission checks before a worker start -----------------------------------------------------------
-def limit_until(tool):
-    """Observed quota/access limits, project file and shared machine registry; earliest expiry wins.
-    A malformed project record fails closed: 'no limits known' is never inferred from a bad file."""
+def limit_until(tool, group=None):
+    """Observed quota/access limits applying to <tool> on quota <group>, project file and shared machine
+    registry; earliest expiry wins. A hold on the bare tool key stays tool-wide, a hold on '<tool>:<group>'
+    blocks only that group. A malformed project record fails closed: 'no limits known' is never inferred
+    from a bad file."""
     ends = []
     if LIMITS_FILE.exists():
         try:
             lim = ledger.check_limits(json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig")))
         except (OSError, ValueError) as e:
             raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: {e}")
-        rec = lim.get(tool)
-        if rec:
-            try:
-                ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ")
-                            .replace(tzinfo=timezone.utc))
-            except ValueError as e:
-                raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: "
-                                  f"bad 'until' for {tool}: {e}")
-    machine = machine_capacity.limit_until(tool)
+        keys = [tool, machine_capacity._limit_key(tool, group)] if group else [tool]
+        for key in keys:
+            rec = lim.get(key)
+            if rec:
+                try:
+                    ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ")
+                                .replace(tzinfo=timezone.utc))
+                except ValueError as e:
+                    raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: "
+                                      f"bad 'until' for {key}: {e}")
+    machine = machine_capacity.limit_until(tool, group)
     if machine:
         ends.append(machine)
     return max(ends) if ends else None
 
 
 def resource_check(tool, model=None):
-    """Executable, authenticated access, selected-model inference, observed limits. Raises LaunchError with an
-    actionable diagnostic; returns what was observed (freshness + source, no secrets, no quota figures)."""
+    """Executable, authenticated access, selected-model inference, observed limits (scoped to the quota
+    group the session would consume). Raises LaunchError with an actionable diagnostic; returns what was
+    observed (freshness + source, no secrets, no quota figures)."""
     check = {"at": now(), "exe": None, "probe": None, "probeSource": None}
     exe = tool_exe(tool)
     found = shutil.which(exe) or (str(Path(exe).resolve()) if Path(exe).exists() else None)
@@ -637,9 +840,12 @@ def resource_check(tool, model=None):
                           "(wildcards allowed, the newest match wins).")
     check["exe"] = found
 
-    end = limit_until(tool)
+    group = quota_groups.group_for(tool, selected_model(tool, model))
+    check["quotaGroup"] = group
+    end = limit_until(tool, group)
     if end and end > datetime.now(timezone.utc):
-        raise LaunchError(f"{tool} is limited until {end.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+        scope = f" group {group}" if group else ""
+        raise LaunchError(f"{tool}{scope} is limited until {end.strftime('%Y-%m-%dT%H:%M:%SZ')} "
                           "(observed quota/access limit); move the task to another tool or wait.")
     check["limits"] = "clear"
 
@@ -674,7 +880,7 @@ def resource_check(tool, model=None):
     # Selected-model inference check: explicit opt-in only (it may cost tokens), a separate strict bound, an
     # empty temp cwd and no repository tools. Only the audited built-in counts: custom argv cannot be told
     # apart from an auth/catalog check, so it fails closed. Account access above proves no model entitlement.
-    chosen = selected_model(tool, model)
+    chosen = check["model"] = selected_model(tool, model)
     menv = f"AGENTFLOW_{tool.upper()}_MODEL_PROBE"
     mo = os.environ.get(menv)
     if mo is None or mo.strip().lower() in ("", "off", "none", "unsupported"):
@@ -713,19 +919,129 @@ def resource_check(tool, model=None):
     return check
 
 
+# --- attempt completion: stop classification and recovery capture --------------------------------------------------
+RECOVERY_MAX_FILES = 200
+
+
+def git_out(cwd, *args):
+    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def classify_stop(a, endcheck_bad, hint=None):
+    """The attempt's stopReason (protocol: Recovery): launcher facts first (an explicit stop, a dead
+    process, the wall clock), then the shared detector's flag, then evidence-based classes
+    (launch/environment error, end-check violation, nonzero exit, clean completion). Free text
+    alone never classifies an attempt."""
+    if hint in ("stopped", "dead", "timeout"):
+        return hint
+    if a.get("limitHit"):
+        return "limit"
+    if (a.get("note") or "").startswith("launch error:"):
+        return "environment"
+    if endcheck_bad:
+        return "verification"
+    if a.get("exitCode") not in (None, 0):
+        return "implementation"
+    return "completed"
+
+
+def capture_recovery(a, t, reason):
+    """Bounded recovery state for an attempt that did not complete, stored on its record: per checkout the
+    branch, HEAD, tracked modifications and untracked paths (paths/status only - file contents and other
+    secrets never enter runtime state), whether the Task File already holds a Result, and the classified
+    stop reason. A successor continues from this record instead of a lost narrative."""
+    rec = {"capturedAt": now(), "stopReason": reason,
+           "hasResult": bool(((t or {}).get("result") or "").strip())}
+    repos = []
+    for c in (t or {}).get("checkouts") or []:
+        path = c.get("path")
+        if not path or not Path(path).is_dir():
+            continue
+        r = subprocess.run(["git", "-C", str(path), "status", "--porcelain"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")
+        status = (r.stdout or "").splitlines() if r.returncode == 0 else []
+        tracked = sorted({line[3:] for line in status if len(line) > 3 and line[:2] != "??"})
+        new = sorted({line[3:] for line in status if len(line) > 3 and line[:2] == "??"})
+        repos.append({"path": path,
+                      "branch": git_out(path, "rev-parse", "--abbrev-ref", "HEAD"),
+                      "head": git_out(path, "rev-parse", "HEAD"),
+                      "modified": tracked[:RECOVERY_MAX_FILES],
+                      "untracked": new[:RECOVERY_MAX_FILES],
+                      "truncated": len(tracked) + len(new) > RECOVERY_MAX_FILES})
+    rec["repos"] = repos
+    a["recovery"] = rec
+    return rec
+
+
+def handover_note(prev, fresh=False):
+    """The recovery line appended to a successor's prompt: what ended the previous attempt and what draft
+    state the worktree still holds (paths/counts only, never file contents). One line: the prompt travels
+    as a single command-line argument and cmd.exe ends a command at a newline."""
+    if not prev:
+        return None
+    rec = prev.get("recovery") or {}
+    reason = rec.get("stopReason") or prev.get("stopReason") or "error"
+    parts = [f"Recovery handover: attempt {prev.get('n')} of this task ended as '{reason}'."]
+    if fresh:
+        parts.append("The draft state was deliberately discarded (`Resume: start fresh`): the worktree "
+                     "was reset to the branch HEAD before your start.")
+    else:
+        repos = rec.get("repos") or []
+        if repos:
+            seen = "; ".join(
+                f"{r.get('path')} (branch {r.get('branch')}, HEAD {str(r.get('head') or '')[:12]}, "
+                f"{len(r.get('modified') or [])} modified + {len(r.get('untracked') or [])} untracked"
+                f"{', list truncated' if r.get('truncated') else ''})" for r in repos)
+            parts.append(f"The task's draft state was preserved ({seen}): inspect `git status` and "
+                         "continue from it instead of starting over.")
+        else:
+            parts.append("No draft worktree state could be captured; check the attempt log.")
+        if not rec.get("hasResult"):
+            parts.append("The Task File has no Result yet; write yours there when done.")
+    return " ".join(parts)
+
+
+def apply_resume(t, c):
+    """`Resume:` continuation for one developer worktree (protocol: Recovery): '<sha>' keeps the worktree
+    and its drafts and requires the commit to be an ancestor of its HEAD; 'start fresh' discards only this
+    worktree's draft state; 'none' (or absent) leaves the worktree as found."""
+    rv = (t.get("resume") or "").strip()
+    if not rv or rv.lower() == "none":
+        return
+    path = c["path"]
+    if rv.lower() == "start fresh":
+        for args in (("reset", "--hard", "HEAD"), ("clean", "-fd")):
+            if subprocess.run(["git", "-C", path, *args], capture_output=True).returncode:
+                raise LaunchError(f"Resume 'start fresh': git {' '.join(args)} failed in {path}")
+        print(f"Resume start fresh: {path} was reset to HEAD and cleaned")
+        return
+    if subprocess.run(["git", "-C", path, "merge-base", "--is-ancestor", rv, "HEAD"],
+                      capture_output=True).returncode:
+        raise LaunchError(f"Resume {rv}: that commit is not an ancestor of the HEAD of {path} - the "
+                          "preserved work is elsewhere; fix the branch or the Resume line, drafts are "
+                          "not silently discarded.")
+
+
 # --- attempt completion ---------------------------------------------------------------------------------------------
-def complete_attempt(tid, rt, state):
-    """End-of-attempt check, then the final state."""
+def complete_attempt(tid, rt, state, hint=None):
+    """End-of-attempt check, the classified stop reason, recovery capture on failure, then the final state."""
     a = last_attempt(rt)
+    t = None
     try:
+        t = invoke_gate("task", tid)
         bad = invoke_gate("endcheck", tid).get("violations") or []
-        remove_checkout(invoke_gate("task", tid))
+        remove_checkout(t)
     except Exception as e:
         bad = [f"end check failed: {e}"]
     if bad:
         state = "error"
         a["note"] = "; ".join(x for x in [a.get("note"), *bad] if x)
     a["status"], a["finishedAt"] = state, now()
+    a["stopReason"] = classify_stop(a, bad, hint)
+    if a["stopReason"] != "completed":
+        capture_recovery(a, t, a["stopReason"])
     write_rt(tid, rt)
     if bad:
         print(f"warning: {tid} attempt {a['n']} failed the end check: {'; '.join(bad)}", file=sys.stderr)
@@ -750,7 +1066,8 @@ def cmd_status():
                 state = "blocked" if attempt_uncertain(a) else "dead"
             print(f"{rt.get('taskId') or p.stem}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
                   f"exit={a.get('exitCode') if a.get('exitCode') is not None else ''}  "
-                  f"limitHit={a.get('limitHit')}  finished={a.get('finishedAt') or ''}")
+                  f"stop={a.get('stopReason') or ''}  limitHit={a.get('limitHit')}  "
+                  f"group={a.get('quotaGroup') or ''}  finished={a.get('finishedAt') or ''}")
     return 0
 
 
@@ -759,6 +1076,9 @@ def cmd_stop(tid):
     a = last_attempt(rt)
     if attempt_alive(a):
         kill_tree(a["pid"])
+        strays, members = leftover_processes(tid, a, grace=3.0)
+        if strays or members:
+            raise _leftover_error(tid, strays, members, what="releasing the lock")
     elif attempt_uncertain(a):
         # A process sits on the recorded pid but its identity cannot be confirmed: it may be a reused pid,
         # so no kill is sent to it - and closing the attempt would free the lock while the worker may
@@ -767,9 +1087,14 @@ def cmd_stop(tid):
                           "(none recorded, or not measurable now) - a possibly reused pid is never killed "
                           "and the task stays locked. If the process really is this worker, end it and run "
                           f"run_task.py {tid} --stop again.")
+    elif a and a.get("status") == "running" and a.get("pid"):
+        # The recorded worker is gone but never wrote a final state; its managed children may still write.
+        strays, members = leftover_processes(tid, a)
+        if strays or members:
+            raise _leftover_error(tid, strays, members, what="releasing the lock")
     if a and a.get("status") == "running":
         a["exitCode"], a["note"] = -1, "; ".join(x for x in [a.get("note"), "stopped with --stop"] if x)
-        complete_attempt(tid, rt, "error")
+        complete_attempt(tid, rt, "error", hint="stopped")
     if a and a.get("machineLease"):
         machine_capacity.release(a["machineLease"])
     print(f"{tid} stopped, lock released")
@@ -804,10 +1129,12 @@ def cmd_recheck(tid):
     return 0
 
 
-def run_logged(argv, log, cwd, env, timeout=None):
+def run_logged(argv, log, cwd, env, timeout=None, on_spawn=None):
     """Tee: the tool's output goes to the console and the attempt log as it is produced. With `timeout`
     (seconds) the launcher enforces the wall clock itself: on expiry the managed process tree is killed and
-    (exit code, True) is returned - a tool that ignores its own CLI timeout is still bounded."""
+    (exit code, True) is returned - a tool that ignores its own CLI timeout is still bounded. `on_spawn`
+    runs right after the tool process exists: the worker uses it to record the tool's session identity
+    for takeover checks."""
     with open(log, "a", encoding="utf-8", errors="replace") as fh:
         # On POSIX the tool leads its own session/group: a wall-clock kill of its tree cannot SIGTERM
         # the worker itself (it would die before recording the error attempt).
@@ -815,6 +1142,8 @@ def run_logged(argv, log, cwd, env, timeout=None):
         p = subprocess.Popen(cmd_argv(argv), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)
+        if on_spawn:
+            on_spawn(p.pid)
 
         def pump():
             for line in p.stdout:
@@ -851,8 +1180,10 @@ def cmd_worker(tid, tool):
         except ValueError:
             timeout = 0
         timeout = timeout if timeout > 0 else None
-        argv = [tool_exe(tool)] + tool_argv(tool, t["role"], t["prompt"], t["model"], t["effort"])
-        code, timed_out = run_logged(argv, log, cwd=t["workdir"], env=env, timeout=timeout)
+        prompt = t["prompt"] + (f" {att['handover']}" if att.get("handover") else "")
+        argv = [tool_exe(tool)] + tool_argv(tool, t["role"], prompt, t["model"], t["effort"])
+        code, timed_out = run_logged(argv, log, cwd=t["workdir"], env=env, timeout=timeout,
+                                     on_spawn=lambda pid: write_tool_session(tid, pid))
         if timed_out:
             note = (f"wall-clock timeout after {timeout}s: the managed process tree was killed "
                     f"(AGENTFLOW_WORKER_TIMEOUT)")
@@ -862,16 +1193,18 @@ def cmd_worker(tid, tool):
     rt = read_rt(tid)  # re-read: the launcher wrote the pid after start
     a = last_attempt(rt)
     a["exitCode"] = 124 if timed_out and code == 0 else code
-    try:
-        tail = Path(log).read_text(encoding="utf-8", errors="replace")[-8000:] if log and Path(log).is_file() else ""
-    except OSError:
-        tail = ""
-    # A successful report that merely mentions quota words (a test case, a summary) is not a limit; a timed-out
-    # attempt is a wall-clock error either way. Real provider failures still set the flag (nonzero + wording).
-    a["limitHit"] = bool(code) and not timed_out and bool(LIMIT_RE.search(tail))
+    # The shared detector judges the session log's tail the same way tick.py and the conductor do: strong
+    # provider-directed phrases count even on a clean exit, weak quota words need failure evidence, and a
+    # report that merely quotes quota wording stays subject matter. A timed-out attempt is a wall-clock
+    # error either way, so its log is not judged.
+    detail = limit_detection.detect_detail_file(log, code) if not timed_out and log else None
+    a["limitHit"] = bool(detail)
+    if detail:
+        a["limitPhrase"], a["limitKind"] = detail
     if note:
         a["note"] = note
-    complete_attempt(tid, rt, "error" if timed_out or code else "exited")
+    complete_attempt(tid, rt, "error" if timed_out or code else "exited",
+                     hint="timeout" if timed_out else None)
     if att.get("machineLease"):
         machine_capacity.release(att["machineLease"])
     print(f"\n{tid} attempt {a['n']}: {a['status']} (exit {code}).")
@@ -903,6 +1236,17 @@ def cmd_launch(tid, tool, manual, grant):
             print(f"warning: previous attempt of {tid} died without a final state (process gone?). "
                   "Recovery applies.", file=sys.stderr)
             prev["status"], prev["note"] = "error", "dead: process gone without a final state"
+            prev["finishedAt"], prev["stopReason"] = now(), "dead"
+            try:
+                capture_recovery(prev, invoke_gate("task", tid), "dead")
+            except LaunchError as e:
+                prev.setdefault("recovery", {"capturedAt": now(), "stopReason": "dead",
+                                             "error": f"task state unreadable: {e}"})
+            write_rt(tid, rt)
+        if prev and prev.get("pid"):
+            strays, members = leftover_processes(tid, prev, grace=2.0)
+            if strays or members:
+                raise _leftover_error(tid, strays, members)
         live = live_tasks()
         more = (["--live", ",".join(live)] if live else []) + (["--manual"] if manual else ["--tool", tool])
         pf = invoke_gate("preflight", tid, more)
@@ -924,7 +1268,7 @@ def cmd_launch(tid, tool, manual, grant):
             try:
                 lease, reason = machine_capacity.claim(tool, ROOT, tid, port=port,
                                                        pid=os.getpid(), pid_start=pid_start(os.getpid()),
-                                                       grant=grant)
+                                                       grant=grant, group=check.get("quotaGroup"))
             except (OSError, ValueError, TimeoutError) as e:
                 raise LaunchError(f"machine capacity failed: {e}")
             if not lease:
@@ -941,12 +1285,17 @@ def cmd_launch(tid, tool, manual, grant):
              if tool else None,
              "role": t["role"], "manual": manual, "status": "running", "pid": None, "pidStart": None,
              "exitCode": None, "startedAt": now(), "finishedAt": None, "limitHit": False,
+             "stopReason": None,
+             "quotaGroup": (check or {}).get("quotaGroup") if check else t.get("quotaGroup"),
              "target": t["target"], "workdir": t["workdir"],
              "log": None if manual else str(RT_DIR / f"{tid}.{n}.log"),
              "baseline": invoke_gate("task", tid).get("baseline"),
              "machineLease": lease, "note": None}
         if check:
             a["resourceCheck"] = check
+        if prev and (prev.get("recovery") or prev.get("stopReason")):
+            fresh = (t.get("resume") or "").strip().lower() == "start fresh"
+            a["handover"] = handover_note(prev, fresh)
         rt["attempts"].append(a)
         write_rt(tid, rt)  # a running attempt = the task's lock for the worker's lifetime
 
@@ -958,9 +1307,10 @@ def cmd_launch(tid, tool, manual, grant):
 
         if manual:
             e = worker_env(t)
+            handover = f" {a['handover']}" if a.get("handover") else ""
             print(f"{tid} attempt {n} ready for a manual start.\n  folder: {t['workdir']}\n"
                   f"  env:    {', '.join(f'{k}={v}' for k, v in e.items())}\n"
-                  f"  prompt: {t['prompt']}\nWhen it ends: run_task.py {tid} --mark-finished")
+                  f"  prompt: {t['prompt']}{handover}\nWhen it ends: run_task.py {tid} --mark-finished")
             return 0
 
         # The worker gets the environment through the spawn call alone: no plaintext handover file, so
@@ -977,6 +1327,7 @@ def cmd_launch(tid, tool, manual, grant):
             kw["start_new_session"] = True
         p = subprocess.Popen(cmd, **kw)
         worker_started = True
+        _job_assign(p.pid)  # leftover tracking survives broken parent chains (no-op off Windows)
         rt = read_rt(tid)
         cur = last_attempt(rt)
         if cur.get("status") == "running" and alive(p.pid):  # the worker may already have finished
@@ -986,6 +1337,7 @@ def cmd_launch(tid, tool, manual, grant):
         if not worker_started and a and a.get("status") == "running":
             a["status"], a["finishedAt"] = "error", now()
             a["note"] = f"launch failed: {e}"
+            a["stopReason"] = "environment"
             write_rt(tid, rt)
         raise
     finally:

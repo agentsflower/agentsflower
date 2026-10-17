@@ -5,7 +5,8 @@
   python .agentflow/tools/tick.py release [--holder <name>]   the Orchestrator ends its session cleanly
   python .agentflow/tools/tick.py status                      live Orchestrator and limited tools; exit 0 live, 1 not
   python .agentflow/tools/tick.py next-orchestrator           first orchestrator tool that is not limited ('' if none)
-  python .agentflow/tools/tick.py limit <tool> "<message>"    record a usage limit from a tool's own message
+  python .agentflow/tools/tick.py limit <tool> "<message>" [--group g]    record a usage limit from a tool's own message
+  python .agentflow/tools/tick.py limit-migrate <tool> <group>            move a tool-wide hold under '<tool>:<group>'
 
 Rules: .agentflow/docs/ai-handoff-protocol.md, section "Autonomous orchestration". `run` does by itself only what
 needs no judgment: accept a tester whose Verdict is pass, accept a developer whose tester is done or whose independent
@@ -28,7 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
 import ledger  # noqa: E402
+import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
+import quota_groups  # noqa: E402
 import route  # noqa: E402
 import dispatch  # noqa: E402
 import run_task  # noqa: E402
@@ -44,12 +47,8 @@ LAUNCHABLE = ("codex", "claude", "agy", "devin")
 # account access is disabled. Both cases must hand orchestration to the next
 # configured tool. With no reset time in the message record_limit() retries the
 # preferred tool after one hour instead of removing it from the configured list.
-LIMIT_RE = re.compile(
-    r"usage limit|rate limit|quota|session limit|hit your limit|out of credits|"
-    r"disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|"
-    r"ask your admin to enable access",
-    re.I,
-)
+# Whether log wording is a real provider limit: limit_detection.py, shared with
+# run_task.py and conductor.ps1.
 
 
 def orchestrators():
@@ -128,41 +127,89 @@ def read_limits():
         raise StateError(f"cannot read {LIMITS.name}: {e}")
 
 
-def record_limit(tool, text, at=None, seen=None):
+def record_limit(tool, text, at=None, seen=None, group=None):
     lim = read_limits()
     until = parse_reset(text, at)
-    lim[tool] = {"until": iso(until), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
+    key = machine_capacity._limit_key(tool, group)
+    lim[key] = {"until": iso(until), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
     if seen:
         seen_map = lim.setdefault("_seen", {})
         if not isinstance(seen_map, dict):
             seen_map = lim["_seen"] = {}
         seen_map[seen] = iso(at or now())
     write(LIMITS, lim)
-    machine_capacity.record_limit(tool, until)
-    return lim[tool]
+    machine_capacity.record_limit(tool, until, group)
+    return lim[key]
 
 
-def limit_end(tool):
-    local = read_limits().get(tool)
-    if local:
-        try:
-            local_end = parse_iso(local["until"])
-        except ValueError as e:
-            raise StateError(f"{LIMITS.name}: bad 'until' for {tool}: {e}")
-    else:
-        local_end = None
-    global_end = machine_capacity.limit_until(tool)
-    return max((end for end in (local_end, global_end) if end), default=None)
+def limit_end(tool, group=None):
+    """Latest recorded hold end applying to <tool> on <group>: the tool-wide hold plus its group's."""
+    ends = []
+    lim = read_limits()
+    for key in {tool, machine_capacity._limit_key(tool, group)} if group else {tool}:
+        local = lim.get(key)
+        if local:
+            try:
+                ends.append(parse_iso(local["until"]))
+            except ValueError as e:
+                raise StateError(f"{LIMITS.name}: bad 'until' for {key}: {e}")
+    global_end = machine_capacity.limit_until(tool, group)
+    if global_end:
+        ends.append(global_end)
+    return max(ends, default=None)
 
 
-def limited(tool, at=None):
-    end = limit_end(tool)
+def limited(tool, group=None, at=None):
+    end = limit_end(tool, group)
     return bool(end) and end > (at or now())
 
 
+def migrate_limit(tool, group):
+    """Move an existing tool-wide hold under '<tool>:<group>' in the local file and the shared
+    machine registry, preserving its reset time. For a hold known to belong to one quota group
+    only (a legacy record from before quota groups); the later of two ends wins. Returns the
+    report lines; nothing else in either store changes."""
+    out = []
+    lim = read_limits()
+    if tool in lim:
+        key = machine_capacity._limit_key(tool, group)
+        entry = lim.pop(tool)
+        if key in lim and parse_iso(lim[key]["until"]) > parse_iso(entry["until"]):
+            entry = lim[key]
+        lim[key] = entry
+        write(LIMITS, lim)
+        out.append(f"local {tool} -> {key} until {entry['until']}")
+    end = machine_capacity.move_limit(tool, group)
+    if end:
+        out.append(f"machine {tool} -> {tool}:{group} until "
+                   f"{datetime.fromtimestamp(end, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
+    return out
+
+
+def active_limits():
+    """Recorded holds still in force, keyed '<tool>' or '<tool>:<group>'."""
+    return {k: v["until"] for k, v in read_limits().items()
+            if k != "_seen" and parse_iso(v["until"]) > now()}
+
+
+def tool_group(tool, model=None):
+    """The quota group a session on <tool>/<model> consumes (None: only tool-wide holds apply)."""
+    return quota_groups.group_for(tool, model)
+
+
+def launch_group(tid, tool):
+    """The quota group of the session this ready task would run (its Model, or the tool default)."""
+    try:
+        return tool_group(tool, gate.parse(tid).get("model"))
+    except (gate.TaskError, OSError):
+        return None
+
+
 def next_orchestrator(at=None, skip=()):
-    return next((t for t in orchestrators() if t not in skip and not limited(t, at)
-                 and machine_capacity.has_capacity(t, FLOW_ROOT.parent, at)), "")
+    return next((t for t in orchestrators() if t not in skip
+                 and not limited(t, quota_groups.default_group(t), at)
+                 and machine_capacity.has_capacity(t, FLOW_ROOT.parent, at,
+                                                   group=quota_groups.default_group(t))), "")
 
 
 # --- heartbeat ---------------------------------------------------------------------------------------------------
@@ -216,8 +263,21 @@ def log_tail(att, n=4000):
         return ""
 
 
+def limit_detail(att):
+    """(phrase, kind) of the attempt's provider limit: 'quota' scopes to the attempt's quota
+    group, 'account' holds the whole tool. A launcher-flagged limit without a readable log
+    keeps the kind the launcher recorded, else tool-wide 'account' (pre-quota-groups attempts)."""
+    if att.get("status") in ("exited", "error") and att.get("log"):
+        detail = limit_detection.detect_detail_file(att["log"], att.get("exitCode"))
+        if detail:
+            return detail
+    if att.get("limitHit"):
+        return (att.get("limitPhrase") or "flagged by the launcher", att.get("limitKind") or "account")
+    return None
+
+
 def hit_limit(att):
-    return bool(att.get("limitHit")) or (att.get("status") in ("exited", "error") and bool(LIMIT_RE.search(log_tail(att, 1500))))
+    return bool(limit_detail(att))
 
 
 # --- decisions ---------------------------------------------------------------------------------------------------
@@ -265,7 +325,14 @@ def decide(rows, at=None):
                                          "identity is unconfirmed (a possibly reused pid) - the task stays "
                                          "locked; verify and stop it with run_task.py --stop"))
             else:
-                out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
+                strays, members = run_task.leftover_processes(tid, att)
+                if strays or members:
+                    shown = ", ".join(map(str, strays[:5])) or f"{members} process(es) in the worker's job"
+                    out.append((tid, "need", f"attempt {att.get('n')}: the worker process is gone but "
+                                             f"managed process(es) still run ({shown}) - end them "
+                                             "before a successor"))
+                else:
+                    out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
             continue
         if running:
             out.append((tid, "wait", f"{att.get('tool')} is working (attempt {att.get('n')})"))
@@ -277,8 +344,9 @@ def decide(rows, at=None):
                 out.append((tid, "wait", f"depends on {', '.join(deps)}"))
             elif tool not in LAUNCHABLE:
                 out.append((tid, "need", f"Tool '{tool}' cannot be started automatically: route it or start it by hand"))
-            elif limited(tool, at):
-                out.append((tid, "need", f"its tool {tool} is limited until {iso(limit_end(tool))}: move it to another tool or wait"))
+            elif limited(tool, group := tool_group(tool, t.get("model")), at):
+                scope = f" group {group}" if group else ""
+                out.append((tid, "need", f"its tool {tool}{scope} is limited until {iso(limit_end(tool, group))}: move it to another tool or wait"))
             else:
                 out.append((tid, "launch", tool))
             continue
@@ -327,7 +395,10 @@ def learn_limits(rows):
             continue
         key = f"{tid}#{att.get('n')}"
         if key not in seen:
-            record_limit(att["tool"], log_tail(att, 1500), at=parse_iso(att["finishedAt"]) if att.get("finishedAt") else None, seen=key)
+            detail = limit_detail(att)
+            group = att.get("quotaGroup") if detail and detail[1] == "quota" else None
+            record_limit(att["tool"], log_tail(att, 1500), at=parse_iso(att["finishedAt"]) if att.get("finishedAt") else None,
+                         seen=key, group=group)
 
 
 def py(*args):
@@ -364,9 +435,10 @@ def use_backup(tid, current_tool):
     backup = gate.field(head, "Backup Tool")
     if not backup or backup not in LAUNCHABLE or backup == current_tool:
         return False, "no usable backup is recorded"
-    if limited(backup) or not machine_capacity.has_capacity(backup, FLOW_ROOT.parent):
-        return False, f"backup {backup} has no free slot"
     model, effort = gate.parse_model(gate.field(head, "Backup Model"))
+    group = tool_group(backup, model)
+    if limited(backup, group) or not machine_capacity.has_capacity(backup, FLOW_ROOT.parent, group=group):
+        return False, f"backup {backup} has no free slot"
     route.set_header(path, backup, model, effort)
     code, output = py(TOOLS / "ledger.py", "set", tid, "--tool", backup)
     if code:
@@ -425,7 +497,9 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                     if row.get("Status") != "ready":
                         continue
                     tool = (row.get("Tool") or "").strip()
-                    if tool not in LAUNCHABLE or (not limited(tool) and machine_capacity.has_capacity(tool, FLOW_ROOT.parent)):
+                    group = launch_group(tid, tool)
+                    if tool not in LAUNCHABLE or (not limited(tool, group) and
+                                                  machine_capacity.has_capacity(tool, FLOW_ROOT.parent, group=group)):
                         continue
                     switched, detail = use_backup(tid, tool)
                     if switched:
@@ -461,8 +535,7 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "would": [{"task": t, "action": a, "detail": d} for t, a, d in plan if a in ("accept", "launch")] if report_only else [],
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
-                  "limited": {k: v["until"] for k, v in read_limits().items()
-                              if k != "_seen" and limited(k)}}
+                  "limited": active_limits()}
         if dispatch_mode == "active":
             report["dispatchMode"] = "active"
         if shadow is not None:
@@ -493,6 +566,10 @@ def main():
     lp = sub.add_parser("limit")
     lp.add_argument("tool")
     lp.add_argument("text")
+    lp.add_argument("--group", help="quota group the hold applies to (default: detected from the message)")
+    mv = sub.add_parser("limit-migrate")
+    mv.add_argument("tool")
+    mv.add_argument("group")
     a = ap.parse_args()
     try:
         return dispatch_cmd(a)
@@ -538,16 +615,26 @@ def dispatch_cmd(a):
     if a.cmd == "status":
         hb = live_orchestrator()
         print(f"orchestrator: {hb['holder']} (heartbeat {hb['at']})" if hb else "orchestrator: none live")
-        for k, v in read_limits().items():
-            if k != "_seen" and limited(k):
-                print(f"limited: {k} until {v['until']} - {(v.get('reason') or '')[-80:]}")
+        lim = read_limits()
+        for k, v in active_limits().items():
+            print(f"limited: {k} until {v} - {((lim.get(k) or {}).get('reason') or '')[-80:]}")
         return 0 if hb else 1
     if a.cmd == "next-orchestrator":
         print(next_orchestrator(skip={x for x in a.skip.split(",") if x}))
         return 0
     if a.cmd == "limit":
-        e = record_limit(a.tool, a.text)
-        print(f"{a.tool} limited until {e['until']}")
+        group = a.group
+        if group is None:
+            detail = limit_detection.detect_detail(a.text, 1)  # a limit message arrives as failure evidence
+            if detail and detail[1] == "quota":
+                group = quota_groups.default_group(a.tool)
+        e = record_limit(a.tool, a.text, group=group)
+        scope = f" group {group}" if group else ""
+        print(f"{a.tool}{scope} limited until {e['until']}")
+        return 0
+    if a.cmd == "limit-migrate":
+        for line in migrate_limit(a.tool, a.group):
+            print(line)
         return 0
 
 
