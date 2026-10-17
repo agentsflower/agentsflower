@@ -63,4 +63,6 @@ The human authorized the bounded launcher/end-check repair on 2026-10-10;
 then artifact-bound completion checks, bounded automation and concise instructions.
 
 Exit criteria: the scenarios in that plan pass, migration preserves open tasks,
-and the pilot installation receives the tested release without template drift.
+and installer/migration behavior is validated in disposable AgentFlow fixtures.
+(2026-10-17 boundary: repository-only scope - no external pilot rollout; that
+criterion is deferred, not claimed.)

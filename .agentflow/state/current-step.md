@@ -1,19 +1,24 @@
 # Current Step
 
-2026-10-17: Stage 3 evidence verified and Stage 4 bounded cycle complete
-(drift audit clean except Transcript site\code upstream candidates; pilot
-WatermarkRemover updated to 2.12.0, master@3fa1efb, suite green). Stage 5
-decomposed into approved serialized contracts T-028 -> T-030 -> T-032 -> T-034
--> T-036 -> T-038, each followed by an independent tester written at result
-time. See docs/project-rules.md dated execution authorization.
+2026-10-17: Stage 3/4 closed (pilot at 2.12.0, drift audit clean). Repository-
+only scope since 2026-10-17: no external rollout, no WatermarkRemover/other-
+project work; installer/migration validation via disposable AgentFlow fixtures
+(project-rules.md). Mandatory Jev adequacy routing active (model-options.json +
+recorded route.py assessments in .runtime).
 
-NEXT: T-028 attempt 1 finishing on devin (committed 2c58157, writing Result) -
-read `## Result`, decide per lifecycle, then write and launch tester T-029.
-T-042 mockup running in parallel (pid 68712). Serialized chain:
-T-028 -> T-030 -> T-032 -> T-034 -> T-040 -> T-036 -> T-038, then T-044 -> T-046
--> T-048 after the human's mockup selection. Every launch requires the recorded
-route.py assessment already persisted in .runtime (mandatory adequacy policy,
-project-rules.md).
+Stage 5 chain progress: T-028 rejected on independent fail review -> T-050
+done+accepted (2.12.2); T-030 rejected on partial review -> T-052 done, tester
+T-053 running (devin, verifying the quoted-phrase fix on 5b3797b). T-042 mockup
+done and merged - AWAITING HUMAN VARIANT SELECTION (questions.md).
+
+NEXT: when T-053 verdict lands, decide T-052 per lifecycle (accept or successor).
+Then T-032 (swe-2-max, assessed) -> its tester -> T-034 -> T-040 (routing
+enforcement, depends T-034) -> T-036 -> T-038, each with a tester. Dashboard
+impl T-044 -> T-046 -> T-048 launches only after T-038 accepted AND the human's
+mockup selection is recorded. Every launch requires the persisted route.py
+assessment (mandatory adequacy policy). Codex is environment-blocked for
+workers on Windows (sandbox denies writes outside the checkout); testers run
+on devin swe-2-max/swe-2-high under the documented same-tool necessity.
 
 CI run 39026298541 triaged: windows-latest and macos-latest test jobs fail at
 the unittest step; ubuntu and package jobs pass; logs need authenticated access

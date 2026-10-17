@@ -1,27 +1,43 @@
 # Session Handoff
 
-As of 2026-10-17 main@50adf65, AgentFlow 2.12.0 pushed to origin/main by explicit
-human request. T-011 accepted; final local regression 204 tests OK (3 skipped).
-Remote CI run 39026298541 last observed queued, not established macOS evidence.
+As of 2026-10-17 main is local-ahead (last pushed baseline main@50adf65 v2.12.0;
+local HEAD contains Stage 5 work through 2.13.1 pending acceptance merge).
+Remote CI run 39026298541 FAILED on windows/macos test jobs (logs need auth;
+details in known-issues.md).
 
-NEW HUMAN SCOPE: sequential Stage 3 evidence verification, bounded Stage 4 drift
-review/rollout cycle, then full Stage 5 improvement-plan.md and documentation
-alignment. Delegated planning/task approval/execution authorized; no repeated plan
-permission needed. Project-rules.md owns current scope and model policy.
+CURRENT HUMAN SCOPE (2026-10-17, latest wins): foreground Orchestrator, holder
+devin, model swe-2-high. Repository-only: all work in AgentFlow and its own
+task/disposable checkouts. WatermarkRemover must NOT be rolled back and must
+NOT be touched again - no updates, commits or worker launches; no other product
+repository either. Supersedes all earlier pilot rollout authorization.
+Installer/migration validation happens in disposable AgentFlow fixtures;
+external rollout criteria are recorded out of scope, never fabricated done.
+No push, tags, publication or deployment.
 
-Transfer writer ownership from Codex to human-designated foreground Devin
-swe-2-high coordinator, holder devin. This is not an automatically-created
-restricted background session. Claim heartbeat before mutation. Pending tracked
-memory edits belong to this handover; checkpoint on task branch with required
-checks, merge and cleanup. Never discard them or mix foreign product changes.
+MANDATORY ROUTING: every worker launch needs a persisted route.py Jev
+assessment (.agentflow/tasks/.runtime/T-NNN.route.json) under
+docs/model-options.json. swe-2-high is the floor, never a downgrade of an
+assessed-stronger task; adequate Devin models first, then other CLIs; no
+adequate model = block with reason; codex is environment-blocked for workers
+on Windows (sandbox denies writes outside checkout - Result file and Python
+tempdirs; evidence .runtime/T-029.1.log); agy tool-wide hold until
+2026-10-21T22:09Z covers Claude/GPT families, agy-gemini is a separate quota
+group. Enforcement implementation task: T-040.
 
-Default workers swe-2-high, complexity assessment and stronger-model escalation
-when required. Fresh agy concrete Gemini/Claude/GPT resource checks before routing;
-unknown remaining quota explicit, obey observed failure/reset windows. Built-in
-bounded Devin swe-2-high inference passed during handover.
+QUEUE: T-053 tester running on T-052 @ 5b3797b (do not duplicate); then T-032
+-> tester T-033 -> T-034 -> T-035 -> T-040 -> T-041 -> T-036 -> T-037 -> T-038
+-> T-039; dashboard T-044 -> T-045 -> T-046 -> T-047 -> T-048 -> T-049 after
+T-038 and the human's mockup variant selection (questions.md lists the five
+selection questions; mockups live in .agentflow/dashboard/mockups/). Task
+headers carry assessed models (swe-2-max for T-030/32/34/36/40/44/50;
+swe-2-high for T-038/42/46/48/52/53).
 
-Read protocol, role, project-rules, plan, improvement-plan, ledger, known issues.
-Next unused task T-028 (verify). Stage 3 already closed: verify evidence first.
-Stage 4 recurring process: finish a bounded cycle, not an eternal maintenance job.
-Pilot rollout must respect its own rules, preserve open tasks and active writers.
-Keep rejected worktrees/unrelated files. No publication/deployment/future push.
+A false devin tool-limit may reappear while T-052's detector fix is unmerged:
+worker Result prose about quota limits trips learn_limits; recorded reason is
+a prose fragment, never a provider message. Clear it via the registry and
+.agentflow/tasks/.runtime/tool-limits.json, preserving the agy hold.
+
+Preserve rejected worktrees (t-028-lifecycle-trust @ 2c58157, t-030-recoverable-
+handover @ f6d746b - both are the base of their accepted successors).
+Checkpoint memory on a task branch with the standard checks, merge to main,
+clean up. Russian user updates, English machine evidence.
