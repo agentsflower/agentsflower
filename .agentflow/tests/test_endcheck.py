@@ -44,7 +44,7 @@ Resume: none
 
 ## Acceptance criteria
 
-- [ ] probe
+- [ ] P-01: probe
 
 ## Checks
 

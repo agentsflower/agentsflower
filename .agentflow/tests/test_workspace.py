@@ -67,7 +67,7 @@ nothing
 
 ## Acceptance criteria
 
-- [ ] The probe file exists.
+- [ ] P-01: the probe file exists.
 
 ## Checks
 
@@ -120,9 +120,10 @@ class Base(unittest.TestCase):
         sh(path, "git", "commit", "-qm", "[T-001] feat: probe")
         return sh(path, "git", "rev-parse", "HEAD").stdout.strip()
 
-    def finish(self, root, change):
+    def finish(self, root, change, criteria=""):
         p = root / ".agentflow" / "tasks" / "T-001-probe.md"
-        p.write_text(p.read_text(encoding="utf-8") + f"Outcome: completed\nChange: {change}\n", encoding="utf-8")
+        p.write_text(p.read_text(encoding="utf-8")
+                     + f"Outcome: completed\nChange: {change}\n{criteria}", encoding="utf-8")
         self.tool(root, "ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer", "--tool", "codex",
                   "--status", "ready")
         # the launcher records the running attempt, then moves the ledger to in progress; it flips to exited later
@@ -149,7 +150,7 @@ class SingleRepositoryTests(Base):
         t = self.start_attempt(root)
         self.assertEqual(t["repos"], [""])
         sha = self.commit_in(wt, "src/probe.txt")
-        self.finish(root, sha)
+        self.finish(root, sha, "Criteria:\n- P-01: pass - evidence: src/probe.txt\n")
         r = self.tool(root, "accept.py", "T-001", check=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue((root / "src" / "probe.txt").exists())
@@ -190,7 +191,7 @@ class SingleRepositoryTests(Base):
         (root / ".agentflow" / "tasks" / "T-001-probe.md").write_text(task_text("", "- `src/`", wt), encoding="utf-8")
         self.start_attempt(root)
         sha = self.commit_in(wt, "src/probe.txt")
-        self.finish(root, sha)
+        self.finish(root, sha, "Criteria:\n- P-01: pass - evidence: src/probe.txt\n")
         (root / "README.md").write_text("edited in the main folder\n", encoding="utf-8")
         r = self.tool(root, "accept.py", "T-001", check=False)
         self.assertNotEqual(r.returncode, 0)
@@ -220,7 +221,8 @@ class WorkspaceTests(Base):
         self.assertEqual([Path(c["path"]) for c in t["checkouts"]], [wt / "api", wt / "web"])
         a = self.commit_in(wt / "api", "src/a.txt")
         w = self.commit_in(wt / "web", "src/w.txt")
-        self.finish(ws, f"api@{a}, web@{w}")
+        self.finish(ws, f"api@{a}, web@{w}",
+                    "Criteria:\n- P-01: pass - evidence: api/src/a.txt and web/src/w.txt\n")
         r = self.tool(ws, "accept.py", "T-001", check=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue((ws / "api" / "src" / "a.txt").exists())
@@ -235,7 +237,8 @@ class WorkspaceTests(Base):
         self.start_attempt(ws)
         a = self.commit_in(wt / "api", "docs/outside.txt")
         w = self.commit_in(wt / "web", "src/w.txt")
-        self.finish(ws, f"api@{a}, web@{w}")
+        self.finish(ws, f"api@{a}, web@{w}",
+                    "Criteria:\n- P-01: pass - evidence: api/docs/outside.txt\n")
         r = self.tool(ws, "gate.py", "verify", "T-001", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("api/docs/outside.txt", r.stdout)
@@ -247,7 +250,8 @@ class WorkspaceTests(Base):
         w = self.commit_in(wt / "web", "README.md")  # the branch rewrites README.md ...
         (ws / "web" / "README.md").write_text("changed on master\n", encoding="utf-8")  # ... and so does master
         sh(ws / "web", "git", "commit", "-qam", "master change")
-        self.finish(ws, f"api@{a}, web@{w}")
+        self.finish(ws, f"api@{a}, web@{w}",
+                    "Criteria:\n- P-01: pass - evidence: api/src/a.txt and web/README.md\n")
         api_head = sh(ws / "api", "git", "rev-parse", "HEAD").stdout.strip()
         r = self.tool(ws, "accept.py", "T-001", check=False)
         self.assertNotEqual(r.returncode, 0)

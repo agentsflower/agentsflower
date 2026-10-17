@@ -11,7 +11,8 @@ and bundles the whole template under agentflow/template/):
   agentflow install <project> [--update] [--dry-run] [--inside-repo]
                             [--workspace] [--repos a,b] [--git-init]
   agentflow run T-NNN --role <developer|tester|deployer> [--project <dir>]
-  agentflow gate <task|preflight|endcheck|verify|stage> ... [--project <dir>]
+  agentflow gate <task|preflight|endcheck|verify|done|stage> ... [--project <dir>]
+  agentflow done T-NNN [--project <dir>]     the single completion check (gate.py done)
   agentflow accept T-NNN [--dry-run] [--project <dir>]
   agentflow ledger <add|set|approve|show> ... [--project <dir>]
   agentflow mcp [--enable-orchestrator-tools] [--project <dir>]
@@ -133,6 +134,14 @@ def cmd_passthrough(a, script) -> int:
     return run_tool(root, script, a.args)
 
 
+def cmd_done(a) -> int:
+    root = find_root(a.project)
+    if not root:
+        print(f"agentflow: no installed AgentFlow project found at or above {a.project}", file=sys.stderr)
+        return 2
+    return run_tool(root, "gate.py", ["done", a.task, *a.args])
+
+
 def cmd_dashboard(a) -> int:
     root = find_root(a.project)
     if not root:
@@ -172,6 +181,12 @@ def main(argv=None) -> int:
         p.add_argument("args", nargs=argparse.REMAINDER, help=f"arguments of {script} (see its --help)")
         p.set_defaults(script=script)
 
+    p = sub.add_parser("done", help="the single completion check for a Task File (gate.py done)")
+    p.add_argument("task", help="task id T-NNN")
+    p.add_argument("args", nargs=argparse.REMAINDER, help="further gate.py done arguments, e.g. --out f.json")
+    p.add_argument("--project", type=Path, default=argparse.SUPPRESS,
+                   help="project dir or any dir inside it (default: current directory)")
+
     p = sub.add_parser("dashboard", help="rebuild the task dashboard; --open shows it in a browser")
     p.add_argument("--open", action="store_true", help="open out/index.html after a successful build")
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
@@ -182,6 +197,8 @@ def main(argv=None) -> int:
         return cmd_install(a.args)
     if a.cmd == "run":
         return cmd_run(a)
+    if a.cmd == "done":
+        return cmd_done(a)
     if a.cmd == "dashboard":
         return cmd_dashboard(a)
     return cmd_passthrough(a, a.script)

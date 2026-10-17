@@ -21,10 +21,11 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from paths import FLOW_ROOT
+from paths import FLOW_ROOT, REPO_ROOT
 
 COLS = ["ID", "Title", "Stage", "Role", "Tool", "Status", "Depends on", "Commit / artifact", "Notes", "Updated"]
 FIELD = {  # CLI option -> column
@@ -151,6 +152,9 @@ def check_verify(recs):
         for key, typ in (("sha", str), ("taskId", str), ("headerHash", str)):
             if r.get(key) is not None and not isinstance(r[key], typ):
                 raise ValueError(f"malformed verify record ({key} must be a string)")
+        for key in ("base", "shas", "criteria"):
+            if r.get(key) is not None and not isinstance(r[key], dict):
+                raise ValueError(f"malformed verify record ({key} must be an object)")
         if r.get("attempt") is not None and (not isinstance(r["attempt"], int) or isinstance(r["attempt"], bool)):
             raise ValueError("malformed verify record (attempt must be an int)")
     return recs
@@ -189,15 +193,43 @@ def claimed(tid: str):
     return a if a and a.get("status") == "running" else None
 
 
+def _git(repo: str, *args):
+    """stdout of a git call in one repository ('' = the repository holding .agentflow/), or None."""
+    d = REPO_ROOT / repo if repo else REPO_ROOT
+    r = subprocess.run(["git", "-C", str(d), *args], capture_output=True, text=True, encoding="utf-8")
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _base_current(rec) -> bool:
+    """The base a verify record was produced against is still current: per repository the recorded base
+    equals the main-branch HEAD, or HEAD is this task's own merge (first parent = that base, second =
+    the record's artifact). A moved base invalidates the bound evidence; a record without `base` binds
+    only the artifact (the documented legacy rule)."""
+    base = rec.get("base")
+    if not isinstance(base, dict):
+        return True
+    shas = rec.get("shas") if isinstance(rec.get("shas"), dict) else {}
+    for repo, b in base.items():
+        if not isinstance(b, str):
+            continue
+        if _git(repo, "rev-parse", "HEAD") == b:
+            continue
+        parents = (_git(repo, "rev-list", "--parents", "-n", "1", "HEAD") or "").split()
+        if not (isinstance(shas.get(repo), str) and parents[1:] == [b, shas[repo]]):
+            return False
+    return True
+
+
 def verified(tid: str, sha: str):
     """Why no `gate.py verify` PASS accepts `sha` for this task, or None when one does (protocol: Acceptance).
 
-    A current record binds task id, the last attempt number, the Task File header hash (requirements) and the
-    full artifact SHA(s); every binding field a record carries must match - a stale PASS from an earlier
-    attempt, stale requirements or a different artifact never satisfies acceptance. Legacy records stay valid
-    evidence under an explicit rule: a record without `taskId` belongs to the file it lives in, and a missing
-    `attempt`/`headerHash` binds only the artifact. Either way the task's last attempt must be `exited`:
-    acceptance never runs beside a live or dead-but-unrecovered worker."""
+    A current record binds task id, the last attempt number, the Task File header hash (requirements), the
+    full artifact SHA(s) and the base SHA(s) the evidence was produced against; every binding field a record
+    carries must match - a stale PASS from an earlier attempt, stale requirements, a moved base or a
+    different artifact never satisfies acceptance. Legacy records stay valid evidence under an explicit rule:
+    a record without `taskId` belongs to the file it lives in, and a missing `attempt`/`headerHash`/`base`
+    binds only the artifact. Either way the task's last attempt must be `exited`: acceptance never runs
+    beside a live or dead-but-unrecovered worker."""
     if not sha:
         return "no commit given"
     att = _last_attempt(tid)
@@ -218,11 +250,11 @@ def verified(tid: str, sha: str):
         rs = r["sha"] if isinstance(r.get("sha"), str) else ""
         if not rs or not (rs.startswith(sha) or sha.startswith(rs)):
             continue
-        if r.get("attempt") in (None, att["n"]) and r.get("headerHash") in (None, hh):
+        if r.get("attempt") in (None, att["n"]) and r.get("headerHash") in (None, hh) and _base_current(r):
             return None
         stale = True
-    return (f"verify records name the artifact but none is bound to attempt {att['n']} and the current "
-            "Task File (stale evidence): run gate.py verify again" if stale
+    return (f"verify records name the artifact but none is bound to attempt {att['n']}, the current "
+            "Task File and the current base (stale evidence): run gate.py verify again" if stale
             else "no passing verify record names this artifact")
 
 

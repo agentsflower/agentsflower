@@ -22,7 +22,7 @@ TESTER = {"id": "T-901", "role": "tester", "sha": SHA, "shas": {"": SHA}, "repos
 
 
 class AcceptTests(unittest.TestCase):
-    def go(self, task, fail_on=None, status="in progress", merged=False):
+    def go(self, task, fail_on=None, status="in progress", merged=False, integrated=None):
         calls = []
 
         def run(cmd, dry, cwd=None, check=True):
@@ -38,10 +38,15 @@ class AcceptTests(unittest.TestCase):
             return True  # the branch exists
 
         out = io.StringIO()
-        # dirty() reads the real repository: a template checkout with edits in progress must not fail these tests
-        with patch.object(accept, "run", run), patch.object(accept, "dirty", return_value=[]), \
+        prog = {"taskId": task["id"], "integrated": {}, "merged": []}
+        # dirty() reads the real repository: a template checkout with edits in progress must not fail these tests;
+        # the integrated check and its progress record stay mocked (real coverage: test_done_gate.py)
+        with tempfile.TemporaryDirectory() as progdir, \
+                patch.object(accept, "run", run), patch.object(accept, "dirty", return_value=[]), \
+                patch.object(accept, "accept_progress", return_value=(Path(progdir) / "acc.json", prog)), \
                 patch.object(accept.gate, "parse", return_value=dict(task)), \
                 patch.object(accept.gate, "main_branch", return_value="master"), \
+                patch.object(accept.gate, "integrated_problems", return_value=(integrated or [], [], {})), \
                 patch.object(accept.gate, "git", side_effect=lambda *a, **k: "" if a[0] == "status" else SHA), \
                 patch.object(accept.gate, "git_ok", side_effect=git_ok), \
                 patch.object(accept, "ledger_rows", return_value={task["id"]: {"Status": status, "Title": "Probe"}}), \
@@ -115,6 +120,11 @@ class AcceptTests(unittest.TestCase):
             real.mkdir(parents=True)
             accept.remove_setup_links({"setup": [{"kind": "link", "path": "dist"}]}, str(real.parent), dry=False)
             self.assertTrue(real.is_dir())
+
+    def test_integrated_check_failure_stops_before_merge(self):
+        calls, stopped = self.go(DEV, integrated=["the branch does not merge onto the current base"])
+        self.assertIn("integrated", stopped)
+        self.assertFalse(any("git merge --no-ff" in c or "ledger.py" in c for c in calls))
 
     def test_trial_merge_conflict_stops_before_merge(self):
         calls, stopped = self.go(DEV, fail_on="merge-tree")

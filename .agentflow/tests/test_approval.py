@@ -38,7 +38,7 @@ Probe.
 
 ## Acceptance criteria
 
-- [ ] probe passes
+- [ ] P-01: probe passes
 
 ## Checks
 

@@ -76,7 +76,8 @@ class LauncherLifecycleTests(unittest.TestCase):
         test_endcheck.git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "product")
         sha = subprocess.check_output(["git", "-C", str(self.wt), "rev-parse", "HEAD"], text=True).strip()
         task = self.flow / "tasks/T-001-probe.md"
-        task.write_text(task.read_text() + f"Outcome: completed\nChange: {sha}\n")
+        task.write_text(task.read_text() + f"Outcome: completed\nChange: {sha}\n"
+                        "Criteria:\n- P-01: pass - evidence: src/a.txt\n")
         r = self.launch("pwsh", "-MarkFinished")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.tool("accept.py", "T-001")
