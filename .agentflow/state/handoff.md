@@ -36,3 +36,5 @@ chat may arrive; otherwise do not guess. Current-step/ledger are authoritative.
 Background session devin-background, 2026-10-17 07:35 UTC: T-003 dev completed 1849b2bf; wrote and launched Tester T-004 (devin, swe-2-medium) - awaiting verdict; pass is auto-accepted by next tick. Misnumbered T-027 cancelled unused. Waits: T-005 on T-003, T-007 on T-005, T-010 on T-007+T-008+T-026.
 
 Background session devin-background, 2026-10-17 07:59 UTC: T-003 accepted via tick (T-004 verdict pass); T-005 dev completed 1665318 (MCP server + installer --mcp, VERSION 2.11.13). Wrote and launched Tester T-006 (devin, swe-2-medium) - awaiting verdict; pass is auto-accepted. Waits: T-007 on T-005, T-010 on T-007+T-008+T-026.
+
+Background session devin-background, 2026-10-17 08:29 UTC: T-007 dev completed f282ab7 (metrics + English dashboard, VERSION 2.11.14). Wrote Tester T-008-dashboard-visual-review.md (reserved filename per plan; first file name discarded, attempt 1 stopped before work). Attempt 2 launched devin/swe-2-medium - awaiting verdict; pass is auto-accepted by tick. Waits: T-010 on T-007+T-008+T-026.

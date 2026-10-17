@@ -67,3 +67,25 @@ projects.
 - `python -m unittest discover -s .agentflow/tests -p test_install.py` - MCP config preservation.
 - `python .agentflow/tests/check_mcp.py` - isolated real SDK stdio integration.
 - `python -m unittest discover -s .agentflow/tests` - full regression suite.
+
+## Result
+Outcome: completed
+Verdict: pass
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_mcp_server.py` -> pass (13 ran / 0 failed, 3 SDK-gated skips; evidence check1-test_mcp_server.txt)
+- `python -m unittest discover -s .agentflow/tests -p test_install.py` -> pass (15 ran / 0 failed; evidence check2-test_install.txt)
+- `python .agentflow/tests/check_mcp.py` -> pass (all checks; real mcp 2.3.0 provisioned in disposable venv, genuine stdio handshake/list-tools/tool calls, opt-in surface, packaged `agentflow mcp` entry; evidence check3-check_mcp.txt)
+- `python -m unittest discover -s .agentflow/tests` -> pass (189 ran / 0 failed, 3 skipped; evidence check4-fullsuite.txt)
+Criteria:
+- V-01 - pass - pyproject.toml declares `dependencies = []` and `mcp = ["mcp>=2.3,<3"]` only under optional-dependencies; full suite runs 189 tests stdlib-only; check_mcp proved missing SDK yields exit 2 with an install-extra diagnostic on stderr (`agentflow mcp: the optional MCP SDK is not installed...`); the same run installed released mcp 2.3.0 and imported `mcp.server.MCPServer`/`mcp_types.ToolAnnotations` - official SDK, no JSON-RPC fallback in mcp_server.py.
+- V-02 - pass - real stdio session listed exactly agentflow_get_task/query_ledger/run_gate/status by default with run_gate not read-only; `limit=0` and `task_id="x; rm -rf /"` returned structured errors. Code review of mcp_server.py: task-id regex T-\d{1,4} fullmatch, check_type enum (verify/preflight/endcheck/task), role enum, limit 1..200, project root fixed by script location, get_task only globs .agentflow/tasks, run_gate shells out to the real gate.py via argv-list subprocess (no shell) with 20000-char bounded log and parsed --out evidence; read-only tools write nothing. accept_task absent by default, registered only under --enable-orchestrator-tools, docstring/help state it is operator control not caller-role proof; stdout is `server.run("stdio")` only, diagnostics stderr.
+- V-03 - pass - install.py MCP_CONFIGS = {claude: .mcp.json, cursor: .cursor/mcp.json}; plan_mcp_config refuses malformed JSON and a conflicting unmanaged `agentflow` entry with SystemExit before any plan.write, merges preserving unrelated keys/servers, is idempotent; entry = {command: sys.executable (absolute), args: [<target>/.agentflow/tools/mcp_server.py]} - argv array, spaced paths safe, no --enable-orchestrator-tools, no env/credentials; dry-run writes nothing (test_mcp_cursor_path_and_dry_run). Cursor project path verified against live cursor.com/docs/context/mcp: "Create `.cursor/mcp.json` in your project for project-specific tools" - matches the installer's choice and its docstring note that project .mcp.json is Claude Code's location, not auto-discovered by Cursor.
+- V-04 - pass - all four verbatim checks ran on a disposable worktree checkout of the verified commit (HEAD 1665318db8c99b2a893ce367a843dfd740a76b5d, `git status` clean; developer worktree/branch and Task Files untouched). check_mcp.py is genuine integration: builds the wheel, provisions two disposable venvs, pip-installs released mcp 2.3.0, performs a real MCP Client stdio handshake with no mocks. VERSION=2.11.13 matches AGENTS.md block and the CHANGELOG 2.11.13 entry with migration notes; ci.yml `mcp` job (needs: tests, ubuntu+windows, runs check_mcp.py) matches release-validation.md. No real failures, skips are the 3 documented SDK-gated unit tests in the stdlib interpreter.
+New defects (outside the task):
+- none
+Cannot verify, needs:
+- Remote CI run of the new `mcp` job (workflow present and consistent, but no GitHub Actions run observed - same caveat release-validation.md already records).
+Proposed memory updates:
+- none (developer already proposed the decisions.md entry for 2.11.13; tester adds nothing)
+
+Evidence files: E:\Projects\AgentFlow\code\.agentflow\tasks\.runtime\T-006.evidence\{check1-test_mcp_server.txt,check2-test_install.txt,check3-check_mcp.txt,check4-fullsuite.txt}
