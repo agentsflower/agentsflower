@@ -1,5 +1,50 @@
 # Decision Log
 
+## 2026-10-17: Runtime baseline accepted and continuation assigned to Devin
+
+T-022 exact 0420265a1e2a5a35136f3b80039adc2bb8a5a177 independently passed T-023
+and all four acceptance checks (158 full-suite tests), merged as 2.11.11.
+Registry replacement now retries only transient Windows 5/32 within a fixed bound,
+preserving atomicity/old state on permanent failure. Conductor handover uses
+CurrentUser DPAPI-encrypted in-memory argv; no plaintext env file, legacy file
+removed. This avoids pwsh-7.4-only Environment APIs and keeps the 5.1 fallback;
+live handover tested on pwsh 7, 5.1 path statically reviewed, not a live claim.
+Exact documented rebuild sentinel nothing no longer reserves a shared resource.
+T-009 CI configuration was reviewed, but its old-branch acceptance failed a known
+test_route baseline case; rejected to merge-only T-026 after repaired main. No
+CI semantics are changed or tests waived. T-003/T-010 now depend on T-026.
+Delegate the approved mechanical continuation to Devin background Orchestrator
+after releasing this root holder; root observes without a second memory writer.
+Use Devin-only background platform preference, explicit inference opt-in and
+bounded worker attempts. Other platform quota data stays in runtime. No approval
+to push, publish, create an unverified release tag or bypass independent checks.
+
+## 2026-10-17: Approved implementation choices for the remaining release pool
+
+These are approved design constraints, not claims that implementation has passed.
+T-003 packages generated installer-owned resources from the single .agentflow
+source, excludes project memory/settings/tasks, and keeps source/project CLIs
+stdlib-only. Built-wheel/sdist checks must work outside the checkout. Distribution
+name may be agentflow-sdlc; no PyPI publication is claimed or authorized.
+T-005 uses published official mcp 2.3-compatible SDK (PyPI declares Python >=3.10),
+optional extra only, no custom JSON-RPC fallback. Mutating acceptance tools are
+startup opt-in, not caller authentication. Merge client config without overwrites;
+verify Claude/Cursor actual config paths rather than claiming identical discovery.
+T-007 uses route_report as the sole metrics provider, honest denominators/history,
+unknown missing tokens/cost/context savings, English UI default and marked demo
+data. Preserve layout and take snapshot; screenshot must be a real browser capture.
+T-010 preserves Russian guide, adds English public docs/Mermaid/dated maintainer
+product snapshots and prepared 2.12.0 notes. No invented URLs, unique-user sum,
+remote green jobs, published package or verified release tag. T-011 is final LOCAL
+preparation review; remote nine-job/macOS proof is a separate release gate after
+the human's promised manual push. Do not block local implementation on that gate.
+Background Orchestrator may implement/accept this approved scope through existing
+gates and write verified facts in handoff/session-log. New design/scope/security
+decisions beyond these constraints go to questions.md for the human; no push or
+production approval may be inferred. Intermediate patch releases get these dated
+design records plus exact task/result evidence; final verification facts remain
+explicitly separate from the design approval.
+
 ## 2026-10-17: Execute the entire approved public-release pool
 
 Human directs testing and all remaining queued work, then asks to check progress.

@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-medium
 Stage: 6
-Depends on: T-022, T-009
+Depends on: T-022, T-026
 Branch: t-003-package-cli
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-003-package-cli
 Independent check: tester

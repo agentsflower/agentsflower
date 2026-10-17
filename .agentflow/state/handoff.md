@@ -1,27 +1,34 @@
 # Session Handoff
 
-As of 2026-10-17: main includes accepted T-020 Linux repair and T-024 probe
-bootstrap, AgentFlow 2.11.10. User authorized testing plus the entire remaining
-v2.12.0 queue. Previous macOS-only stop is superseded; see current-step/ledger.
+As of 2026-10-17: main AgentFlow 2.11.11, T-024 + T-022 accepted. Human requested
+all remaining approved v2.12.0 tasks, not just prior launcher queue. Root transfers
+writer ownership to Devin background continuation; do not run two Orchestrators.
 
-T-024 exact 183171c19e2e115dfdc6f23af92b42471134e3af fixed required CLI probe
-trust/non-Git flags, through narrow native Manual attempts because all automated
-CLI starts were blocked. T-025 independently passed 27 focused and 152 full tests,
-then a bounded real Devin resource check (first harness cleanup lost its result;
-recovery repeated only that missing criterion). accept.py verified/merged/cleaned
-T-024; native sessions complete. No probe/security bypass or model permission
-escalation; remaining workers are Devin to conserve Codex.
+Verified: T-024 repaired Devin temp-workspace trust and Codex non-Git probe args;
+T-025 focused27/full152 plus real bounded Devin probe passed. T-022 0420265 repaired
+Windows registry retries, plaintext conductor handover (DPAPI in memory + removes
+legacy file), and rebuild nothing sentinel. T-023 focused tests/full158 pass;
+accept.py repeated all required checks, merged/cleaned. Live handover evidence is
+pwsh7; do not claim live PS5.1. Main release records are synchronized.
 
-Running T-009 CI and T-022 registry/conductor hardening on separate Devin worktrees.
-Approved files/metadata ownership are in their contracts. T-003 package/CLI,
-T-005 official-SDK MCP, T-007 English telemetry/dashboard, T-010 docs/release are
-ready with dependencies. Independent reviews and screenshot T-008 come at exact
-SHAs. Do not create conflicting parallel release-metadata owners.
+T-009 CI-only 6fe56f3 was correct but its old baseline acceptance failed test_route
+intermittently; rejected to approved T-026 merge-only integration after T-022.
+T-026 is ready. Then approved source tasks T-003 -> T-005 -> T-007 -> T-010, with
+independent Tester IDs reserved T-004/T-006/T-008/T-011 at exact actual SHAs.
+T-008 filename is T-008-dashboard-visual-review.md (T-010 reads it). Capture actual
+English demo UI (Gantt/timeline/metrics) into evidence; T-010 copies dashboard.png.
 
-Conductor was off; keep old plaintext env handover unstarted until T-022 repairs
-it, then start with the approved Devin preference and probe opt-in. Real macOS
-CI execution requires human push; no agent push, publish or production deployment.
-Public product URLs requested asynchronously for README; unresolved links must
-be explicit, not invented. Stray nul and rejected worktrees remain untouched.
+Read every contract. Core stdlib Python3.10+; generated package data from one
+source, no canonical memory in wheel; MCP optional published SDK2.3-compatible,
+no custom JSON-RPC, privileged acceptance opt-in not identity auth, preserve
+foreign client configs. English UI and honest unknown metrics. Docs use dated
+human product snapshots/verified URLs; missing URLs must remain explicit.
+Final T-011 is LOCAL preparation review; remote CI/macOS requires HUMAN push and
+remains separate release gate. No agent push, publish or unverified tag.
 
-First reads: current-step.md, tasks.md, decisions.md, active Task Results.
+Use Devin, explicit model-probe opt-in, 2400s bounded workers, fill safe slots and
+create/accept independent reviews per protocol. Keep work inside Stage6 approval;
+no scope/decision changes beyond contracts. Verified facts go to handoff/session
+log; design choices already dated in decisions.md. New human decisions -> questions.
+Root observes only while background holds heartbeat. Product URLs requested in
+chat may arrive; otherwise do not guess. Current-step/ledger are authoritative.

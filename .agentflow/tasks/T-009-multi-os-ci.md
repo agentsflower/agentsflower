@@ -65,4 +65,20 @@ This task owns no template tool/version files and can run beside T-022.
 - `python -m unittest discover -s .agentflow/tests` - baseline regression compatibility.
 
 ## Result
+Outcome: completed
+Change: 6fe56f3 on t-009-multi-os-ci
+Files:
+- .github/workflows/ci.yml - new CI workflow: push/pull_request/workflow_dispatch; matrix ubuntu-latest/macos-latest/windows-latest x Python "3.10"/"3.11"/"3.12"; fail-fast false; timeout-minutes 20; permissions contents:read; checkout@v7 persist-credentials false; setup-python@v7; runs `python -m unittest discover -s .agentflow/tests` with AGENTFLOW_MACHINE_STATE_DIR in runner.temp and PYTHONUTF8=1
+- .agentflow/docs/release-validation.md - new doc: local Windows/Linux evidence vs nine not-yet-run remote jobs, explicit "no green macOS result" caveat, numbered human push/dispatch/read-results steps
+Checks:
+- `python -m unittest discover -s .agentflow/tests` -> pass (152 passed / 0 failed)
+Criteria without a command:
+- C-01 - matrix/trigger syntax inspected: exact discover command on 3 OS x 3 quoted Python versions, fail-fast false, bounded timeout, push+pull_request+workflow_dispatch, no pull_request_target/model calls/deploy/publish
+- C-02 - checkout@v7 and setup-python@v7 confirmed against the official current READMEs; read-only permission, persist-credentials false, registry isolated in runner.temp via AGENTFLOW_MACHINE_STATE_DIR, no credentials; existing platform skip guards preserved untouched
+- C-03 - release-validation.md states evidence limits honestly and gives exact human steps; no remote run claimed
+- C-04 - matrix/trigger inspected; full suite run; VERSION and shared release metadata untouched (repository CI config only)
+Found, not fixed:
+- none
+Proposed memory updates:
+- After the human pushes, the nine-job matrix run (especially macos-latest) supplies the missing remote evidence; record the run URL/result in the release task
 

@@ -1,5 +1,15 @@
 # Session Log
 
+## 2026-10-17: Accept runtime baseline and enable the rest of the pool
+
+T-022 and independent T-023 passed 158 full-suite tests plus focused checks;
+accept.py verified, merged and cleaned T-022 (main 2.11.11). T-009 produced correct
+CI files/152-test developer pass, but old-branch acceptance failed an intermittent
+test_route case; preserved and rejected to T-026 integration after runtime repair.
+Queue dependencies updated. No test or release gate waived. Prepared a complete
+handoff for Devin background continuation to conserve Codex; root will release
+writer ownership before starting the coordinator. No push or publication.
+
 ## 2026-10-17: Resume the full approved release queue
 
 Read current repository: background Devin had completed T-020/T-021 and merged

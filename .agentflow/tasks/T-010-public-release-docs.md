@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-medium
 Stage: 6
-Depends on: T-007, T-008, T-009
+Depends on: T-007, T-008, T-026
 Branch: t-010-public-release-docs
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-010-public-release-docs
 Independent check: tester

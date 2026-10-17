@@ -1,25 +1,28 @@
 # Current Step
 
-2026-10-17: human requests all approved v2.12.0 work. Do not stop local work on
-missing macOS evidence. Push/publication remain human-only.
+2026-10-17: main is 2.11.11, accepted T-024 bootstrap and T-022 reliability fixes.
+T-023 independent and acceptance full suite 158 pass. No active workers now.
+Human explicitly authorizes all remaining v2.12.0 local implementation/testing.
 
-T-024 bootstrap is accepted/merged (VERSION 2.11.10): Devin probe has explicit
-workspace-trust false + auto permissions; Codex read-only probe skips Git check.
-T-025 independently passed focused 27/full 152 and a real bounded Devin check
-(recovery reused suite evidence after a harness-only cleanup failure).
+NEXT: T-026 ready merges preserved CI-only 6fe56f3 onto repaired main; run checks,
+accept via accept.py. Then T-003 package/CLI -> T-004 independent review -> accept;
+T-005 optional official SDK MCP -> T-006 independent review -> accept;
+T-007 English metrics/dashboard -> T-008 visual review + real demo screenshot ->
+accept; T-010 English/Russian docs + prepared 2.12.0 -> T-011 final LOCAL review.
+Create Tester contracts with exact actual SHAs as developer Results arrive.
 
-Running on Devin medium: T-009 CI and T-022 runtime reliability. T-022 owns
-shared version/changelog/protocol files. CI owns only workflow/release-validation.
-Queue: T-003 package/CLI depends on both; T-005 MCP -> T-007 English metrics ->
-T-008 visual review/screenshot -> T-010 docs/release -> T-011 final local review.
-Create independent Tester contracts for exact feature SHAs (T-004/T-006/T-008
-reserved for those reviews). All feature scope approved; no repeated approval.
+T-008 canonical filename MUST be T-008-dashboard-visual-review.md because T-010
+reads it. Save screenshot under Tester evidence; T-010 copies it to product asset.
+Use real headless browser capture, not image synthesis. Do not fabricate URLs.
 
-Use AGENTFLOW_DEVIN_MODEL_PROBE=on for real launch checks. Bound long implementation
-attempts via AGENTFLOW_WORKER_TIMEOUT; preserve drafts on a stop. Other tool quota
-observations live in runtime. Do not launch the old conductor plaintext env path
-until T-022 repairs it; root Orchestrator currently coordinates live.
+All feature contracts are approved with explicit ownership. Shared release
+metadata remains serial. Intermediate 2.11 patches; final 2.12.0 in T-010. Keep
+published SDK compatible with Python 3.10 (mcp 2.3.0 metadata), not unreleased main.
+Set AGENTFLOW_DEVIN_MODEL_PROBE=on for launches; bounded long workers 2400 seconds.
+Use existing tick/run-task/gate/accept/ledger, independent reviews and no bypasses.
 
-MacOS actual remote runs stay an external release gate after human push. CI is
-prepared early in T-009; do not invent green remote jobs or block other local work.
-Untracked nul is foreign. Preserve rejected worktrees pending cleanup agreement.
+Remote nine-job/macOS results are a separate RELEASE gate after human manual
+push; T-011 reviews LOCAL preparation and honestly records this gap. Do not block
+other local work, tag/publish or invent a green remote run. No agent push.
+Keep rejected worktrees/foreign nul untouched. Human product URLs are optional
+missing input: ask/record unresolved sources, never guess extension IDs.

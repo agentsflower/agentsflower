@@ -1,5 +1,14 @@
 # Known Issues
 
+- 2026-10-17 - T-022/T-023 independently verified bounded registry replacement
+  retry and removal of conductor plaintext env handover at 0420265 (main 2.11.11).
+  Earlier registry/conductor entries are mitigated by this accepted fix; reopen
+  registry reliability on observed retry exhaustion. Real handover tested on
+  pwsh 7; Windows PowerShell 5.1 compatibility is static evidence only.
+- 2026-10-17 - Built-in CLI probes originally missed Devin workspace-trust and
+  Codex non-Git flags. Fixed/independently verified in accepted T-024/T-025. Real
+  Devin probe passed; no probe bypass/custom command was used as model proof.
+
 - 2026-10-16 - Registry os.replace WinError 5 is recurring, not just one observed
   incident: final main (2.11.8) checkpoint suite ran 124 tests with one error in
   test_tick.test_disabled_subscription_access_temporarily_skips_the_tool; stack

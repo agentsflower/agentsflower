@@ -30,6 +30,8 @@ in an isolated env and bound the supported major dependency range.
 - pyproject.toml
 - https://pypi.org/project/mcp/
 - https://github.com/modelcontextprotocol/python-sdk/tree/v2.3.0
+- https://code.claude.com/docs/en/mcp
+- https://cursor.com/docs/context/mcp
 
 ## Allowed files
 
@@ -76,6 +78,7 @@ in an isolated env and bound the supported major dependency range.
 - [ ] M-02: Stdio tools: agentflow_status, agentflow_get_task(task_id), agentflow_run_gate(task_id, check_type), agentflow_query_ledger(limit, filter_role). Validate IDs, enums, bounds and project root. Status/get/query do not create project memory or expose arbitrary paths. Gate calls existing gate.py, preserving structured outcomes, exit status and bounded logs/evidence; do not label gate execution read-only.
 - [ ] M-03: agentflow_accept_task exists only with explicit --enable-orchestrator-tools; absent by default. It invokes existing accept.py without bypasses. Document startup opt-in is operator control, not proof of caller role/identity. No shell interpolation, stdout protocol-only, diagnostics stderr.
 - [ ] M-04: Installer explicit optional MCP flag merges .mcp.json preserving unrelated keys/servers. Refuse malformed JSON and conflicting unmanaged AgentFlow entries atomically; never overwrite another server or persist credentials. Generated command/args handle spaced paths and use the target's installed tool, default privileged tools off. Dry-run writes nothing.
+- [ ] M-04b: Verify current client config paths in official docs. Support or explicitly document Cursor's project-specific config location instead of claiming root .mcp.json is auto-discovered by both clients. If installer exposes a client/config-path option, constrain writes to the intended project and test foreign-entry preservation for both paths.
 - [ ] M-05: Unit tests cover missing SDK, input rejection, mutating opt-in, foreign MCP config preservation and existing gates. check_mcp.py provisions an isolated optional-SDK env and proves a real stdio handshake/list-tools/read-only tool call plus disabled privileged tool. Exercise packaged resources too; no LLM API calls. CI may add optional-SDK integration after core tests.
 - [ ] M-06: Core full suite and SDK integration pass. Increment intermediate 2.11 patch version, AGENTS/changelog migration notes synchronized. Propose canonical decision in Result.
 
