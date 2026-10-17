@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks __PROJECT__ · Roadmap mockup C — matrix</title>
+<style>
+/*MOCKUP_CSS*/
+/* variant C: compact matrix — one row per stage, densest variant */
+.gl{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.gl:last-child{border-bottom:0}
+.mcard{flex:1;min-height:0;display:flex;flex-direction:column}
+.mcard .tablewrap{flex:1;min-height:0;overflow:auto}
+</style>
+</head>
+<body>
+<div class="app">
+<header id="hdr"></header>
+
+<div class="card fbcard" id="fbar"></div>
+<div class="fbchosen" id="fchosen"></div>
+
+<aside class="side left">
+  <div class="card"><h2>Summary</h2><div id="glance"></div></div>
+</aside>
+
+<main class="center">
+  <div class="card mcard"><h2>Roadmap — every declared stage, plan source order</h2>
+    <div class="tablewrap"><table class="mtx" id="mtx"></table></div>
+  </div>
+</main>
+
+<aside class="side right">
+  <div class="card diag" id="diag"></div>
+  <div class="card" id="detail"><h2>Selection</h2><div class="mut">Click a task row or a link — details appear here.</div></div>
+</aside>
+</div>
+
+<script>
+/*MOCKUP_JS*/
+const DATA = __DATA__;
+M.initHeader(DATA.generated, DATA.project);
+const P = M.prep(DATA), byId = P.byId;
+const esc = M.esc, col = M.col;
+let selTask = null, selStage = null;
+
+function stageShown(s){ const f = new Set(fl.filtered().map(t => t.id)); return s.tasks.filter(t => f.has(t.id)); }
+
+function renderGlance(){
+  const f = fl.filtered();
+  const decl = {}; DATA.stages.forEach(s => decl[s.declared] = (decl[s.declared]||0)+1);
+  const ev = {pass:0,fail:0,stale:0,pending:0,unknown:0};
+  DATA.stages.forEach(s => { if(s.ev.tracked) ["pass","fail","stale","pending","unknown"].forEach(k => ev[k]+=s.ev[k]||0); });
+  document.getElementById("glance").innerHTML =
+    `<div class="gl"><span>Stages declared</span><b>${DATA.stages.length}</b></div>`
+    + Object.entries(decl).map(([k,v]) => `<div class="gl"><span>· ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="gl"><span>Tasks shown / total</span><b>${f.length} / ${DATA.tasks.length}</b></div>`
+    + `<div class="gl"><span>Unmapped</span><b>${P.unmapped.length}</b></div>`
+    + `<div class="gl"><span>Evidence pass/fail/stale/pend/?</span><b>${ev.pass}/${ev.fail}/${ev.stale}/${ev.pending}/${ev.unknown}</b></div>`;
+}
+
+function evCell(s){
+  if (!s.ev.tracked) return `<span class="mut">untracked</span>`;
+  return ["pass","fail","stale","pending","unknown"].filter(k=>s.ev[k])
+    .map(k=>`<span class="evchip" style="background:var(${M.EV[k]})">${k} ${s.ev[k]}</span>`).join(" ");
+}
+function blkCell(s){
+  if (!s.blockers.length) return `<span class="mut">—</span>`;
+  return s.blockers.map(t=>`<a data-go="${t.id}">${t.id}</a>`).join(", ");
+}
+
+function stageRow(s){
+  const shown = stageShown(s), open = selStage === s.id;
+  const tc = s.tasks.length ? `<b>${shown.length===s.tasks.length?shown.length:shown.length+"/"+s.tasks.length}</b> ` + M.countsHtml(shown, s.tasks.length).replace(/^<b>.*?<\/b> · /,"") : `<b>No local tasks</b>`;
+  let h = `<tr class="row${open?" sel":""}" data-st="${s.id}" tabindex="0">
+      <td><b>Stage ${esc(s.id)}</b><br><span class="mut">${esc(s.title)}</span></td>
+      <td><span class="tag" style="background:var(${M.DECL[s.declared]||"--s-ready"})">${esc(s.declared)}</span>${s.recurring?`<br><span class="cchip">recurring</span>`:""}</td>
+      <td>${tc}</td>
+      <td>${evCell(s)}</td>
+      <td>${blkCell(s)}</td>
+      <td><a class="src" href="${esc(s.sourceHref)}" onclick="event.stopPropagation()">${esc(s.sourceRef)} ↗</a></td>
+    </tr>`;
+  if (open) h += `<tr class="xrow"><td colspan="6">
+      ${s.warn ? `<div class="warn">⚠ ${esc(s.warn)}</div>` : ""}
+      ${M.factsHtml(s, shown)}
+      ${M.extrasHtml(s)}
+      ${M.taskTable(shown, s.tasks.length)}
+    </td></tr>`;
+  return h;
+}
+
+function renderMatrix(){
+  const head = `<thead><tr><th>Stage</th><th>Declared</th><th>Local tasks</th><th>Evidence</th><th>Blockers</th><th>Source</th></tr></thead>`;
+  const unRows = P.unmapped.length ? `<tr class="row${selStage==="unmapped"?" sel":""}" data-st="unmapped" tabindex="0">
+      <td><b>Unmapped</b><br><span class="mut">no matching plan stage</span></td>
+      <td><span class="tag" style="background:var(--s-rej)">n/a</span></td>
+      <td><b>${P.unmapped.filter(t=>fl.pass(t)).length===P.unmapped.length?P.unmapped.length:P.unmapped.filter(t=>fl.pass(t)).length+"/"+P.unmapped.length}</b></td>
+      <td><span class="mut">—</span></td><td><span class="mut">—</span></td><td><span class="mut">—</span></td>
+    </tr>` + (selStage==="unmapped" ? `<tr class="xrow"><td colspan="6">
+      <div class="warn">⚠ These tasks name a stage that is absent from the plan — kept visible.</div>
+      ${M.taskTable(P.unmapped.filter(t=>fl.pass(t)), P.unmapped.length)}
+    </td></tr>` : "") : "";
+  document.getElementById("mtx").innerHTML = head + "<tbody>" + DATA.stages.map(stageRow).join("") + unRows + "</tbody>";
+  document.querySelectorAll("#mtx tr.row").forEach(r => {
+    const toggle = () => { selStage = selStage === r.dataset.st ? null : r.dataset.st; renderMatrix(); };
+    r.onclick = e => { if (e.target.closest("a,[data-go],details")) return; toggle(); };
+    r.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); toggle(); } };
+  });
+  M.bindLinks(document.getElementById("mtx"), select);
+}
+
+function select(id){
+  const t = byId[id]; if (!t) return;
+  selTask = id;
+  document.getElementById("detail").innerHTML = M.taskCardLite(t, byId);
+  M.bindLinks(document.getElementById("detail"), select);
+  document.querySelectorAll(".tmini tr.row").forEach(r => r.classList.toggle("sel", r.dataset.go === id));
+}
+
+function render(){ renderGlance(); renderMatrix(); }
+const fl = M.mkFilters(DATA.tasks, render);
+document.getElementById("diag").innerHTML = M.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + M.provenanceCard(DATA);
+render();
+</script>
+</body>
+</html>

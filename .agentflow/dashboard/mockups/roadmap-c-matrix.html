@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks AgentFlow · Roadmap mockup C — matrix</title>
+<style>
+/* ===== Shared base for both pages: tokens, layout, header, task card ===== */
+:root{
+  --bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--mut:#667085;--line:#e3e6ec;--chip:#eef1f6;--accent:#2b5fd9;--band:#eceff4;
+  --s-done:#2e9e6b;--s-review:#7a5fd0;--s-work:#2b7de0;--s-ready:#98a2b3;--s-block:#e08a1e;--s-rej:#d6453d;--s-canc:#c4c9d4;--pred:#c026d3;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#12151c;--panel:#1b2029;--ink:#e6e9f0;--mut:#98a2b3;--line:#2a3140;--chip:#252c3a;--accent:#7aa2ff;--band:#222836;
+  --s-done:#3fbf86;--s-review:#9b86e6;--s-work:#5aa0f5;--s-ready:#7b8598;--s-block:#f0a03a;--s-rej:#ef6a62;--s-canc:#4a5266;--pred:#e879f9;}}
+:root[data-theme=dark]{
+  --bg:#12151c;--panel:#1b2029;--ink:#e6e9f0;--mut:#98a2b3;--line:#2a3140;--chip:#252c3a;--accent:#7aa2ff;--band:#222836;
+  --s-done:#3fbf86;--s-review:#9b86e6;--s-work:#5aa0f5;--s-ready:#7b8598;--s-block:#f0a03a;--s-rej:#ef6a62;--s-canc:#4a5266;--pred:#e879f9;}
+:root[data-theme=light]{
+  --bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--mut:#667085;--line:#e3e6ec;--chip:#eef1f6;--accent:#2b5fd9;--band:#eceff4;
+  --s-done:#2e9e6b;--s-review:#7a5fd0;--s-work:#2b7de0;--s-ready:#98a2b3;--s-block:#e08a1e;--s-rej:#d6453d;--s-canc:#c4c9d4;--pred:#c026d3;}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+body{margin:0;height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+/* same grid on both pages: header / filters / chosen / three columns */
+.app{height:100vh;display:grid;grid-template-columns:minmax(270px,19vw) minmax(0,1fr) minmax(300px,22vw);grid-template-rows:auto auto 26px minmax(0,1fr);gap:12px;padding:12px}
+.fbchosen{height:26px;overflow:hidden;margin:-4px 0 0!important;padding:0 4px}
+.fb-chosen{flex-wrap:nowrap!important;white-space:nowrap}
+@media (max-width:1100px){body{height:auto;overflow:auto}.app{height:auto;display:block}}
+
+/* header */
+.topbar{grid-column:1/-1;display:flex;align-items:center;gap:14px;min-height:40px;margin:0!important}
+.topbar h1{font-size:20px;margin:0;white-space:nowrap}
+.nav{display:inline-flex;background:var(--chip);border-radius:10px;padding:3px;gap:2px}
+.nav a{padding:5px 14px;border-radius:8px;color:var(--mut);text-decoration:none;font-size:14px;white-space:nowrap}
+.nav a:hover{color:var(--ink)}
+.nav a.on{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.topbar .sp{flex:1}
+.topbar .gen{color:var(--mut);font-size:12px;white-space:nowrap}
+.iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--chip);cursor:pointer;display:grid;place-items:center;color:var(--ink);padding:0}
+.iconbtn:hover{border-color:var(--accent)}
+.iconbtn svg{width:18px;height:18px}
+.demobadge{background:var(--s-block);color:#fff;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;letter-spacing:.05em;white-space:nowrap}
+
+/* task card (shared by both pages) */
+.tcard{font-size:13.5px}
+.tcard h2{font-size:13px;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tcard dl{margin:0;display:grid;grid-template-columns:118px minmax(0,1fr);gap:0 14px}
+.tcard dt,.tcard dd{padding:8px 0;border-bottom:1px solid var(--line);line-height:1.5}
+.tcard dt{color:var(--mut);font-size:12.5px}
+.tcard dd{margin:0;word-break:break-word}
+.tcard ul{margin:0;padding-left:18px}.tcard li{margin:3px 0}
+.tcard a{color:var(--accent)}
+.tcard .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap;text-transform:none;letter-spacing:0}
+.tcard .tag.sz{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+details.fold summary{cursor:pointer;color:var(--accent);font-size:13px}
+.rawtext{margin:6px 0 0;white-space:pre-wrap;word-break:break-word;font:inherit;font-size:13px;line-height:1.5;max-height:50vh;overflow:auto;resize:vertical;padding:8px 10px;background:var(--chip);border-radius:8px}
+.tcard code{background:var(--chip);border-radius:5px;padding:0 5px;font-size:12.5px}
+.tcard mark{background:rgba(255,200,0,.4);color:inherit;border-radius:2px;padding:0 1px}
+
+/* same look of cards and the filter panel on both pages */
+.card,.pn{border-radius:12px}
+.fbcard{background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:12px!important;padding:10px 12px!important;margin:0!important}
+
+.side.right>#detail{height:100%}
+.fb-wrap{position:relative}
+.fb-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fb-dds{display:contents}
+.fb-dd{background:var(--chip);border:1px solid var(--line);border-radius:9px;padding:4px 8px;cursor:pointer;font-size:12.5px;color:var(--ink);white-space:nowrap}
+.fb-dd:hover{border-color:var(--accent)}
+.fb-dd.on{border-color:var(--accent);color:var(--accent)}
+.fb-n{display:inline-block;min-width:2.1em;text-align:left;font-variant-numeric:tabular-nums}
+.fb-dd.open{background:var(--accent);border-color:var(--accent);color:#fff}
+.fb-wrap .fb-search{flex:1 1 160px;min-width:140px;background:var(--chip);border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:13px;color:var(--ink)}
+.fb-chk{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--mut);cursor:pointer;white-space:nowrap}
+.fb-reset{background:none;border:1px solid var(--line);border-radius:9px;padding:4px 10px;cursor:pointer;font-size:12.5px;white-space:nowrap;color:var(--ink)}
+.fb-reset:hover{border-color:var(--accent);color:var(--accent)}
+.fb-pop{position:absolute;z-index:30;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);width:min(420px,92vw);max-height:60vh;overflow:auto}
+.fb-pop[hidden]{display:none}
+.fb-ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.fb-link{background:none;border:0;color:var(--accent);cursor:pointer;font-size:12px;padding:0;text-transform:none;letter-spacing:0}
+.fb-link:hover{text-decoration:underline}
+.fb-chips{display:flex;flex-wrap:wrap;gap:6px}
+.fb-chip{background:var(--chip);border:1px solid transparent;border-radius:999px;padding:3px 11px;cursor:pointer;font-size:13px;color:var(--ink)}
+.fb-chip small{color:var(--mut);margin-left:5px}
+.fb-chip:hover{border-color:var(--accent)}
+.fb-chip.on{background:var(--accent);color:#fff}.fb-chip.on small{color:#fff;opacity:.85}
+.fb-chip.zero{opacity:.45}
+.fb-chosen{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--mut);min-height:26px}
+.fb-sel{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:2px 10px;cursor:pointer;font-size:12px}
+.fb-sel:hover{filter:brightness(1.12)}
+.fb-count{margin-left:4px}
+/* ===== Mockup chrome: layout bits the pages need that live in the page
+   templates on the real dashboard. common.css + filterbar.css are inlined
+   unchanged above; everything below is mockup-specific. ===== */
+h1{font-size:20px;margin:0;white-space:nowrap}
+.mut{color:var(--mut)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap}
+.empty{padding:14px;text-align:center;color:var(--mut);font-size:13px}
+table{border-collapse:collapse;width:100%}
+th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--mut);white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.pill{font-size:12px;color:var(--mut)}
+.warn{background:var(--chip);border-left:4px solid var(--s-block);padding:6px 10px;border-radius:6px;font-size:12.5px;margin:8px 0}
+.src{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}
+.src:hover{text-decoration:underline}
+
+/* mockup-only: let the topbar fold onto two lines instead of forcing page overflow;
+   at normal widths it is pixel-identical to the real header */
+@media (max-width:1100px){.topbar{flex-wrap:wrap;row-gap:6px}}
+
+/* app columns: same grid as the real pages (.app comes from common.css) */
+.side{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.side .card{margin:0;flex:0 0 auto}
+.center{min-height:0;min-width:0;display:flex;flex-direction:column}
+.stagecol{flex:1;min-height:0;overflow:auto;padding-right:2px}
+@media (max-width:1100px){
+  .side{overflow:visible;margin-bottom:12px}
+  .center{margin-bottom:12px}
+  .stagecol{overflow:visible}
+}
+
+/* ---- stage presentation, shared vocabulary for all variants ---- */
+.decl{font-weight:600}
+.facts{display:grid;gap:5px;margin:8px 0}
+.fact{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px;min-width:0}
+.fact .fl{flex:0 0 168px;color:var(--mut);font-size:12px}
+.fact .fv{min-width:0}
+.cchip{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;margin:0 2px;white-space:nowrap}
+.cchip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:0}
+.evchip{display:inline-block;padding:0 8px;border-radius:999px;font-size:12px;color:#fff;margin:0 2px;white-space:nowrap}
+.ev-ext{font-size:11px;border:1px dashed currentColor;border-radius:4px;padding:0 3px;margin-left:3px;opacity:.9}
+.blk{font-size:12.5px;margin:6px 0}
+.blk a{color:var(--accent);cursor:pointer}
+details.fold{margin:4px 0}
+details.fold summary{cursor:pointer;color:var(--accent);font-size:13px}
+.cycles{font-size:12.5px;margin:6px 0}
+.cycles .cy{border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:4px 0;background:var(--chip)}
+
+/* mini task table inside a stage block */
+.tmini td,.tmini th{padding:4px 6px;font-size:12.5px}
+.tmini tr.row{cursor:pointer}
+.tmini tr.row:hover{background:var(--chip)}
+.tmini tr.row.sel{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* left rail: roadmap list */
+.stg{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:6px 4px;cursor:pointer;color:var(--ink);font:inherit;font-size:13px}
+.stg:hover{background:var(--chip)}
+.stg.sel{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
+.stg .nm{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stg .sub{font-size:11.5px;color:var(--mut)}
+
+/* variant B: journey stepper */
+.jrail{position:relative;padding-left:26px}
+.jrail::before{content:"";position:absolute;left:9px;top:8px;bottom:8px;width:2px;background:var(--line)}
+.jnode{position:relative;margin-bottom:14px}
+.jnode::before{content:"";position:absolute;left:-23px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--jc,var(--s-ready));border:2px solid var(--panel);box-shadow:0 0 0 2px var(--line)}
+.jnode>.jhead{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.jnode>.jhead:hover{border-color:var(--accent)}
+.jnode.open>.jhead{border-color:var(--accent)}
+.jnode .jbody{border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;padding:10px 12px;background:var(--panel);margin:-8px 6px 0}
+.jnode .jbody[hidden]{display:none}
+.jwhen{font-size:11.5px;color:var(--mut)}
+
+/* variant C: stage matrix */
+.mtx td{vertical-align:top}
+.mtx tr.row{cursor:pointer}
+.mtx tr.row:hover{background:var(--chip)}
+.mtx tr.row.sel td{background:var(--chip)}
+.mtx tr.xrow>td{background:var(--chip);padding:10px 14px}
+@media (max-width:1500px){.mtx th:nth-child(5),.mtx td:nth-child(5){display:none}}
+@media (max-width:900px){.mtx th:nth-child(4),.mtx td:nth-child(4),.mtx th:nth-child(6),.mtx td:nth-child(6){display:none}}
+
+/* diagnostics + detail cards */
+.diag table{font-size:12px}
+.diag li{margin:4px 0;font-size:12.5px}
+.diag h3{font-size:12px;margin:10px 0 4px;color:var(--mut)}
+#detail{overflow:auto}
+
+/* variant C: compact matrix — one row per stage, densest variant */
+.gl{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.gl:last-child{border-bottom:0}
+.mcard{flex:1;min-height:0;display:flex;flex-direction:column}
+.mcard .tablewrap{flex:1;min-height:0;overflow:auto}
+</style>
+</head>
+<body>
+<div class="app">
+<header id="hdr"></header>
+
+<div class="card fbcard" id="fbar"></div>
+<div class="fbchosen" id="fchosen"></div>
+
+<aside class="side left">
+  <div class="card"><h2>Summary</h2><div id="glance"></div></div>
+</aside>
+
+<main class="center">
+  <div class="card mcard"><h2>Roadmap — every declared stage, plan source order</h2>
+    <div class="tablewrap"><table class="mtx" id="mtx"></table></div>
+  </div>
+</main>
+
+<aside class="side right">
+  <div class="card diag" id="diag"></div>
+  <div class="card" id="detail"><h2>Selection</h2><div class="mut">Click a task row or a link — details appear here.</div></div>
+</aside>
+</div>
+
+<script>
+// Shared filter panel for both pages.
+// o: {bar, chosen, dims:[{k,l,vals(),count(v)}], sel:{k:Set}, flags:[{k,l,get,set}], search:{placeholder,get,set}, body:{get,set}, shown(), clear(), onChange()}
+function createFilterBar(o){
+  const E=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const bar=o.bar; bar.classList.add("fb-wrap");
+  bar.innerHTML='<div class="fb-row"><span class="fb-dds"></span><span class="fb-flags" style="display:contents"></span><input class="fb-search" type="search"><label class="fb-chk"><input type="checkbox" class="fb-body"> in task text</label><button class="fb-reset" type="button">Reset all</button></div><div class="fb-pop" hidden></div>';
+  const dds=bar.querySelector(".fb-dds"), flagsEl=bar.querySelector(".fb-flags"), pop=bar.querySelector(".fb-pop");
+  const inp=bar.querySelector(".fb-search"), chk=bar.querySelector(".fb-body"), reset=bar.querySelector(".fb-reset");
+  let openK=null;
+  inp.placeholder=o.search.placeholder||"Search";
+  inp.oninput=()=>{ o.search.set(inp.value); o.onChange(); };
+  chk.onchange=()=>{ o.body.set(chk.checked); o.onChange(); };
+  reset.onclick=()=>{ o.clear(); inp.value=""; openK=null; o.onChange(); };
+  document.addEventListener("click",e=>{ if(openK&&!e.composedPath().includes(bar)){ openK=null; renderDds(); renderPop(); } });
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&openK){ openK=null; renderDds(); renderPop(); } });
+
+  function renderDds(){
+    dds.innerHTML=o.dims.map(d=>{ const n=o.sel[d.k].size; return `<button type="button" class="fb-dd${n?" on":""}${openK===d.k?" open":""}" data-k="${d.k}">${E(d.l)}<span class="fb-n"${n?"":" style=\"visibility:hidden\""}>: ${n||0}</span> ▾</button>`; }).join("");
+    dds.querySelectorAll(".fb-dd").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openK=openK===b.dataset.k?null:b.dataset.k; renderDds(); renderPop(); });
+  }
+  function renderFlags(){
+    flagsEl.innerHTML=(o.flags||[]).map(f=>`<button type="button" class="fb-dd${f.get()?" on":""}" data-flag="${f.k}">⚑ ${E(f.l)}</button>`).join("");
+    flagsEl.querySelectorAll(".fb-dd").forEach(b=>b.onclick=()=>{ const f=o.flags.find(x=>x.k===b.dataset.flag); f.set(!f.get()); o.onChange(); });
+  }
+  function renderPop(){
+    if(!openK){ pop.hidden=true; return; }
+    const d=o.dims.find(x=>x.k===openK), set=o.sel[d.k];
+    pop.hidden=false;
+    pop.innerHTML=`<div class="fb-ph"><span>${E(d.l)}</span>${set.size?`<button type="button" class="fb-link" data-clr="1">clear · ${set.size}</button>`:""}</div><div class="fb-chips">`
+      +d.vals().map(v=>{ const n=d.count?d.count(v):null; return `<button type="button" class="fb-chip${set.has(v)?" on":""}${n===0?" zero":""}" data-v="${E(v)}">${E(v)}${n==null?"":`<small>${n}</small>`}</button>`; }).join("")+"</div>";
+    const b=dds.querySelector(`.fb-dd[data-k="${openK}"]`);
+    if(b){ pop.style.top=(b.offsetTop+b.offsetHeight+6)+"px"; pop.style.left=Math.max(0,Math.min(b.offsetLeft,bar.clientWidth-pop.offsetWidth))+"px"; }
+    pop.querySelectorAll(".fb-chip").forEach(c=>c.onclick=()=>{ const v=c.dataset.v; set.has(v)?set.delete(v):set.add(v); o.onChange(); });
+    const clr=pop.querySelector("[data-clr]"); if(clr) clr.onclick=()=>{ set.clear(); o.onChange(); };
+  }
+  function renderChosen(){
+    const parts=[];
+    o.dims.forEach(d=>[...o.sel[d.k]].forEach(v=>parts.push(`<button type="button" class="fb-sel" data-k="${d.k}" data-v="${E(v)}">${E(d.l)}: ${E(v)} ×</button>`)));
+    (o.flags||[]).forEach(f=>{ if(f.get()) parts.push(`<button type="button" class="fb-sel" data-flag="${f.k}">⚑ ${E(f.l)} ×</button>`); });
+    const q=o.search.get(); if(q) parts.push(`<button type="button" class="fb-sel" data-q="1">🔎 "${E(q)}"${o.body.get()?" in text":""} ×</button>`);
+    o.chosen.classList.add("fb-chosen");
+    o.chosen.innerHTML=`<span class="fb-count" style="margin:0 6px 0 0">${E(o.shown())}</span>`+(parts.length?"· Selected: ":"")+parts.join("");
+    o.chosen.querySelectorAll(".fb-sel").forEach(b=>b.onclick=()=>{
+      if(b.dataset.q){ o.search.set(""); inp.value=""; }
+      else if(b.dataset.flag){ const f=o.flags.find(x=>x.k===b.dataset.flag); f.set(false); }
+      else o.sel[b.dataset.k].delete(b.dataset.v);
+      o.onChange();
+    });
+  }
+  return {
+    render(){ renderDds(); renderFlags(); renderPop(); renderChosen(); if(inp.value.trim().toLowerCase()!==String(o.search.get()||"").trim().toLowerCase()) inp.value=o.search.get()||""; chk.checked=!!o.body.get(); },
+    setSearch(v){ inp.value=v; }
+  };
+}
+// ===== Shared mockup code (M namespace): header, filters, stage facts, task card, diagnostics =====
+// The real filterbar.js is inlined above; the page templates each call M.* for their own view.
+const M=(function(){
+  const ST={"Cancelled":"--s-canc","Rejected":"--s-rej","Blocked":"--s-block","Ready":"--s-ready","In progress":"--s-work","In review":"--s-review","Done":"--s-done"};
+  const ST_ORDER=Object.keys(ST), FINAL=new Set(["Done","Rejected","Cancelled"]);
+  const DECL={"Current":"--s-work","Planned":"--s-ready","Closed":"--s-done"};
+  const EV={"pass":"--s-done","fail":"--s-rej","stale":"--s-block","pending":"--s-ready","unknown":"--s-canc"};
+  const col=s=>`var(${ST[s]||"--s-ready"})`;
+  const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const sorted=a=>[...new Set(a)].sort((x,y)=>String(x).localeCompare(String(y),"en",{numeric:true}));
+  const tag=s=>`<span class="tag" style="background:${col(s)}">${s}</span>`;
+  const mut=s=>`<span class="mut">${s}</span>`;
+
+  // ---- header: same chrome as the real pages, plus the proposed Roadmap nav item ----
+  const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  function initHeader(generated,project){
+    let saved=null; try{ saved=localStorage.getItem("dash-theme"); }catch(e){}
+    if(saved) document.documentElement.dataset.theme=saved;
+    const hdr=document.getElementById("hdr");
+    hdr.className="topbar";
+    hdr.innerHTML=`<h1>Tasks${project?" · "+esc(project):""}</h1><nav class="nav"><a href="../out/index.html">Overview</a><a href="../out/graph.html">Gantt &amp; timeline</a><a href="#" class="on" onclick="return false">Roadmap</a></nav><span class="sp"></span><span class="demobadge">MOCKUP &middot; synthetic fixture</span><span class="gen">Built ${esc(generated)}</span><button class="iconbtn" id="theme" type="button" aria-label="Toggle theme"></button>`;
+    const btn=document.getElementById("theme");
+    const isDark=()=>{ const t=document.documentElement.dataset.theme; return t?t==="dark":matchMedia("(prefers-color-scheme:dark)").matches; };
+    const paint=()=>{ btn.innerHTML=isDark()?SUN:MOON; btn.title=isDark()?"Light theme":"Dark theme"; };
+    btn.onclick=()=>{ const next=isDark()?"light":"dark"; document.documentElement.dataset.theme=next; try{ localStorage.setItem("dash-theme",next); }catch(e){} paint(); };
+    paint();
+  }
+
+  // ---- data prep: attach tasks to stages, compute counts and evidence summaries ----
+  function prep(DATA){
+    const byId=Object.fromEntries(DATA.tasks.map(t=>[t.id,t]));
+    DATA.stages.forEach(s=>{
+      s.tasks=s.taskIds.map(id=>byId[id]).filter(Boolean);
+      s.counts={}; ST_ORDER.forEach(k=>s.counts[k]=0);
+      s.tasks.forEach(t=>s.counts[t.status]++);
+      s.ev=evSummary(s);
+      s.warn=s.declared==="Planned"&&s.tasks.length
+        ?`Declared '${s.declaredRaw}' but the ledger lists ${s.tasks.length} task${s.tasks.length===1?"":"s"} — sources disagree; shown as recorded.`:"";
+      s.blockers=s.tasks.filter(t=>!t.final&&(t.blockedBy.length||t.waitsOwner));
+    });
+    const unmapped=DATA.tasks.filter(t=>!DATA.stages.some(s=>s.taskIds.includes(t.id)));
+    return {byId,unmapped};
+  }
+  function evSummary(stage){
+    if(!stage.criteria||!stage.criteria.length) return {tracked:false};
+    const s={tracked:true,total:stage.criteria.length,pass:0,fail:0,stale:0,pending:0,unknown:0};
+    stage.criteria.forEach(c=>{const k=(c.evidence&&c.evidence.state)||"unknown"; s[k]=(s[k]||0)+1;});
+    return s;
+  }
+
+  // ---- shared fact renderers: declared status / local task counts / evidence — three separate facts ----
+  function countsHtml(tasks,total){
+    const c={}; ST_ORDER.forEach(k=>c[k]=0); tasks.forEach(t=>c[t.status]++);
+    const chips=ST_ORDER.filter(k=>c[k]).map(k=>`<span class="cchip"><i style="background:${col(k)}"></i>${k} ${c[k]}</span>`).join(" ");
+    const shown=total!==undefined&&total!==tasks.length?`<b>${tasks.length} of ${total}</b> shown · `:"";
+    return tasks.length?shown+chips:`<b>No local tasks</b>`;
+  }
+  function evChips(stage){
+    const e=stage.ev;
+    if(!e.tracked) return `<b>not tracked per criterion</b> ${mut("(unstructured exit criteria — coverage unknown)")}`;
+    const parts=["pass","fail","stale","pending","unknown"].filter(k=>e[k]).map(k=>`<span class="evchip" style="background:var(${EV[k]})">${k} ${e[k]}</span>`).join(" ");
+    return (parts||mut("none recorded"))+" "+mut(`(${e.total} declared criteria)`);
+  }
+  function factsHtml(stage,shownTasks){
+    const rawNote=stage.declaredRaw&&stage.declaredRaw.toLowerCase()!==stage.declared.toLowerCase()
+      ?" "+mut(`(plan: "Status: ${esc(stage.declaredRaw)}")`):"";
+    return `<div class="facts">
+      <div class="fact"><span class="fl">Declared status</span><span class="fv"><span class="tag decl" style="background:var(${DECL[stage.declared]||"--s-ready"})">${esc(stage.declared)}</span>${rawNote}${stage.recurring?` <span class="cchip">recurring: ${esc(stage.recurring.kind)}</span>`:""}</span></div>
+      <div class="fact"><span class="fl">Local tasks</span><span class="fv">${countsHtml(shownTasks||stage.tasks,stage.tasks.length)}</span></div>
+      <div class="fact"><span class="fl">Exit-criteria evidence</span><span class="fv">${evChips(stage)}</span></div>
+    </div>`;
+  }
+  function blockersHtml(stage){
+    if(!stage.blockers.length) return "";
+    const parts=stage.blockers.map(t=>{const w=[]; if(t.blockedBy.length)w.push("waits on "+t.blockedBy.join(", ")); if(t.waitsOwner)w.push("waits on the owner"); return `<a data-go="${t.id}">${t.id}</a> ${mut("("+w.join("; ")+")")}`;});
+    return `<div class="blk"><b>Active blockers:</b> ${parts.join(" · ")}</div>`;
+  }
+  function evidenceTable(stage){
+    if(!stage.criteria) return "";
+    const rows=stage.criteria.map(c=>{const e=c.evidence||{state:"unknown"};
+      return `<tr><td><b>${esc(c.id)}</b></td><td>${esc(c.text)}</td>
+        <td><span class="evchip" style="background:var(${EV[e.state]||"--s-canc"})">${esc(e.state)}</span>${e.external?'<span class="ev-ext" title="external reference — displayed as recorded, not verified locally">ext</span>':""}</td>
+        <td>${esc(e.label||"")}${e.supersededBy?`<br>${mut(esc(e.supersededBy))}`:""}<br>${mut(esc(e.provenance||""))}${e.recorded?mut(" · recorded "+esc(e.recorded)):""}${e.artifact?mut(" · artifact "+esc(e.artifact)):""}</td></tr>`;}).join("");
+    return `<details class="fold"><summary>Evidence detail · ${stage.criteria.length} criteria</summary><div class="tablewrap"><table class="tmini"><thead><tr><th>ID</th><th>Criterion</th><th>State</th><th>Recorded evidence</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  }
+  function extrasHtml(stage){
+    let h="";
+    const n=(stage.exitCriteria||"").split("\n").length;
+    if(stage.exitCriteria) h+=`<details class="fold"><summary>Exit criteria — full text · ${n} line${n===1?"":"s"}</summary><pre class="rawtext">${esc(stage.exitCriteria)}</pre></details>`;
+    h+=evidenceTable(stage);
+    if(stage.recurring){
+      const cys=stage.recurring.cycles.map(c=>`<div class="cy"><b>${esc(c.id)}</b> — ${esc(c.result)} ${mut("recorded "+esc(c.recorded)+(c.ref?" · "+esc(c.ref):""))}${c.note?"<br>"+mut(esc(c.note)):""}</div>`).join("");
+      h+=`<div class="cycles"><b>Recurring: ${esc(stage.recurring.kind)}</b> ${mut("— "+esc(stage.recurring.note))}<br>${cys}</div>`;
+    }
+    if(stage.historicalRefs){
+      h+=`<div class="blk"><b>Historical references:</b> ${stage.historicalRefs.map(r=>`${esc(r.label)} ${mut("— "+esc(r.note))}`).join("<br>")}</div>`;
+    }
+    return h;
+  }
+  function taskTable(tasks,total){
+    if(!total) return "";
+    const rows=tasks.map(t=>`<tr class="row" tabindex="0" data-go="${t.id}"><td><b>${t.id}</b></td><td>${esc(t.title)}</td><td>${esc(t.role)}</td><td>${tag(t.status)}</td><td class="pill">${esc(t.result)}</td><td class="pill">${esc(t.check)}</td><td class="pill">${esc(t.updated)}</td></tr>`).join("")
+      ||`<tr><td colspan="7" class="empty">No tasks match the filters (${total} in stage)</td></tr>`;
+    return `<details class="fold" open><summary>Tasks · ${tasks.length===total?total:tasks.length+" of "+total} shown</summary><div class="tablewrap"><table class="tmini"><thead><tr><th>ID</th><th>Title</th><th>Role</th><th>Status</th><th>Outcome</th><th>Check</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  }
+
+  // ---- condensed task card (drill-down target; production reuses C.taskCard) ----
+  function taskCardLite(t,byId){
+    const dd=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:"";
+    const link=id=>byId[id]?`<a data-go="${id}">${id}</a>`:esc(id);
+    let verify="";
+    if(t.role==="Developer"){
+      verify=esc(t.check)+(t.checkedBy.length?"<br>"+t.checkedBy.map(c=>`${link(c.id)} — ${c.verdict||"no verdict"} ${mut("(verifies "+esc(c.sha)+(c.stale?" · STALE LINK":"")+"; tester task: "+esc(c.status)+")")}`).join("<br>"):"");
+    }else if(t.verdict||t.verifies){
+      verify=`This task is a check${t.verifies?" of "+link(t.verifies.task):""}${t.verdict?`; verdict: <b>${esc(t.verdict)}</b>`:""}`;
+    }
+    const att=t.attempts?t.attempts.map(a=>`#${a.n} ${esc(a.tool)}${a.model?" · "+esc(a.model):""} ${a.effective?mut("(effective: "+esc(a.effective)+")"):mut("(effective identity not recorded)")} · ${esc(a.start)} → ${a.finish?esc(a.finish):"—"} · ${esc(a.exit)}`).join("<br>")
+      :mut("not recorded");
+    return `<div class="tcard"><h2>Task ${t.id} ${mut("· mockup card")}</h2><dl>
+      ${dd("Title",esc(t.title))}
+      ${dd("Stage · role · agent",esc(t.stage+" · "+t.role+" · "+t.tool))}
+      ${dd("Ledger status",tag(t.status))}
+      ${dd("Outcome",esc(t.result)+(t.outcomeRaw?" "+mut(`(worker report — Outcome: ${esc(t.outcomeRaw)})`):t.outcomeSrc?"":mut(" (no worker report)")))}
+      ${dd("Independent check",verify)}
+      ${dd("Timing",mut("observed dates, not planned deadlines: ")+"created "+esc(t.created)+" · updated "+esc(t.updated))}
+      ${dd("Depends on",t.deps.map(link).join(", "))}
+      ${dd("Waits on",(t.blockedBy.length?t.blockedBy.map(link).join(", "):"")+(t.waitsOwner?(t.blockedBy.length?" · ":"")+"the owner":""))}
+      ${dd("Attempts",att)}
+      ${dd("Ledger commit / artifact",esc(t.commit||"—"))}
+      ${dd("Notes",esc(t.notes))}
+      ${dd("File","<code>"+esc(t.file)+"</code> "+mut("(synthetic path — shown as recorded)"))}
+    </dl></div>`;
+  }
+
+  // ---- diagnostics panel ----
+  function diagCard(DATA){
+    const D=DATA.diagnostics;
+    const src=D.sources.map(s=>`<tr><td>${esc(s.file)}</td><td>${esc(s.mtime)}</td><td>${esc(s.fingerprint)}</td><td>${esc(s.status)}</td></tr>`).join("");
+    return `<h2>Diagnostics</h2>
+      <h3>Source freshness</h3>
+      <div class="tablewrap"><table class="tmini"><thead><tr><th>Source</th><th>Modified</th><th>Fingerprint</th><th>Read</th></tr></thead><tbody>${src}</tbody></table></div>
+      <div class="mut" style="font-size:11.5px;margin-top:4px">${esc(D.freshnessNote)}</div>
+      <h3>Warnings</h3><ul>${D.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul>
+      <h3>Known gaps</h3><ul>${D.gaps.map(w=>`<li>${esc(w)}</li>`).join("")}</ul>`;
+  }
+  function provenanceCard(DATA){
+    const P=DATA.provenance;
+    return `<h2>Payload provenance</h2><div style="font-size:12px">
+      ${Object.entries(P).map(([k,v])=>`<div><span class="mut">${esc(k)}:</span> ${esc(String(v))}</div>`).join("")}
+    </div>`;
+  }
+
+  // ---- one filter set, wired through the real createFilterBar ----
+  function mkFilters(T,onChange){
+    const dims=[
+      {k:"status",l:"Status",get:t=>[t.status],vals:()=>ST_ORDER},
+      {k:"stage",l:"Stage",get:t=>[t.stage],vals:()=>sorted(T.map(t=>t.stage))},
+      {k:"role",l:"Role",get:t=>[t.role],vals:()=>["Developer","Tester","Deployer"]},
+      {k:"tool",l:"Agent",get:t=>[t.tool],vals:()=>sorted(T.map(t=>t.tool))},
+      {k:"result",l:"Outcome",get:t=>[t.result],vals:()=>sorted(T.map(t=>t.result))},
+      {k:"check",l:"Independent check",get:t=>[t.check],vals:()=>sorted(T.map(t=>t.check))}
+    ];
+    const sel={}; dims.forEach(d=>sel[d.k]=new Set());
+    const flags={wait:false}; let query="",qBody=false;
+    const hay=t=>(t.id+" "+t.title+" "+t.notes+" "+t.file+" "+t.commit).toLowerCase();
+    function pass(t,skip){
+      if(!dims.every(d=>d.k===skip||!sel[d.k].size||d.get(t).some(v=>sel[d.k].has(v)))) return false;
+      if(flags.wait&&!(t.blockedBy.length||t.waitsOwner)) return false;
+      if(query&&!query.split(/\s+/).every(w=>hay(t).includes(w))) return false;
+      return true;
+    }
+    const fb=createFilterBar({
+      bar:document.getElementById("fbar"),chosen:document.getElementById("fchosen"),sel,
+      dims:dims.map(d=>({k:d.k,l:d.l,vals:d.vals,count:v=>T.filter(t=>d.get(t).includes(v)&&pass(t,d.k)).length})),
+      flags:[{k:"wait",l:"Waits on something",get:()=>flags.wait,set:v=>{flags.wait=v}}],
+      search:{placeholder:"Search: id, title, notes…",get:()=>query,set:v=>{query=v.trim().toLowerCase()}},
+      body:{get:()=>qBody,set:v=>{qBody=v}},
+      shown:()=>`Showing ${T.filter(t=>pass(t)).length} of ${T.length} tasks · stage list unaffected`,
+      clear:()=>{dims.forEach(d=>sel[d.k].clear());flags.wait=false;query="";},
+      onChange});
+    return {fb,pass,filtered:()=>T.filter(t=>pass(t))};
+  }
+
+  // ---- task links inside rendered blocks ----
+  function bindLinks(root,onGo){
+    root.querySelectorAll("[data-go]").forEach(a=>{
+      a.onclick=e=>{e.preventDefault();e.stopPropagation();onGo(a.dataset.go);};
+      if(a.tagName==="TR")a.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();onGo(a.dataset.go);}};
+    });
+  }
+
+  // ---- mockup self-check instrumentation (headless verification reads these) ----
+  window.addEventListener("error",e=>{
+    const d=document.getElementById("conlog")||(()=>{const x=document.createElement("div");x.id="conlog";document.body.appendChild(x);return x;})();
+    d.dataset.err=((d.dataset.err||"")+e.message+" | ").slice(0,4000);
+  });
+  window.addEventListener("load",()=>{
+    const d=document.documentElement; d.dataset.sw=d.scrollWidth; d.dataset.cw=d.clientWidth;
+    const c=document.getElementById("conlog"); if(c&&!c.dataset.err)c.dataset.err="none";
+  });
+
+  return {ST,ST_ORDER,FINAL,DECL,EV,col,esc,sorted,tag,mut,initHeader,prep,evSummary,countsHtml,evChips,
+          factsHtml,blockersHtml,evidenceTable,extrasHtml,taskTable,taskCardLite,diagCard,provenanceCard,
+          mkFilters,bindLinks};
+})();
+
+const DATA = {"schemaVersion": 1, "synthetic": true, "note": "Synthetic fixture for the roadmap-view layout mockups. No project files are read; every value is invented to exercise the PLAN.md cases. Task IDs T-9xx never collide with the real ledger.", "project": "AgentFlow", "generated": "2026-10-17 14:52", "now": "2026-10-17T15:00:00+03:00", "stages": [{"id": "6", "title": "Public release and production upgrade (2.12.0)", "declaredRaw": "current", "declared": "Current", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 6", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: Python launcher parity and PowerShell compatibility; packaged zero-dependency core CLI; optional SDK-based MCP with privileged tools off by default; measured English dashboard metrics with marked demo data; CI on three OSes and Python 3.10-3.12; English/Russian guides; accurate README; independent clean-install and update verification. Conductor/autostart stays Windows-only. The human performs push and GitHub publication.", "criteria": [{"id": "S6-E1", "text": "Python launcher parity and PowerShell compatibility", "evidence": {"state": "pass", "label": "recorded pass: launcher parity + PS5.1 checks", "provenance": "gate.py stage record, bound to artifact 0420265", "recorded": "2026-10-16", "artifact": "0420265"}}, {"id": "S6-E2", "text": "CI on three OSes and Python 3.10-3.12", "evidence": {"state": "fail", "external": true, "label": "external run 39026298541: windows-latest and macos-latest jobs failed", "provenance": "external reference (CI report) - displayed as recorded, never verified locally", "recorded": "2026-10-17", "artifact": "main@50adf65"}}, {"id": "S6-E3", "text": "English/Russian guides; accurate README; clean-install verification", "evidence": {"state": "pass", "label": "recorded pass: docs and install verified in T-010/T-011", "provenance": "ledger + Task File Verifies fields", "recorded": "2026-10-17", "artifact": "0fcd773"}}, {"id": "S6-E4", "text": "push and GitHub publication (human action)", "evidence": {"state": "pending", "external": true, "label": "not yet performed - the human performs the push", "provenance": "declared in plan; no run recorded", "recorded": null}}], "taskIds": ["T-941", "T-942", "T-943", "T-944", "T-945"]}, {"id": "1", "title": "Team layer and launcher", "declaredRaw": "closed", "declared": "Closed", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 1", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: roles, Task Files, ledger, launcher with preflight work on a live project (1.2.0).", "criteria": null, "historicalRefs": [{"label": "release 1.2.0", "note": "reference only - recorded before the ledger kept task rows"}], "taskIds": []}, {"id": "2", "title": "2.0.0: enforcement, states, template vs project", "declaredRaw": "closed", "declared": "Closed", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 2", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: P0-P4 of the FPF audit committed; sandbox checks pass; the branch is merged by the human.", "criteria": [{"id": "S2-E1", "text": "P0-P4 committed; sandbox checks pass; branch merged", "evidence": {"state": "stale", "label": "recorded pass bound to artifact 9ab8def - superseded by later work", "provenance": "gate.py stage record", "recorded": "2026-04-02", "artifact": "9ab8def", "supersededBy": "current main moved on; a stale record is not a current pass"}}], "taskIds": []}, {"id": "3", "title": "Pilot 2.0.0", "declaredRaw": "closed (Watermark Remover, 2.2.x-2.11.0, 48+ tasks)", "declared": "Closed", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 3", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: one real project updated with the \"Update\" procedure and a full task cycle run with the real tools; findings in `state/known-issues.md`.", "criteria": [{"id": "S3-E1", "text": "one real project updated with the Update procedure", "evidence": {"state": "pass", "label": "recorded pass: Watermark Remover update", "provenance": "state/known-issues.md pilot entries", "recorded": "2026-10-03", "artifact": null}}, {"id": "S3-E2", "text": "full task cycle run with the real tools", "evidence": {"state": "pass", "label": "recorded pass: 48+ task ledger cycle", "provenance": "pilot project ledger (outside this repository - reference only)", "recorded": "2026-10-03", "artifact": null}}], "historicalRefs": [{"label": "pilot project ledger", "note": "lives in the WatermarkRemover checkout - link shown as text, not resolved"}, {"label": "state/known-issues.md", "note": "pilot findings are recorded there"}], "taskIds": []}, {"id": "4", "title": "Upstream sync", "declaredRaw": "current", "declared": "Current", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 4", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: `upstream.py` drift reports from every installed project are reviewed periodically; changes that flow upstream are generalized, released (CHANGELOG, VERSION, decisions.md) and rolled out with `install.py --update`.", "criteria": null, "recurring": {"kind": "periodic drift review", "note": "Ongoing stage: a completed cycle never closes it.", "cycles": [{"id": "cycle 2026-10-15", "recorded": "2026-10-15", "result": "completed", "ref": ".agentflow/state/decisions.md", "note": "bounded Stage 4 drift review authorized by the human"}]}, "taskIds": []}, {"id": "5", "title": "Reliability and efficient project practices", "declaredRaw": "planned", "declared": "Planned", "source": ".agentflow/docs/project-plan.md", "sourceRef": "plan §Stage 5", "sourceHref": "../../docs/project-plan.md", "exitCriteria": "Exit criteria: the scenarios in improvement-plan.md pass, migration preserves open tasks, and the pilot installation receives the tested release without template drift.", "criteria": [{"id": "S5-E1", "text": "the scenarios in improvement-plan.md pass", "evidence": {"state": "unknown", "label": "no recorded run", "provenance": "declared criterion; nothing recorded yet", "recorded": null}}, {"id": "S5-E2", "text": "migration preserves open tasks", "evidence": {"state": "unknown", "label": "no recorded run", "provenance": "declared criterion; nothing recorded yet", "recorded": null}}], "taskIds": ["T-951", "T-952", "T-953", "T-954", "T-955", "T-956", "T-957", "T-958", "T-959"]}], "tasks": [{"id": "T-941", "title": "Package, unified CLI and installer assets", "stage": "6", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "Tester: pass", "checkedBy": [{"id": "T-942", "verdict": "pass", "status": "Done", "sha": "a1b2c3d", "stale": false}], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-941-package.md", "created": "2026-10-15", "updated": "2026-10-16", "commit": "a1b2c3d", "attempts": null}, {"id": "T-942", "title": "Verify package and unified CLI", "stage": "6", "role": "Tester", "roleKey": "tester", "tool": "Codex", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "—", "verdict": "pass", "verifies": {"task": "T-941", "sha": "a1b2c3d"}, "checkedBy": [], "deps": ["T-941"], "blockedBy": [], "waitsOwner": false, "notes": "independent fresh session", "file": ".agentflow/tasks/T-942-verify-package.md", "created": "2026-10-15", "updated": "2026-10-16", "commit": "a1b2c3d", "attempts": null}, {"id": "T-943", "title": "Honest metrics and English dashboard", "stage": "6", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "Tester: pass", "checkedBy": [{"id": "T-944", "verdict": "pass", "status": "Done", "sha": "e5f6a7b", "stale": false}], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-943-dashboard.md", "created": "2026-10-15", "updated": "2026-10-16", "commit": "e5f6a7b", "attempts": null}, {"id": "T-944", "title": "Verify honest metrics dashboard", "stage": "6", "role": "Tester", "roleKey": "tester", "tool": "Devin", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "—", "verdict": "pass", "verifies": {"task": "T-943", "sha": "e5f6a7b"}, "checkedBy": [], "deps": ["T-943"], "blockedBy": [], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-944-verify-dashboard.md", "created": "2026-10-15", "updated": "2026-10-16", "commit": "e5f6a7b", "attempts": null}, {"id": "T-945", "title": "Push v2.12.0 and GitHub publication", "stage": "6", "role": "Deployer", "roleKey": "deployer", "tool": "Claude Code", "status": "Ready", "statusKey": "ready", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "—", "checkedBy": [], "deps": [], "blockedBy": [], "waitsOwner": true, "notes": "the human performs push and publication; waiting on an explicit go", "file": ".agentflow/tasks/T-945-push.md", "created": "2026-10-16", "updated": "2026-10-17", "commit": "", "attempts": null}, {"id": "T-951", "title": "Trustworthy lifecycle: state enforcement, atomic runtime", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "In progress", "statusKey": "in progress", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-951-lifecycle.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "bbbb111", "attempts": [{"n": 1, "tool": "devin", "model": "swe-2-high", "effective": "swe-2-high", "start": "2026-10-17 10:02", "finish": "2026-10-17 10:31", "exit": "exited"}, {"n": 2, "tool": "devin", "model": "swe-2-high", "effective": null, "start": "2026-10-17 11:08", "finish": null, "exit": "running"}]}, {"id": "T-952", "title": "Recoverable handover + limit detection/quota groups", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Ready", "statusKey": "ready", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": ["T-951"], "blockedBy": ["T-951"], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-952-handover.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "", "attempts": null}, {"id": "T-953", "title": "Evidence and completion gate: criterion IDs, artifact binding", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Ready", "statusKey": "ready", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": ["T-952"], "blockedBy": ["T-952"], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-953-evidence-gate.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "", "attempts": null}, {"id": "T-954", "title": "Bounded autonomy: recorded model identity, quota policy", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Ready", "statusKey": "ready", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": ["T-953"], "blockedBy": ["T-953"], "waitsOwner": false, "notes": "", "file": ".agentflow/tasks/T-954-autonomy.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "", "attempts": null}, {"id": "T-955", "title": "Concise instructions and documentation alignment", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Rejected", "statusKey": "rejected", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "Tester: fail (stale link)", "checkedBy": [{"id": "T-956", "verdict": "fail", "status": "Done", "sha": "d4e5f6a", "stale": false}, {"id": "T-957", "verdict": "pass", "status": "Done", "sha": "0000aaa", "stale": true}], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "Successor under consideration - the negative verdict stands on record", "file": ".agentflow/tasks/T-955-docs.md", "created": "2026-10-16", "updated": "2026-10-17", "commit": "d4e5f6a", "attempts": null}, {"id": "T-956", "title": "Review documentation alignment", "stage": "5", "role": "Tester", "roleKey": "tester", "tool": "Devin", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "—", "verdict": "fail", "verifies": {"task": "T-955", "sha": "d4e5f6a"}, "checkedBy": [], "deps": ["T-955"], "blockedBy": [], "waitsOwner": false, "notes": "a completed review with a negative verdict - it is not a worker failure", "file": ".agentflow/tasks/T-956-review-docs.md", "created": "2026-10-16", "updated": "2026-10-17", "commit": "d4e5f6a", "attempts": null}, {"id": "T-957", "title": "Re-review documentation alignment", "stage": "5", "role": "Tester", "roleKey": "tester", "tool": "Codex", "status": "Done", "statusKey": "done", "final": true, "result": "Completed by worker", "outcomeSrc": "Outcome", "outcomeRaw": "completed", "check": "—", "verdict": "pass", "verifies": {"task": "T-955", "sha": "0000aaa", "stale": true}, "checkedBy": [], "deps": ["T-955"], "blockedBy": [], "waitsOwner": false, "notes": "Verifies names 0000aaa but the task now reports d4e5f6a - a stale link, not current evidence", "file": ".agentflow/tasks/T-957-rereview-docs.md", "created": "2026-10-16", "updated": "2026-10-16", "commit": "", "attempts": null}, {"id": "T-958", "title": "Stop-hook prototype spike", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Blocked", "statusKey": "blocked", "final": false, "result": "Worker blocked", "outcomeSrc": "Outcome", "outcomeRaw": "blocked", "check": "No independent check", "checkedBy": [], "deps": [], "blockedBy": [], "waitsOwner": true, "notes": "question for the human recorded in state/questions.md", "file": ".agentflow/tasks/T-958-stop-hook.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "", "attempts": null}, {"id": "T-959", "title": "Old experiment branch", "stage": "5", "role": "Developer", "roleKey": "developer", "tool": "Codex", "status": "Cancelled", "statusKey": "cancelled", "final": true, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "owner cancelled", "file": ".agentflow/tasks/T-959-experiment.md", "created": "2026-10-15", "updated": "2026-10-16", "commit": "", "attempts": null}, {"id": "T-999", "title": "Orphaned ledger row: Stage column names a stage that is not in the plan", "stage": "9", "role": "Developer", "roleKey": "developer", "tool": "Devin", "status": "Ready", "statusKey": "ready", "final": false, "result": "No report", "outcomeSrc": "", "outcomeRaw": "", "check": "No independent check", "checkedBy": [], "deps": [], "blockedBy": [], "waitsOwner": false, "notes": "kept visible in the Unmapped group - bad stage data must not hide task data", "file": ".agentflow/tasks/T-999-orphan.md", "created": "2026-10-17", "updated": "2026-10-17", "commit": "", "attempts": null, "unmapped": true}], "diagnostics": {"sources": [{"file": ".agentflow/docs/project-plan.md", "mtime": "2026-10-17 11:40", "fingerprint": "sha256:8f3a2c1d (fixture)", "status": "read"}, {"file": ".agentflow/state/tasks.md", "mtime": "2026-10-17 11:08", "fingerprint": "sha256:41be07e9 (fixture)", "status": "read"}, {"file": ".agentflow/tasks/T-*.md", "mtime": "15 files read", "fingerprint": "—", "status": "read"}, {"file": ".agentflow/tasks/.runtime/", "mtime": "not read", "fingerprint": "—", "status": "absent in fixture - attempt evidence unknown"}], "warnings": ["Stage 5 is declared 'planned' but the ledger lists 9 tasks (1 in progress, 2 done) - plan and ledger disagree; both facts are shown as recorded, never reconciled silently.", "T-999 names stage '9'; no stage 9 exists in the plan - kept in the Unmapped group.", "T-957 verifies T-955 @ 0000aaa but the task reports d4e5f6a - the link is stale and is not current evidence.", "S6-E2 is an external CI record marked 'fail' - external evidence is displayed as a reference, not verified locally.", "S2-E1 was recorded against artifact 9ab8def and is superseded - shown 'stale', not a current pass."], "gaps": ["Attempt/runtime records: absent for most tasks - shown as 'not recorded', never inferred from timestamps.", "Cost/token telemetry: not recorded anywhere - N/A, never zero.", "Stages 1 and 4 carry unstructured exit criteria - per-criterion coverage is unknown by design.", "Source freshness is a build-time snapshot of mtimes/fingerprints; static HTML cannot watch files for changes."], "freshnessNote": "Built from the source files listed above; mtimes/fingerprints are their state at build time."}, "provenance": {"payload": "dashboard payload + proposed additive fields (schemaVersion, stages[], diagnostics, provenance)", "plan": ".agentflow/docs/project-plan.md", "ledger": ".agentflow/state/tasks.md", "taskFiles": ".agentflow/tasks/T-*.md", "runtime": ".agentflow/tasks/.runtime/ (absent in this fixture)", "synthetic": true, "fixtureFile": ".agentflow/dashboard/mockups/fixtures.json"}};
+M.initHeader(DATA.generated, DATA.project);
+const P = M.prep(DATA), byId = P.byId;
+const esc = M.esc, col = M.col;
+let selTask = null, selStage = null;
+
+function stageShown(s){ const f = new Set(fl.filtered().map(t => t.id)); return s.tasks.filter(t => f.has(t.id)); }
+
+function renderGlance(){
+  const f = fl.filtered();
+  const decl = {}; DATA.stages.forEach(s => decl[s.declared] = (decl[s.declared]||0)+1);
+  const ev = {pass:0,fail:0,stale:0,pending:0,unknown:0};
+  DATA.stages.forEach(s => { if(s.ev.tracked) ["pass","fail","stale","pending","unknown"].forEach(k => ev[k]+=s.ev[k]||0); });
+  document.getElementById("glance").innerHTML =
+    `<div class="gl"><span>Stages declared</span><b>${DATA.stages.length}</b></div>`
+    + Object.entries(decl).map(([k,v]) => `<div class="gl"><span>· ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="gl"><span>Tasks shown / total</span><b>${f.length} / ${DATA.tasks.length}</b></div>`
+    + `<div class="gl"><span>Unmapped</span><b>${P.unmapped.length}</b></div>`
+    + `<div class="gl"><span>Evidence pass/fail/stale/pend/?</span><b>${ev.pass}/${ev.fail}/${ev.stale}/${ev.pending}/${ev.unknown}</b></div>`;
+}
+
+function evCell(s){
+  if (!s.ev.tracked) return `<span class="mut">untracked</span>`;
+  return ["pass","fail","stale","pending","unknown"].filter(k=>s.ev[k])
+    .map(k=>`<span class="evchip" style="background:var(${M.EV[k]})">${k} ${s.ev[k]}</span>`).join(" ");
+}
+function blkCell(s){
+  if (!s.blockers.length) return `<span class="mut">—</span>`;
+  return s.blockers.map(t=>`<a data-go="${t.id}">${t.id}</a>`).join(", ");
+}
+
+function stageRow(s){
+  const shown = stageShown(s), open = selStage === s.id;
+  const tc = s.tasks.length ? `<b>${shown.length===s.tasks.length?shown.length:shown.length+"/"+s.tasks.length}</b> ` + M.countsHtml(shown, s.tasks.length).replace(/^<b>.*?<\/b> · /,"") : `<b>No local tasks</b>`;
+  let h = `<tr class="row${open?" sel":""}" data-st="${s.id}" tabindex="0">
+      <td><b>Stage ${esc(s.id)}</b><br><span class="mut">${esc(s.title)}</span></td>
+      <td><span class="tag" style="background:var(${M.DECL[s.declared]||"--s-ready"})">${esc(s.declared)}</span>${s.recurring?`<br><span class="cchip">recurring</span>`:""}</td>
+      <td>${tc}</td>
+      <td>${evCell(s)}</td>
+      <td>${blkCell(s)}</td>
+      <td><a class="src" href="${esc(s.sourceHref)}" onclick="event.stopPropagation()">${esc(s.sourceRef)} ↗</a></td>
+    </tr>`;
+  if (open) h += `<tr class="xrow"><td colspan="6">
+      ${s.warn ? `<div class="warn">⚠ ${esc(s.warn)}</div>` : ""}
+      ${M.factsHtml(s, shown)}
+      ${M.extrasHtml(s)}
+      ${M.taskTable(shown, s.tasks.length)}
+    </td></tr>`;
+  return h;
+}
+
+function renderMatrix(){
+  const head = `<thead><tr><th>Stage</th><th>Declared</th><th>Local tasks</th><th>Evidence</th><th>Blockers</th><th>Source</th></tr></thead>`;
+  const unRows = P.unmapped.length ? `<tr class="row${selStage==="unmapped"?" sel":""}" data-st="unmapped" tabindex="0">
+      <td><b>Unmapped</b><br><span class="mut">no matching plan stage</span></td>
+      <td><span class="tag" style="background:var(--s-rej)">n/a</span></td>
+      <td><b>${P.unmapped.filter(t=>fl.pass(t)).length===P.unmapped.length?P.unmapped.length:P.unmapped.filter(t=>fl.pass(t)).length+"/"+P.unmapped.length}</b></td>
+      <td><span class="mut">—</span></td><td><span class="mut">—</span></td><td><span class="mut">—</span></td>
+    </tr>` + (selStage==="unmapped" ? `<tr class="xrow"><td colspan="6">
+      <div class="warn">⚠ These tasks name a stage that is absent from the plan — kept visible.</div>
+      ${M.taskTable(P.unmapped.filter(t=>fl.pass(t)), P.unmapped.length)}
+    </td></tr>` : "") : "";
+  document.getElementById("mtx").innerHTML = head + "<tbody>" + DATA.stages.map(stageRow).join("") + unRows + "</tbody>";
+  document.querySelectorAll("#mtx tr.row").forEach(r => {
+    const toggle = () => { selStage = selStage === r.dataset.st ? null : r.dataset.st; renderMatrix(); };
+    r.onclick = e => { if (e.target.closest("a,[data-go],details")) return; toggle(); };
+    r.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); toggle(); } };
+  });
+  M.bindLinks(document.getElementById("mtx"), select);
+}
+
+function select(id){
+  const t = byId[id]; if (!t) return;
+  selTask = id;
+  document.getElementById("detail").innerHTML = M.taskCardLite(t, byId);
+  M.bindLinks(document.getElementById("detail"), select);
+  document.querySelectorAll(".tmini tr.row").forEach(r => r.classList.toggle("sel", r.dataset.go === id));
+}
+
+function render(){ renderGlance(); renderMatrix(); }
+const fl = M.mkFilters(DATA.tasks, render);
+document.getElementById("diag").innerHTML = M.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + M.provenanceCard(DATA);
+render();
+</script>
+</body>
+</html>
