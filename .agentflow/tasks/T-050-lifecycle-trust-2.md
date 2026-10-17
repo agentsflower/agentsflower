@@ -87,3 +87,43 @@ that base, do not reset or rebase it.
 - `python -m unittest discover -s .agentflow/tests` - mandatory full regression suite.
 
 ## Result
+Outcome: completed
+Change: 00852c1698d14ece7dcc56d005ec2eb7f25e803f on t-050-lifecycle-trust-2
+Files:
+- .agentflow/tools/ledger.py - shared schema validators: check_runtime now requires an attempts list and the file's taskId and validates every attempt (n:int, known status, per-attempt taskId); check_verify requires ok:bool plus typed binding fields; new check_limits for tool-limits.json; verified() returns a diagnostic reason and binds task id + last exited attempt + headerHash + full artifact SHA (legacy records bind only what they carry); claimed()/verified() share _last_attempt with fail-closed reads (no KeyError on {}); tasks.md writes atomically via _write_atomic; shared sha256()/header()/task_header_hash()
+- .agentflow/tools/gate.py - header()/sha256() delegate to ledger (single implementation); unused hashlib import removed
+- .agentflow/tools/run_task.py - attempt_alive requires a recorded+matching pidStart; new attempt_uncertain (live pid, unconfirmed identity); attempt_held/live_tasks include it; --stop refuses with a diagnosable block instead of closing and releasing; --status reports "blocked"; cmd_launch refuses a second claim beside an unconfirmed pid; limit_until validates tool-limits.json through check_limits
+- .agentflow/tools/tick.py - new read_limits() fail-closed reader (record_limit/limit_end/learn_limits/run/status); heartbeat requires holder+at and a malformed record blocks the claim (--force takes over); decide() reports an unconfirmed pid as a need through run_task.attempt_*
+- .agentflow/tools/machine_capacity.py - new _pid_start (GetProcessTimes / /proc jiffies / ps lstart); _alive applies the same pid+recorded-start rule on every platform: POSIX honors the recorded start, and unmeasurable identity or GetProcessTimes failure is not alive
+- .agentflow/tools/route.py - _log writes T-NNN.route.json through temp file + os.replace, temp removed on failure
+- .agentflow/docs/ai-handoff-protocol.md - acceptance binding + the explicit legacy rule, atomic/fail-closed runtime state incl. T-NNN.route.json and tasks.md, the locked unconfirmed pid under --stop and claims, the machine-lease identity rule
+- .agentflow/tests/test_tick.py - malformed/empty limits + heartbeat cases, malformed-heartbeat claim block + force takeover, unconfirmed-pid need regression
+- .agentflow/tests/test_run_task.py - per-attempt and file-level taskId + {} runtime cases, wrong-shape limits cases, locked --stop + refused second claim + confirmed-identity stop regressions, acceptance-binding suite (stale attempt, other artifact, changed header, other task, truthy ok, live attempt)
+- .agentflow/tests/test_machine_capacity.py - _alive pid+start identity on every platform incl. unmeasurable-identity and GetProcessTimes-failure cases; the reuse guard un-gated
+- .agentflow/tests/test_approval.py - {} / [] / null runtime refusal cases; atomic tasks.md save regression
+- .agentflow/tests/test_route.py - atomic route._log regression
+- .agentflow/VERSION - 2.12.2
+- AGENTS.md - AgentFlow block version line 2.12.2
+- CHANGELOG.md - 2.12.2 entry with migration notes
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_run_task.py` -> pass (36 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_approval.py` -> pass (5 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_endcheck.py` -> pass (9 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_tick.py` -> pass (23 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_machine_capacity.py` -> pass (12 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` -> pass (223 passed / 0 failed, 3 skipped: platform-gated)
+Criteria without a command:
+- F-01 - the new shared validators run at every Python reader: check_runtime for T-NNN.json (run_task read_rt/live_tasks/--status, gate.runtime, ledger._last_attempt), check_verify for T-NNN.verify.json (gate.verify, ledger.verified), check_limits for tool-limits.json (run_task.limit_until, tick.read_limits), live_orchestrator requires holder+at; covered by the fail-closed cases in test_tick/test_run_task/test_approval. Legacy shapes readers genuinely accept (attempt without taskId, limit _seen metadata, missing verify binding fields) stay explicitly tolerated.
+- F-02 - verified() binds taskId + last attempt n + headerHash + artifact SHA with the attempt exited; test_acceptance_is_bound_to_the_current_attempt_and_task_file covers stale attempt/artifact/header, other-task records, truthy ok, live attempt; {} runtime cases cover the no-KeyError requirement.
+- F-03 - test_stop_with_unconfirmed_pid_identity_keeps_the_lock: sleeper + --stop refusal + refused second --manual claim + blocked status + refusal with a mismatched recorded start; test_stop_with_a_confirmed_identity_kills_the_worker: verified identity releases the lock.
+- F-04 - per-attempt taskId mismatch and missing file-level taskId in test_structurally_invalid_runtime_state_fails_closed; test_alive_uses_pid_start_identity_on_every_platform covers POSIX/ps measurement, wrong start, unmeasurable identity and the Windows GetProcessTimes-failure case.
+- F-05 - test_route_log_is_written_atomically and test_tasks_md_writes_are_atomic.
+- F-06 - approval-gate, --live argv, octopus/merge-history and review-isolation regressions stay green in the full suite; the 2.12.2 CHANGELOG entry states the fail-closed behavior as it now actually is.
+- F-07 - full suite passes verbatim; VERSION 2.12.2, AGENTS block 2.12.2, CHANGELOG migration notes; decision text proposed below.
+Found, not fixed:
+- tick.py run/status exit 1 on a malformed heartbeat or limits file - the same exit code as "no live orchestrator", so the conductor may retry an orchestrator launch until the file is repaired (stderr names the file; the behavior is fail closed). conductor.ps1 is outside Allowed files.
+- tick.py release cannot remove a non-object heartbeat file (read_map refuses); deleting the file by hand remains the recovery.
+- gate.write_atomic and run_task.write_rt leave a stranded .tmp when os.replace fails (pre-existing pattern; the two new writers clean theirs).
+- Legacy verify/attempt records bind only what they carry - file + artifact when attempt/headerHash are absent; this is the documented compatibility rule, not a defect.
+Proposed memory updates:
+- decisions.md, 2026-10-17: "2.12.2 lifecycle trust, round 2 - fixes T-029's four confirmed defects on the T-028 commit. Every runtime-state reader now validates the shape it depends on: wrong-shaped or empty tool-limits/heartbeat/attempt/verify records are diagnosable errors at read time, never 'no limits', 'no live orchestrator' or 'no evidence'; a malformed heartbeat blocks an orchestration claim (--force still takes over). Acceptance is bound: ledger.py set --status done requires a verify record naming the task, the last attempt number, the current requirements hash and the full artifact SHA, with that attempt exited - a stale PASS cannot accept; legacy records bind only what they carry (the file they live in plus the artifact). A live pid whose start identity is unconfirmed keeps the task locked: --stop refuses instead of killing a possibly reused pid or freeing the lock, --status reports blocked, tick surfaces a need; verified stop or verified identity releases. machine_capacity._alive uses the same pid + recorded start identity rule on every platform, so a reused pid no longer fools a stale lease. route._log and tasks.md writes are atomic (temp + os.replace)."

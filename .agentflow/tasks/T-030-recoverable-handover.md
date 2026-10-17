@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-max
 Stage: 5
-Depends on: T-028
+Depends on: T-050
 Branch: t-030-recoverable-handover
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-030-recoverable-handover
 Independent check: tester

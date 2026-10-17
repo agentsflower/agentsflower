@@ -1,5 +1,23 @@
 # Decision Log
 
+## 2026-10-17: 2.12.2 lifecycle trust round 2 - fixes T-029's confirmed defects
+
+Every runtime-state reader now validates the shape it depends on: wrong-shaped
+or empty tool-limits/heartbeat/attempt/verify records are diagnosable errors at
+read time, never "no limits", "no live orchestrator" or "no evidence"; a
+malformed heartbeat blocks an orchestration claim (--force still takes over).
+Acceptance is bound: ledger.py set --status done requires a verify record
+naming the task, the last attempt number, the current requirements hash and the
+full artifact SHA, with that attempt exited - a stale PASS cannot accept;
+legacy records bind only what they carry (the file plus the artifact). A live
+pid whose start identity is unconfirmed keeps the task locked: --stop refuses
+instead of killing a possibly reused pid or freeing the lock, --status reports
+blocked, tick surfaces a need; verified stop or verified identity releases.
+machine_capacity._alive uses the same pid + recorded start identity rule on
+every platform. route._log and tasks.md writes are atomic. Adopted from the
+accepted T-050 Result; the round-1 codex+devin reviews found the defects and
+the devin round-2 review proved the fixes live.
+
 ## 2026-10-17: Mandatory assessed-adequacy routing adopted; task pool extended
 
 New explicit human instruction (runtime file
