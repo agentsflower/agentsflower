@@ -185,3 +185,20 @@ T-034 bounded autonomy -> T-036 instructions/docs alignment -> T-038 evaluation/
 migration/release record), each with an independent tester contract written at
 result time. Approved under the dated human authorization. T-028 attempt 1
 launched on devin swe-2-high. No push, tag, publication or deployment.
+
+## 2026-10-17: New mandatory routing policy imported; pool extended to dashboard
+
+Human delivered required-routing-policy-2026-10-17.md + dashboard PLAN/
+DEVELOPER-CONTRACT/TESTER-CONTRACT drafts and ordered them queued and executed.
+Session resumed with T-028 still running (verified launcher pid 23604 + devin
+child, attempt alive; worker had committed 2c58157 and was writing its Result).
+Created project-owned docs/model-options.json (floor swe-2-high, Devin-first,
+group-scoped agy holds); key-file validated by existence; live Jev calls
+succeeded. Assessed all pending tasks via route.py and set headers to assessed
+adequate models (swe-2-max for T-030/32/34/36/40/44; swe-2-high for
+T-038/42/46/48). Imported durable requirements into project-rules.md and
+decisions.md. Created/approved T-040 (routing enforcement, depends T-034;
+T-036 re-pointed to T-040) and T-042 (mockup, independent), T-044/T-046/T-048
+(dashboard data/UI/integration, serialized after T-038 + mockup selection).
+Launched T-042 attempt 1 on devin (pid 68712). AGENTFLOW_DEVIN_ARGS verified
+non-downgrading for declared task models; no process override clearing needed.

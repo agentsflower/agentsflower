@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-high
+Model: swe-2-max
 Stage: 5
 Depends on: T-028
 Branch: t-030-recoverable-handover

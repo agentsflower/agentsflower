@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-high
+Model: swe-2-max
 Stage: 5
 Depends on: T-030
 Branch: t-032-completion-gate

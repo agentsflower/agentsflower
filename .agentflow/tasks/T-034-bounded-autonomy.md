@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-high
+Model: swe-2-max
 Stage: 5
 Depends on: T-032
 Branch: t-034-bounded-autonomy
