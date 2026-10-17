@@ -51,8 +51,12 @@ One or two sentences: what must be different.
 
 ## Acceptance criteria
 
-- [ ] checkable criterion 1
-- [ ] checkable criterion 2
+<!-- Every required criterion carries a stable `X-NN:` ID. The Result maps each ID to
+     `- <id>: pass | partial | unverified | fail - <evidence>`; file paths named as evidence
+     must exist inside this task's Allowed files. -->
+
+- [ ] C-01: checkable criterion 1
+- [ ] C-02: checkable criterion 2
 
 ## Checks
 

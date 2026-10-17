@@ -6,15 +6,20 @@
 Rules: .agentflow/docs/ai-handoff-protocol.md, "Task lifecycle" and "Git rules". Only the Orchestrator (or a
 Single Mode session) runs this, from the main folder with every repository on its main branch.
 
-Developer: gate.py verify -> a trial merge in every repository (`git merge-tree`, writes nothing) -> git merge --no-ff
-           <branch> in every repository -> ledger review/done -> git worktree remove -> git branch -d.
+Developer: gate.py verify -> a trial merge in every repository (`git merge-tree`, writes nothing) -> the
+           integrated check (the task's Checks run on a temporary trial-merge tree per repository) ->
+           git merge --no-ff <branch> in every repository -> ledger review/done -> git worktree remove ->
+           git branch -d.
 Tester:    gate.py verify -> ledger review/done with the Verifies commits (nothing to merge).
-Every step runs only when the previous one succeeded; a conflict found by the trial merge stops before any repository
-is merged, and a failed merge is aborted. The printed log says exactly which steps ran, so a partial run can be
-finished by hand. Nothing is force-deleted: worktree removal and `git branch -d` refuse unmerged or dirty state, and
-that refusal is reported, not overridden.
+Every step runs only when the previous one succeeded; a conflict found by the trial merge or a Check failing
+on the integrated result stops before any repository is merged, and a failed merge is aborted. The printed
+log says exactly which steps ran, and .agentflow/tasks/.runtime/<id>.accept.json durably records which
+repositories were integrated/merged: an interrupted multi-repository run is resumed from git state and that
+file, never claimed atomic. Nothing is force-deleted: worktree removal and `git branch -d` refuse unmerged
+or dirty state, and that refusal is reported, not overridden.
 """
 import argparse
+import json
 import subprocess
 import sys
 import tempfile
@@ -88,6 +93,22 @@ def to_done(tid, sha, dry):
     run([py, TOOLS / "ledger.py", "set", tid, "--status", "done", "--commit", sha], dry)
 
 
+def accept_progress(tid):
+    """Durable record of an interrupted acceptance: per-repository integrated/merged state. Resume reads
+    git state itself (`todo`); this file shows how far a run got - progress, not a claim of atomicity."""
+    p = FLOW_ROOT / "tasks" / ".runtime" / f"{tid}.accept.json"
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data.setdefault("integrated", {})
+                data.setdefault("merged", [])
+                return p, data
+        except (OSError, ValueError):
+            pass
+    return p, {"taskId": tid, "integrated": {}, "merged": []}
+
+
 def dirty(repo):
     """Tracked changes that could mix into a merge. Not counted: untracked files, the memory under .agentflow/, and in
     the memory repository the workspace repositories themselves (each is checked on its own). Reads `git status
@@ -150,7 +171,24 @@ def accept(tid, dry):
             continue
         run(["git", "merge-tree", "--write-tree", "HEAD", t["branch"]], dry, cwd=gate.repo_dir(r))
 
-    print("3. merge")
+    print("3. integrated check")
+    ppath, prog = accept_progress(tid)
+    if dry:
+        print("  (dry run) the task Checks run on a temporary trial-merge tree per repository")
+    else:
+        ppath.parent.mkdir(parents=True, exist_ok=True)
+        ip, ichecks, refs = gate.integrated_problems(t, shas, ppath.with_suffix(".log"))
+        for c in ichecks:
+            print(f"  integrated check exit {c['exit']}: {c['cmd']}")
+        bad = ip + [f"check failed on the integrated result (exit {c['exit']}): {c['cmd']}"
+                    for c in ichecks if c["exit"]]
+        for r in repos:
+            prog["integrated"][r] = {"ok": not bad}
+        gate.write_atomic(ppath, prog)
+        if bad:
+            raise Stop("the integrated result does not pass the task Checks: " + "; ".join(bad))
+
+    print("4. merge")
     for r in todo:
         try:
             run(["git", "merge", "--no-ff", t["branch"], "-m", f"Merge {tid}: {title or t['branch']}"], dry, cwd=gate.repo_dir(r))
@@ -159,11 +197,15 @@ def accept(tid, dry):
             done = todo[:todo.index(r)]
             raise Stop(f"merge of {t['branch']}{' in ' + r if r else ''} failed and was aborted"
                        + (f"; already merged: {', '.join(done)}" if done else "") + "; resolve it in a successor task")
+        if not dry:
+            if r not in prog["merged"]:
+                prog["merged"].append(r)
+            gate.write_atomic(ppath, prog)
 
-    print("4. ledger")
+    print("5. ledger")
     to_done(tid, gate.sha_text(shas), dry)
 
-    print("5. cleanup")
+    print("6. cleanup")
     remove_setup_links(t, t["worktree"], dry)
     for c in t["checkouts"]:
         remove_setup_links(t, c["path"], dry)

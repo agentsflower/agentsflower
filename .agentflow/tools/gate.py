@@ -2,6 +2,7 @@
 """Task gates: Task File parsing, launch preflight, acceptance verify, Stage check.
 
   python .agentflow/tools/gate.py verify T-007      acceptance evidence for one task; appends to .agentflow/tasks/.runtime/T-007.verify.json
+  python .agentflow/tools/gate.py done T-007        the completion gate: 'done' per the protocol, structured pass/fail (--out json)
   python .agentflow/tools/gate.py stage 2           every Stage 2 task done and its Checks pass on the main branch
 
 Used by .agentflow/tools/run-task.ps1 (pure logic here, side effects there):
@@ -16,12 +17,14 @@ lists product repositories (folders under the workspace root, which is a small m
 its repositories in `Repo:`, and commits are written `<repo>@<sha>, ...`.
 """
 import argparse
+import contextlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,6 +79,27 @@ def paths(body):  # first token of each bullet that looks like a path: "- `src/a
 
 def commands(body):
     return [m.group(1) for b in bullets(body) if (m := re.search(r"`([^`]+)`", b))]
+
+
+CRIT = r"[A-Z]+-\d+"  # a required criterion's stable ID, the "- [ ] X-NN: ..." contract form
+
+
+def criteria_ids(bullet_list):
+    """Stable IDs of the required criteria -> (ids in order, bullets without an ID)."""
+    ids, plain = [], []
+    for b in bullet_list:
+        m = re.match(rf"^(?:\[\s*[xX ]?\s*\]\s*)?({CRIT})\s*:", b)
+        (ids.append(m.group(1)) if m else plain.append(b))
+    return ids, plain
+
+
+def outcome_lines(result):
+    """Result outcome lines '- <id>: <verdict> - <evidence>' -> {ID: (verdict, evidence text)}."""
+    out = {}
+    for m in re.finditer(rf"(?m)^\s*-\s*(?:\[\s*[xX ]?\s*\]\s*)?({CRIT})\s*:\s*"
+                         rf"(pass|partial|unverified|fail)\b[ \t]*(?:-[ \t]*(.*?))?[ \t]*$", result):
+        out[m.group(1)] = (m.group(2), (m.group(3) or "").strip())
+    return out
 
 
 def glob_match(pattern, path):  # * and ** both match across '/': conservative
@@ -196,6 +220,7 @@ def parse(tid):
          "checks": commands(section(text, "Checks")), "acceptance": bullets(section(text, "Acceptance criteria")),
          "independent": field(head, "Independent check"), "target": "local", "env": {}, "setup": [],
          "headerHash": sha256(header(text)), "result": section(text, "Result")}
+    t["criteria"] = criteria_ids(t["acceptance"])[0]
     t["prompt"] = (f"Your role: .agentflow/roles/{t['role']}.md. Your task: {f}. "
                    "Follow .agentflow/docs/ai-handoff-protocol.md, section 'Starting a role session'. "
                    f"Write your Result into exactly this file ({f}), not into a copy inside your worktree, and do not commit it.")
@@ -230,7 +255,8 @@ def parse(tid):
         ct = cf.read_text(encoding="utf-8-sig")
         ch = header(ct)
         t["checked"] = {"id": m.group(1), "file": str(cf), "branch": field(ch, "Branch"),
-                        "worktree": field(ch, "Worktree"), "result": section(ct, "Result")}
+                        "worktree": field(ch, "Worktree"), "result": section(ct, "Result"),
+                        "allowed": paths(section(ct, "Allowed files"))}
         if not t["checked"]["worktree"]:
             raise TaskError(f"checked task {cf.name} has no Worktree")
         t["checked"]["repos"] = task_repos(ch, "developer")
@@ -341,6 +367,12 @@ def preflight(tid, manual, live, tool=None):
     for s, own in (("Acceptance criteria", t["acceptance"]), ("Checks", bullets(section(Path(t["file"]).read_text(encoding="utf-8-sig"), "Checks")))):
         if not [b for b in own if b not in bullets(section(tpl, s))]:
             bad.append(f"## {s} is empty or still the template text")
+    ids, plain = criteria_ids(t["acceptance"])
+    if t["acceptance"] and plain:
+        bad.append(f"criterion without a stable ID (write '- [ ] X-NN: ...'): {plain[0][:80]}")
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        bad.append(f"duplicate criterion ID(s): {', '.join(dup)}")
     bad += [f"env: {k} is set by the launcher, not by a Task File" for k in t["env"] if k.startswith("AGENTFLOW_")]
     bad += [f"Allowed files '{a}' overlaps Do not touch '{d}'" for a in t["allowed"] for d in t["denied"] if overlap(a, d)]
     for s in t["setup"]:
@@ -427,7 +459,8 @@ def preflight(tid, manual, live, tool=None):
 def worktree_copy_problems(t):
     """A developer wrote its Result into the Task File copy inside its worktree, or committed Task Files on its branch.
     The main Task File is the only one read at acceptance; a commit under .agentflow/tasks/ moves the branch past
-    Change and would merge memory through a product branch. _template.md is template-owned product, not a Task File."""
+    Change and would merge memory through a product branch. The product _template.md is template-owned, not a
+    Task File, so the audit excludes it; Task Files and .runtime/ state stay flagged."""
     bad = []
     for c in t["checkouts"]:
         copy = Path(c["path"]) / t["rel"]
@@ -486,11 +519,11 @@ def shell(cmd):
     return ["sh", "-c", cmd]
 
 
-def run_checks(t, cwd, log):
-    env = {**os.environ, **t["env"], "AGENTFLOW_TARGET": "local"}
+def run_checks(t, cwd, log, cmds=None):
+    env = {**os.environ, **(t.get("env") or {}), "AGENTFLOW_TARGET": "local"}
     out = []
     with open(log, "a", encoding="utf-8") as fh:
-        for c in t["checks"]:
+        for c in (t.get("checks") or []) if cmds is None else cmds:
             fh.write(f"\n$ {c}\n")
             fh.flush()
             r = subprocess.run(shell(c), cwd=cwd, env=env, stdout=fh, stderr=subprocess.STDOUT)
@@ -503,17 +536,131 @@ def verdict_problems(result):
     if v not in VERDICTS:
         return [f"Result Verdict '{v}': expected {' | '.join(VERDICTS)}"], v
     found = re.findall(r"(?m)^[ \t]*-.*?[ \t]-[ \t](pass|partial|unverified|fail)\b", result)  # "- <criterion> - <verdict> - ..."
+    found += re.findall(rf"(?m)^[ \t]*-[ \t]*{CRIT}[ \t]*:[ \t]*(pass|partial|unverified|fail)\b", result)  # "- <id>: <verdict> - ..."
     worst = max(found, key=VERDICTS.index) if found else None
     if worst and VERDICTS.index(worst) > VERDICTS.index(v):
         return [f"Verdict {v} but a criterion is {worst} (overall = worst criterion)"], v
     return [], v
 
 
-# --- verify: acceptance evidence for one task (protocol: Acceptance)
-def verify(tid):
-    t = parse(tid)
-    att = last_attempt(tid)
-    bad, checks, flagged = [], [], []
+def evidence_tokens(text):
+    """Path-looking tokens in an outcome line's evidence text; prose words are skipped."""
+    out = []
+    for m in re.finditer(r"`([^`]+)`|'([^']+)'|\"([^\"]+)\"|([^\s`'\"),;]+)", text):
+        tok = next(g for g in m.groups() if g is not None).strip().rstrip(".,;:")
+        if not tok:
+            continue
+        if "/" in tok or "\\" in tok or (re.match(r"^\.?[\w-]+(\.[\w-]+)+$", tok)
+                                        and not re.match(r"^\d+(\.\d+)+$", tok)):
+            out.append(tok)
+    return out
+
+
+def evidence_problems(t, outcomes):
+    """Every path declared as evidence stays inside the task's scope and exists. Scope = the task's
+    Allowed files (a tester: the checked task's) plus this task's own files under tasks/.runtime/."""
+    if t["role"] == "developer":
+        scope, where = t["allowed"], Path(t["worktree"] or "")
+    elif t["role"] == "tester":
+        scope, where = t["checked"]["allowed"], Path(t["checked"]["worktree"])
+    else:
+        scope, where = t["allowed"], None
+    bad = []
+    for cid, (verdict, ev) in outcomes.items():
+        for tok in evidence_tokens(ev):
+            rel = re.sub(r"^\./", "", tok.replace("\\", "/"))
+            if re.match(r"^([a-zA-Z]:[\\/]|/|~)", tok) or rel == ".." or rel.startswith("../"):
+                bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope")
+            elif rel.lower().startswith(".agentflow/tasks/.runtime/"):
+                name = rel.rsplit("/", 1)[-1]
+                if not name.startswith(t["id"] + "."):
+                    bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope "
+                               f"(.runtime file {name} belongs to another task)")
+                elif not (ROOT / rel).exists():
+                    bad.append(f"criterion {cid}: evidence '{tok}' not found under .agentflow/")
+            elif not any(overlap(a, rel.lower()) for a in scope):
+                bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope")
+            elif where is None:
+                bad.append(f"criterion {cid}: evidence '{tok}' has no artifact folder to exist in")
+            elif not (where / rel).exists():
+                bad.append(f"criterion {cid}: evidence '{tok}' not found in {where}")
+    return bad
+
+
+def criteria_map(t, outcomes):
+    return {cid: outcomes[cid][0] for cid in t["criteria"] if cid in outcomes}
+
+
+def base_heads(t):
+    """The main-branch HEAD per task repository at evaluation time - the base the evidence binds to."""
+    return {r: git("rev-parse", "HEAD", cwd=repo_dir(r)) for r in t["repos"]}
+
+
+@contextlib.contextmanager
+def detached_trees(refs):
+    """refs {repo: commit-ish} checked out as detached worktrees under one temp container (the single
+    repository "" uses the container itself); removed on exit."""
+    made = []
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            for r, ref in refs.items():
+                dest = str(Path(tmp) / r) if r else tmp
+                m = subprocess.run(["git", "-C", str(repo_dir(r)), "worktree", "add", "--detach", dest, ref],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace")
+                if m.returncode:
+                    raise TaskError(f"cannot check out a tree{' in ' + r if r else ''}: "
+                                    f"{(m.stderr or m.stdout).strip()}")
+                made.append((r, dest))
+            yield Path(tmp)
+        finally:
+            for r, dest in made:
+                subprocess.run(["git", "-C", str(repo_dir(r)), "worktree", "remove", "--force", dest],
+                               capture_output=True)
+                subprocess.run(["git", "-C", str(repo_dir(r)), "worktree", "prune"], capture_output=True)
+
+
+def integrated_problems(t, shas, log):
+    """Trial-merge the branch onto the current base per repository (`git merge-tree`, plus a temporary
+    commit for the merged tree - nothing is checked out or referenced) and run ## Checks on the combined
+    merged trees (E-03). -> (problems, checks run on the integrated result, refs per repository)."""
+    refs, problems = {}, []
+    for r in t["repos"]:
+        if git_ok("merge-base", "--is-ancestor", shas[r], "HEAD", cwd=repo_dir(r)):
+            refs[r] = git("rev-parse", "HEAD", cwd=repo_dir(r))
+            continue
+        m = subprocess.run(["git", "-C", str(repo_dir(r)), "merge-tree", "--write-tree", "HEAD", t["branch"]],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if m.returncode:
+            detail = (m.stderr or m.stdout).strip().splitlines()
+            problems.append(f"integrated check{' in ' + r if r else ''}: the branch does not merge onto the "
+                            f"current base (conflict: {detail[-1] if detail else 'merge-tree failed'})")
+            continue
+        cid = git("commit-tree", m.stdout.splitlines()[0], "-p", "HEAD", "-p", shas[r],
+                  "-m", f"{t['id']}: trial merge for the integrated check", cwd=repo_dir(r))
+        if not cid:
+            problems.append(f"integrated check{' in ' + r if r else ''}: cannot commit the trial-merge tree")
+            continue
+        refs[r] = cid
+    checks = []
+    if refs and not problems:
+        with detached_trees(refs) as d:
+            checks = run_checks(t, d, log)
+    return problems, checks, refs
+
+
+def base_failing(t, cmds, log):
+    """Which of these failing check commands also fail on the current base (E-05: failing before this
+    change)? -> the set of commands that fail there too."""
+    refs = {r: h for r in t["repos"] if (h := git("rev-parse", "HEAD", cwd=repo_dir(r)))}
+    if not refs or not cmds:
+        return set()
+    with detached_trees(refs) as d:
+        ran = run_checks(t, d, log, cmds=[c["cmd"] for c in cmds])
+    return {c["cmd"] for c in ran if c["exit"]}
+
+
+def verify_records(tid):
+    """The task's verify-record list (loaded or empty) plus where a new record's log goes."""
     RUNTIME.mkdir(parents=True, exist_ok=True)
     vpath = RUNTIME / f"{tid}.verify.json"
     try:
@@ -521,7 +668,28 @@ def verify(tid):
     except (OSError, ValueError) as e:
         raise TaskError(f"cannot read verify records {vpath.name}: {e}")
     n = len(records) + 1
-    log = RUNTIME / f"{tid}.verify.{n}.log"
+    return vpath, records, n, RUNTIME / f"{tid}.verify.{n}.log"
+
+
+def new_record(tid, n, t, att, sha, shas, bad, checks, flagged, outcomes, log, extra=None):
+    rec = {"n": n, "taskId": tid, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "attempt": att.get("n") if att else None, "role": t["role"], "headerHash": t["headerHash"],
+           "sha": sha, "shas": shas, "base": base_heads(t), "criteria": criteria_map(t, outcomes),
+           "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
+           "checksTouchedByTask": flagged, "log": str(log) if checks else None}
+    if extra:
+        rec.update(extra)
+    return rec
+
+
+# --- verify: acceptance evidence for one task (protocol: Acceptance)
+def evaluate(tid):
+    """The gates verify and done share, before ## Checks run: attempt state, Task File hash, Outcome
+    completed, one outcome line per required criterion (developer/deployer at 'pass'), evidence paths
+    in scope and existing, and the role-specific artifact gates. -> (t, att, bad, sha, shas, flagged, outcomes)"""
+    t = parse(tid)
+    att = last_attempt(tid)
+    bad, flagged = [], []
 
     if not att:
         bad.append("no attempt in runtime state (every attempt starts through .agentflow/tools/run-task.ps1)")
@@ -532,7 +700,15 @@ def verify(tid):
     outcome = result_field(t, "Outcome")
     if outcome != "completed":
         bad.append(f"Result Outcome is '{outcome}', needs 'completed'")
-    sha = t.get("sha")
+    outcomes = outcome_lines(t["result"])
+    for cid in t["criteria"]:
+        if cid not in outcomes:
+            bad.append(f"criterion {cid} has no outcome line in the Result "
+                       f"('- {cid}: pass | partial | unverified | fail - <evidence>')")
+        elif t["role"] != "tester" and outcomes[cid][0] != "pass":
+            bad.append(f"criterion {cid} is '{outcomes[cid][0]}' - a verdict worse than pass cannot be ignored")
+    bad += evidence_problems(t, outcomes)
+    sha, shas = t.get("sha"), t.get("shas")
 
     if t["role"] == "developer":
         shas = parse_shas(result_field(t, "Change"), t["repos"])
@@ -559,8 +735,6 @@ def verify(tid):
             if not bad:
                 bad += [f"changed file outside Allowed files: {p}" for p in changed if not any(overlap(a, p) for a in t["allowed"])]
                 flagged = [p for p in changed if any(p in c.replace("\\", "/").lower() for c in t["checks"])]
-                checks = run_checks(t, Path(t["worktree"]), log)
-                bad += [f"check failed (exit {c['exit']}): {c['cmd']}" for c in checks if c["exit"]]
                 ind = t["independent"] or ""
                 if ind.startswith("tester"):
                     want = (tid, sha_text(shas, short=True))
@@ -584,11 +758,17 @@ def verify(tid):
             if not (re.search(r"source=human\b.*target=prod\b", ap) and re.search(r"\bat=\S+", ap)
                     and all(v[:7] in ap for v in t["shas"].values())):
                 bad.append(f'prod needs "Approval: source=human target=prod sha={short} at=<time>" from the human in the Deployer session')
+    return t, att, bad, sha, shas, flagged, outcomes
 
-    rec = {"n": n, "taskId": tid, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "attempt": att.get("n") if att else None, "role": t["role"], "headerHash": t["headerHash"],
-           "sha": sha, "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
-           "checksTouchedByTask": flagged, "log": str(log) if checks else None}
+
+def verify(tid):
+    vpath, records, n, log = verify_records(tid)
+    t, att, bad, sha, shas, flagged, outcomes = evaluate(tid)
+    checks = []
+    if t["role"] == "developer" and not bad:
+        checks = run_checks(t, Path(t["worktree"]), log)
+        bad += [f"check failed (exit {c['exit']}): {c['cmd']}" for c in checks if c["exit"]]
+    rec = new_record(tid, n, t, att, sha, shas, bad, checks, flagged, outcomes, log)
     records.append(rec)
     write_atomic(vpath, records)
     print(f"{tid} verify #{n}: {'PASS' if not bad else 'FAIL'} (sha {sha}, attempt {rec['attempt']})")
@@ -599,6 +779,62 @@ def verify(tid):
     if flagged:
         print(f"  note: Checks use files changed by this task ({', '.join(flagged)}): read that diff before accepting")
     return not bad
+
+
+def bound_record(records, tid, att, t, sha, base):
+    """A `done` PASS still bound to this task, attempt, requirements, artifact and base - reusable
+    evidence, not re-measurement. A plain `verify` record is not reusable here: it never ran the
+    integrated-result check."""
+    return next((r for r in reversed(records)
+                 if r.get("ok") is True and r.get("gate") == "done"
+                 and r.get("taskId") == tid and att and r.get("attempt") == att.get("n")
+                 and r.get("headerHash") == t["headerHash"] and r.get("sha") == sha and r.get("base") == base),
+                None)
+
+
+# --- done: the single completion check (protocol: Acceptance), callable by acceptance, the launcher
+# --- and an optional platform hook; structured pass/fail, not just an exit code.
+def done(tid, out=None):
+    vpath, records, n, log = verify_records(tid)
+    t, att, bad, sha, shas, flagged, outcomes = evaluate(tid)
+    problems, checks, pre = list(bad), [], []
+    base = base_heads(t)
+    criteria = criteria_map(t, outcomes)
+
+    if t["role"] == "developer" and not bad:
+        reused = bound_record(records, tid, att, t, sha, base)
+        if reused:
+            write(out, {"task": tid, "ok": True, "reused": 1, "problems": [], "sha": sha,
+                        "criteria": reused.get("criteria") or criteria, "checks": reused.get("checks") or [],
+                        "preExisting": reused.get("preExisting") or [], "verifyRecord": reused.get("n")})
+            print(f"{tid} done: PASS (verify record #{reused.get('n')} still bound to this artifact and base)")
+            return True
+        checks = run_checks(t, Path(t["worktree"]), log)
+        fails = [(c, "the artifact") for c in checks if c["exit"]]
+        if not fails:
+            ip, ic, _refs = integrated_problems(t, shas, log)
+            problems += ip
+            checks += ic
+            fails += [(c, "the integrated result") for c in ic if c["exit"]]
+        if fails:
+            stale = base_failing(t, [c for c, _ in fails], log)
+            for c, where in fails:
+                tag = ("pre-existing failure (the current base fails it too)"
+                       if c["cmd"] in stale else "introduced by this change")
+                problems.append(f"check failed on {where} (exit {c['exit']}): {c['cmd']} - {tag}")
+                if c["cmd"] in stale:
+                    pre.append(c["cmd"])
+
+    rec = new_record(tid, n, t, att, sha, shas, problems, checks, flagged, outcomes, log,
+                     extra={"gate": "done", "preExisting": pre})
+    records.append(rec)
+    write_atomic(vpath, records)
+    write(out, {"task": tid, "ok": rec["ok"], "reused": 0, "problems": problems, "sha": sha,
+                "criteria": criteria, "checks": checks, "preExisting": pre, "verifyRecord": n})
+    print(f"{tid} done #{n}: {'PASS' if rec['ok'] else 'FAIL'} (sha {sha}, attempt {rec['attempt']})")
+    for p in problems:
+        print(f"  - {p}")
+    return rec["ok"]
 
 
 def _verifies(tid):  # (checked id, short commits) of a tester task whose Result Verdict is pass, else None
@@ -659,7 +895,7 @@ def main():
     sys.stderr.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("task", "preflight", "endcheck", "verify"):
+    for name in ("task", "preflight", "endcheck", "verify", "done"):
         p = sub.add_parser(name)
         p.add_argument("id")
         p.add_argument("--out")
@@ -682,6 +918,8 @@ def main():
             write(a.out, {"violations": endcheck(a.id)})
         elif a.cmd == "verify":
             return 0 if verify(a.id) else 1
+        elif a.cmd == "done":
+            return 0 if done(a.id, a.out) else 1
         elif a.cmd == "stage":
             return 0 if stage(a.n) else 1
     except TaskError as e:

@@ -2,6 +2,53 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.14.0 - 2026-10-17
+
+Acceptance becomes an artifact-bound, criteria-covered completion gate
+(improvement-plan section 3): required criteria carry stable IDs, evidence
+paths are validated against the task scope, the verify record also binds the
+base SHA(s) it was produced against, and `accept.py` runs the task's Checks
+on the trial-merge result before any repository merges.
+
+- Task Files: every required `Acceptance criteria` bullet carries a stable
+  `X-NN:` ID; `gate.py preflight` refuses a task whose criteria lack IDs or
+  repeat one. `.agentflow/tasks/_template.md` shows the form.
+- The Result maps every required criterion ID to
+  `- <id>: pass | partial | unverified | fail - <evidence>`; `gate.py verify`
+  fails when a required criterion has no outcome line or a worse-than-pass
+  verdict a role may not report (the Tester's Verdict stays its worst
+  criterion - a completed negative review remains representable). Evidence
+  written as file paths must exist inside the task's Allowed files (a Tester:
+  the checked task's scope; a task's own `tasks/.runtime/` files stay
+  citable).
+- The verify record binds the base SHA(s) the evidence was produced against:
+  a moved base, an edited header, a new attempt or a different artifact
+  invalidates it (the base moving to the task's own merge is the exception).
+  Records without the new fields bind only the artifact, per the documented
+  legacy rule.
+- `accept.py` runs an integrated check between the trial merge and the merge:
+  the Checks execute on a detached checkout of the `git merge-tree` result
+  per repository, and `.agentflow/tasks/.runtime/T-NNN.accept.json` records
+  per-repository progress so an interrupted multi-repository acceptance
+  resumes without claiming cross-repository atomicity.
+- The `gate.py endcheck` merge-history audit scopes Task Files correctly: the
+  product `.agentflow/tasks/_template.md` is template-owned, not a worker
+  Task File, so a branch commit touching only it no longer fails the audit.
+  Committed `T-*.md` files and `tasks/.runtime/` state still do.
+- `python .agentflow/tools/gate.py done T-NNN` (or `agentflow done T-NNN`) is
+  the single completion check acceptance, the launcher and an optional
+  platform hook call: structured pass/fail reasons via `--out`, a still-bound
+  PASS is reused instead of re-measured, and a check that fails on the base
+  too is reported as a pre-existing failure, separate from one this change
+  introduced.
+- Migration for installed projects: `install.py --update` ships the new
+  `gate.py`, `accept.py`, `ledger.py`, `cli.py`, `_template.md` and the
+  updated protocol. Write new Task Files with `X-NN:` criterion IDs - a
+  launch (or a new attempt of an old task) is refused without them; results
+  already written keep their shape, and verify records predating
+  `base`/`criteria` bind only the artifact under the legacy rule. No data
+  migration is needed.
+
 ## 2.13.3 - 2026-10-17
 
 Merge-history audit scope fix: a committed `.agentflow/tasks/_template.md`

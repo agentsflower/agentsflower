@@ -44,7 +44,7 @@ Resume: none
 
 ## Acceptance criteria
 
-- [ ] probe
+- [ ] P-01: probe
 
 ## Checks
 
@@ -160,6 +160,29 @@ class WorktreeCopyTests(unittest.TestCase):
         self.commit(self.wt, "own work")
         git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "b1", "b2", "-m", "octopus")
         self.assertTrue(any("octopus" in x for x in self.problems()), self.problems())
+
+    def test_product_template_commit_is_not_a_task_commit(self):
+        """_template.md is template-owned product (protocol: What goes where), not a worker Task File."""
+        (self.wt / ".agentflow/tasks/_template.md").write_text("# edited template\n", encoding="utf-8")
+        self.commit(self.wt, "template edit")
+        self.assertEqual(self.problems(), [])
+
+    def test_template_edit_plus_task_file_flags_only_the_task_commit(self):
+        """T-032 scenario: a branch carrying a _template.md change and a real Task-File
+        commit is flagged for the Task File only."""
+        (self.wt / ".agentflow/tasks/_template.md").write_text("# edited template\n", encoding="utf-8")
+        self.commit(self.wt, "template edit")
+        (self.wt / ".agentflow/tasks/T-002-other.md").write_text("# T-2\n", encoding="utf-8")
+        self.commit(self.wt, "task file")
+        found = [x for x in self.problems() if "commits Task Files" in x]
+        self.assertEqual(len(found), 1, found)
+
+    def test_runtime_state_commit_still_rejected(self):
+        rt = self.wt / ".agentflow" / "tasks" / ".runtime"
+        rt.mkdir()
+        (rt / "T-001.json").write_text("{}\n", encoding="utf-8")
+        self.commit(self.wt, "runtime state")
+        self.assertTrue(any("commits Task Files" in x for x in self.problems()))
 
     def test_result_in_the_copy_and_its_commit_are_reported(self):
         copy = self.wt / ".agentflow" / "tasks" / "T-001-probe.md"

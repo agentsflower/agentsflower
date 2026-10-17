@@ -1026,7 +1026,7 @@ Resume: none
 
 ## Acceptance criteria
 
-- [ ] checked
+- [ ] C-01: checked
 
 ## Checks
 

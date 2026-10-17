@@ -137,6 +137,11 @@ class PassthroughTests(unittest.TestCase):
         argv, _ = self.calls[0]
         self.assertEqual(argv[1:], [str(self.root / ".agentflow" / "tools" / "gate.py"), "verify", "T-001"])
 
+    def test_done_routes_to_gate_done(self):
+        self.assertEqual(self.run_cli("done", "T-001"), 7)
+        argv, _ = self.calls[0]
+        self.assertEqual(argv[1:], [str(self.root / ".agentflow" / "tools" / "gate.py"), "done", "T-001"])
+
     def test_ledger_and_accept_passthrough(self):
         self.assertEqual(self.run_cli("ledger", "set", "T-001", "--status", "ready"), 7)
         self.assertEqual(self.run_cli("accept", "T-001", "--dry-run"), 7)
