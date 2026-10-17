@@ -90,4 +90,30 @@ in an isolated env and bound the supported major dependency range.
 - `python -m unittest discover -s .agentflow/tests` - core regression suite.
 
 ## Result
+Outcome: completed
+Change: 1665318 on t-005-mcp-server
+Files:
+- .agentflow/tools/mcp_server.py - new optional stdio MCP server on the official `mcp` SDK: agentflow_status/get_task/query_ledger (read-only hints), agentflow_run_gate (real gate.py, not read-only), agentflow_accept_task only behind --enable-orchestrator-tools; strict task-id/check-type/role/limit validation; no-shell subprocesses; missing SDK -> exit 2 with install-extra diagnostic on stderr
+- .agentflow/tools/cli.py - new `agentflow mcp` passthrough to the project's mcp_server.py; install help mentions --mcp/--mcp-client
+- .agentflow/tools/install.py - `--mcp`/`--mcp-client` (claude -> .mcp.json, cursor -> .cursor/mcp.json): merges the agentflow entry into the client's project config preserving foreign keys/servers, refuses malformed JSON and conflicting unmanaged agentflow entries before writing, targets the installed server with privileged tools off and no credentials; dry-run writes nothing
+- .agentflow/tests/test_mcp_server.py - SDK-independent tests: input rejection, missing-SDK diagnostic, real gate subprocess, opt-in surface/annotations (SDK-gated)
+- .agentflow/tests/check_mcp.py - explicit integration: disposable venvs provision released `mcp>=2.3,<3` + packaged wheel; proves the missing-SDK diagnostic, a real stdio handshake/list-tools/read-only calls, rejected inputs, accept absent by default/present with the flag, and `agentflow --project <dir> mcp` through packaged resources
+- .agentflow/tests/test_install.py - MCP merge preservation, idempotency, malformed/conflicting refusals, cursor path, opt-in and dry-run coverage
+- pyproject.toml - `mcp` extra `mcp>=2.3,<3` (released 2.x line, Python >=3.10)
+- .github/workflows/ci.yml - new `mcp` job (needs: tests) running check_mcp.py on ubuntu/windows
+- .agentflow/docs/release-validation.md - records the new CI job
+- .agentflow/VERSION, AGENTS.md - 2.11.13
+- CHANGELOG.md - 2.11.13 entry with migration notes
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_mcp_server.py` -> pass (13 passed / 0 failed; 3 SDK-gated skips in this stdlib interpreter)
+- `python -m unittest discover -s .agentflow/tests -p test_install.py` -> pass (15 passed / 0 failed)
+- `python .agentflow/tests/check_mcp.py` -> pass (all checks; real mcp 2.3.0 handshake, list-tools, tool calls, opt-in surface, packaged CLI entry)
+- `python -m unittest discover -s .agentflow/tests` -> pass (189 passed / 0 failed, 3 skipped)
+Criteria without a command:
+- M-04b: Claude Code project config is `.mcp.json`, Cursor's is `.cursor/mcp.json` (verified against current vendor docs; installer docstring states `.mcp.json` is not auto-discovered by Cursor). `--mcp-client` selects the path; foreign-entry preservation tested for both.
+- M-06: version bumped to 2.11.13, AGENTS.md/CHANGELOG migration notes synchronized; decisions.md entry proposed below (state/ is outside Allowed files).
+Found, not fixed:
+- Tool results are returned as JSON TextContent (the SDK does not emit structuredContent for bare `dict` returns by default); acceptable and asserted by check_mcp.
+Proposed memory updates:
+- decisions.md (2026-10-17): MCP support ships as an optional extra on the released official SDK (`mcp>=2.3,<3`) instead of a custom JSON-RPC fallback or unreleased main; privileged accept stays behind an explicit startup flag documented as operator control, not caller-role proof; client config written only on explicit `--mcp`, per-client paths (.mcp.json / .cursor/mcp.json), refusing to overwrite unmanaged entries.
 

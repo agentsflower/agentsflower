@@ -1,13 +1,11 @@
 # Current Step
 
-2026-10-17: main is 2.11.11, accepted T-024 bootstrap and T-022 reliability fixes.
-T-023 independent and acceptance full suite 158 pass. No active workers now.
-Human explicitly authorizes all remaining v2.12.0 local implementation/testing.
+2026-10-17: main is 2.11.12 + T-005 branch. T-026, T-003 accepted; T-005 dev
+completed at 1665318, Tester T-006 running (attempt 1). Human explicitly
+authorizes all remaining v2.12.0 local implementation/testing.
 
-NEXT: T-026 ready merges preserved CI-only 6fe56f3 onto repaired main; run checks,
-accept via accept.py. Then T-003 package/CLI -> T-004 independent review -> accept;
-T-005 optional official SDK MCP -> T-006 independent review -> accept;
-T-007 English metrics/dashboard -> T-008 visual review + real demo screenshot ->
+NEXT: T-006 verdict -> if pass, accept T-005 via accept.py; then launch T-007
+English metrics/dashboard -> T-008 visual review + real demo screenshot ->
 accept; T-010 English/Russian docs + prepared 2.12.0 -> T-011 final LOCAL review.
 Create Tester contracts with exact actual SHAs as developer Results arrive.
 
