@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Local project distribution name: the package is built from this repository
+# (python -m build); it is not published on PyPI under this name.
+name = "agentflow-sdlc"
+dynamic = ["version"]
+description = "AgentFlow: task-contract workflow template (.agentflow/) with a unified CLI"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+# Runtime is Python 3.10+ stdlib only; packaging tools (setuptools, build) are
+# development tooling, not runtime dependencies. Optional extras only:
+dependencies = []
+
+[project.optional-dependencies]
+build = ["build>=1.2", "setuptools>=68"]
+
+[project.scripts]
+agentflow = "agentflow.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# version is `dynamic` and supplied by setup.py from .agentflow/VERSION (single source)

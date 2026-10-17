@@ -2,6 +2,29 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.12 - 2026-10-17
+
+- New distributable package `agentflow-sdlc` (`pyproject.toml` + `setup.py`, setuptools; local project
+  distribution name, not a PyPI claim): `python -m build` produces a wheel and an sdist that carry
+  `agentflow/template/` -- the installer-owned `.agentflow` files generated at build time from the single
+  source (no second tracked tree, no state/, task contracts, project rules/plan, runtime files or
+  maintainer root instructions). Runtime is Python 3.10+ stdlib only; `build`/`setuptools` are development
+  tooling. A wheel built from the sdist reuses the generated tree, so neither artifact needs the checkout.
+- New unified CLI `.agentflow/tools/cli.py` (also the `agentflow` console entry of the package):
+  `install` (all installer flags), `run T-NNN --role <role>` (the role must match the Task File -- a
+  mismatch starts nothing -- and the deployer always launches `--manual`), `gate`/`accept`/`ledger`
+  passthrough, `dashboard [--open]`, `--version`, and `--project <dir>` for project discovery. Project
+  commands walk up to an installed `.agentflow` (protocol file plus `template-source.json` or `state/`),
+  run that project's own tool scripts without a shell and keep their exit codes; the bundled memory inside
+  site-packages is never a project.
+- `.agentflow/tests/check_package.py` is the explicit build integration (not in unittest discover):
+  disposable venvs provision `build`/`setuptools`, exercise the wheel and the sdist outside the source,
+  install and update a git project on a path with spaces, and check provenance, preservation and zero
+  core runtime dependencies. `.agentflow/tests/test_cli.py` covers routing and refusal paths.
+- Migration: update the installed template with `install.py --update` (delivers `tools/cli.py`; the
+  `agentflow` command additionally requires building and installing `agentflow-sdlc` locally). No
+  configuration changes are needed.
+
 ## 2.11.11 - 2026-10-17
 
 - `machine_capacity.py` hardens the Windows registry write: `os.replace` of `registry.json` retries only
@@ -191,10 +214,10 @@ editing rules. User-global files are never changed by the installer.
 
 ## 2.11.0 - 2026-10-10
 
-- New `.agentflow/tools/machine_capacity.py`: an OS-locked registry at `%LOCALAPPDATA%\AgentFlow\machine\registry.json` (per OS account) coordinates every AgentFlow project on the machine — an atomic tool-slot claim before a launch (default: one Codex machine-wide; `AGENTFLOW_MACHINE_<TOOL>_MAX` and a project's `- parallel: <tool>=<n>` tighten it; the lowest active rule wins), a `PORT` reservation for workers, tool-limit times shared between projects, pending-claim handoff to the worker process, and dead-PID lease cleanup. `run-task.ps1` and `conductor.ps1` claim, activate and release leases; `tick.py` shares observed limits machine-wide and skips tools without capacity in `next-orchestrator`; a busy slot waits and is retried on a later round instead of failing. Found in a project: two AgentFlow projects on one machine could both start a Codex session on the single Windows sandbox account — the failure 2.10.0 guards inside one project.
-- `route.py` asks Jev a third question — how much reasoning effort a task needs — and deterministic code maps the generic tier to a level the chosen model supports: `efforts` lists the CLI's levels, `model_by_effort` holds concrete effort-specific model ids (Devin, the installed Antigravity), `default_effort` sets the fallback. Routing confidence is the lower of model and effort confidences. Claude takes `--effort`; `model-options.json` stubs and `typesafe.md` show the new shape.
+- New `.agentflow/tools/machine_capacity.py`: an OS-locked registry at `%LOCALAPPDATA%\AgentFlow\machine\registry.json` (per OS account) coordinates every AgentFlow project on the machine -- an atomic tool-slot claim before a launch (default: one Codex machine-wide; `AGENTFLOW_MACHINE_<TOOL>_MAX` and a project's `- parallel: <tool>=<n>` tighten it; the lowest active rule wins), a `PORT` reservation for workers, tool-limit times shared between projects, pending-claim handoff to the worker process, and dead-PID lease cleanup. `run-task.ps1` and `conductor.ps1` claim, activate and release leases; `tick.py` shares observed limits machine-wide and skips tools without capacity in `next-orchestrator`; a busy slot waits and is retried on a later round instead of failing. Found in a project: two AgentFlow projects on one machine could both start a Codex session on the single Windows sandbox account -- the failure 2.10.0 guards inside one project.
+- `route.py` asks Jev a third question -- how much reasoning effort a task needs -- and deterministic code maps the generic tier to a level the chosen model supports: `efforts` lists the CLI's levels, `model_by_effort` holds concrete effort-specific model ids (Devin, the installed Antigravity), `default_effort` sets the fallback. Routing confidence is the lower of model and effort confidences. Claude takes `--effort`; `model-options.json` stubs and `typesafe.md` show the new shape.
 - Usage-limit detection also covers disabled subscription or account access ("subscription access ... disabled", "ask your admin to enable access"): the same temporary-unavailability path as a quota, recorded machine-wide, so the next configured tool takes over at once and the preferred one is retried after its recorded reset. The conductor retries `next-orchestrator --skip` when a claim loses a race.
-- New `.agentflow/tools/upstream.py` keeps the template itself current: it compares each installed project with its recorded template in both directions — a template-owned file that differs at the same version is an upstream candidate, a missing or older file means `install.py --update`, a project addition inside a template-owned directory is reviewed as a new template file or kept project-owned. `install.py` records the template path and version in `.agentflow/template-source.json`; `machine_capacity.py` keeps the known project roots (`projects` command); the conductor runs `upstream.py --check` for its project once a day and notifies on drift. Changes that flow upstream are generalized first (protocol, "Installing or updating AgentFlow").
+- New `.agentflow/tools/upstream.py` keeps the template itself current: it compares each installed project with its recorded template in both directions -- a template-owned file that differs at the same version is an upstream candidate, a missing or older file means `install.py --update`, a project addition inside a template-owned directory is reviewed as a new template file or kept project-owned. `install.py` records the template path and version in `.agentflow/template-source.json`; `machine_capacity.py` keeps the known project roots (`projects` command); the conductor runs `upstream.py --check` for its project once a day and notifies on drift. Changes that flow upstream are generalized first (protocol, "Installing or updating AgentFlow").
 - `test_machine_capacity.py`, `test_upstream.py`; `test_route.py`, `test_tick.py`, `test_conductor.py`, `test_launcher_args.py`, `test_parallel.py` cover the new behavior.
 
 Migration from 2.10.x: `install.py --update`. To route effort, take the new `efforts` / `model_by_effort` fields into `.agentflow/docs/model-options.json` (the stub shows the shape; options without them behave as before). Sessions started by an older version hold no lease; nothing to do for them.
