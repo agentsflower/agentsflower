@@ -202,3 +202,4 @@ T-036 re-pointed to T-040) and T-042 (mockup, independent), T-044/T-046/T-048
 (dashboard data/UI/integration, serialized after T-038 + mockup selection).
 Launched T-042 attempt 1 on devin (pid 68712). AGENTFLOW_DEVIN_ARGS verified
 non-downgrading for declared task models; no process override clearing needed.
+2026-10-17: Recorded AgentFlow-only scope and no WatermarkRemover rollback. Restarted only foreground Devin coordinator to deliver the boundary; preserved active Tester T-053 and worker artifacts.

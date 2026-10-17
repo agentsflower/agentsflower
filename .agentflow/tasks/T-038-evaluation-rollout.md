@@ -44,7 +44,7 @@ This is the last Stage 5 implementation task.
 - README.md, GUIDE.md, GUIDE.ru.md, RELEASE_NOTES.md
 - .agentflow/roles/, .agentflow/commands/, .claude/commands/
 - pyproject.toml, setup.py, MANIFEST.in, .agentflow/dashboard/
-- other projects and their machine leases (the pilot update after this release is the Orchestrator's separate step, not this task)
+- other projects and their machine leases (repository-only scope since 2026-10-17: no external rollout exists; all installer/migration validation happens in disposable AgentFlow fixtures)
 
 ## Setup
 
@@ -63,7 +63,7 @@ This is the last Stage 5 implementation task.
 - [ ] V-01: Reproducible scenario fixtures cover the plan's named cases with disposable repositories only: a bug-fix task, a contract-change task, a quota/limit recovery (simulated), and an interrupted-merge recovery. Simulated-process tests are labeled as such in their names/docstrings; anything that needs a real platform is skipped with a stated reason, never faked.
 - [ ] V-02: A migration test proves `install.py --update` onto a project with open tasks preserves ledger statuses, open Task Files, project-owned docs and settings, and applies the template-side migration notes recorded in the Stage 5 CHANGELOG entries.
 - [ ] V-03: release-validation.md reflects the Stage 5 reality: what is locally verified, what needs remote CI, what is simulation-only. The prior remote-CI failure (run 39026298541: windows-latest and macos-latest test jobs fail while ubuntu passes) is recorded as a known evidence gap, not silently dropped.
-- [ ] V-04: CHANGELOG consolidates the Stage 5 releases with honest migration notes for installed projects; VERSION is the final Stage 5 version; AGENTS.md block matches. The release does not claim a pilot rollout that has not happened yet (the Orchestrator performs it after acceptance).
+- [ ] V-04: CHANGELOG consolidates the Stage 5 releases with honest migration notes for installed projects; VERSION is the final Stage 5 version; AGENTS.md block matches. The release claims no external rollout: repository-only scope since 2026-10-17 means none exists, and unmet external criteria are recorded as out of scope, never fabricated as done.
 - [ ] V-05: Full suite passes verbatim plus the new scenario tests. Propose dated decisions.md text in the Result.
 
 ## Checks

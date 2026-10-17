@@ -90,3 +90,39 @@ agy Gemini hold does not also block agy Claude/GPT (or vice versa).
 - `python -m unittest discover -s .agentflow/tests` - mandatory full regression suite.
 
 ## Result
+Outcome: completed
+Change: f6d746bec79dc703df4b57f15c7b982b44c5fdc5 on t-030-recoverable-handover
+Files:
+- .agentflow/tools/limit_detection.py (new) - shared provider/account limit detector: strong phrases count at any exit code, weak quota words need failure evidence, quoted subject matter skipped; CLI `--exit-code` for conductor.ps1; `detect_detail` returns (phrase, "account"|"quota")
+- .agentflow/tools/quota_groups.py (new) - `quota_group` resolution from model-options.json: `group_for(tool, model)`, `default_group(tool)` (the option named after the tool), CLI for conductor.ps1
+- .agentflow/tools/run_task.py - shared detector for `limitHit`/`limitKind`/`limitPhrase`; `stopReason` classification; `quotaGroup` on attempts; leftover-children takeover block (parent chain + POSIX tool session + Windows job object); bounded `recovery` capture; `Resume:` handling; one-line handover in worker prompt and `--manual` output
+- .agentflow/tools/tick.py - shared detector replaces LIMIT_RE; group-scoped `record_limit`/`limit_end`/`limited`, `limit --group`, `limit-migrate`; `active_limits`; group-aware `decide`/`learn_limits`/`use_backup`/`next_orchestrator`/`run`; dead-attempt need reports leftover managed processes
+- .agentflow/tools/machine_capacity.py - `_limit_key`/`_limit_end` scoping, `claim --group`, `record_limit`/`limit_until`/`has_capacity` group params, `move-limit`
+- .agentflow/tools/gate.py - parses `Tool`/`Resume` fields, computes task `quotaGroup`, launch-tool override in preflight
+- .agentflow/tools/conductor.ps1 - `Test-LimitLog` via the shared detector; `Start-Orchestrator` claims with `--group` of the tool default group
+- .agentflow/docs/model-options.json - `agy` option (CLI default model) defining the `agy-gemini` default group
+- .agentflow/docs/ai-handoff-protocol.md - Terms (quota group), Runtime state (new attempt fields), Recovery (classification, recovery record, leftover block, Resume semantics), orchestration item 3 and 3a, Launching workers 6
+- .agentflow/tests/test_limit_detection.py (new), test_quota_groups.py (new), test_run_task.py (stopReason assertions + 5 recovery tests), test_tick.py (shared-detector call), test_conductor.py (fixture copies the new shared tools)
+- .agentflow/VERSION 2.13.0, AGENTS.md version line, CHANGELOG.md entry with migration notes
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_limit_detection.py` -> pass (14 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_quota_groups.py` -> pass (21 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_run_task.py` -> pass (41 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_tick.py` -> pass (23 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` -> pass (263 passed / 0 failed, 3 skipped - platform-specific)
+Criteria without a command:
+- H-01: covered by test_limit_detection.py plus run_task/conductor integration tests; the regex LIMIT_RE copies are deleted from run_task.py and tick.py, and conductor.ps1 calls the shared CLI.
+- H-02: covered by test_quota_groups.py (group scoping, tool-wide fallback, legacy-hold migration, next-orchestrator) and test_run_task.test_group_scoped_limit_blocks_and_quota_group_is_recorded; the `agy` option gives unmodelled agy the `agy-gemini` group, and `limit-migrate` rescopes the recorded tool-wide agy hold so a Gemini probe stays possible.
+- H-03: `classify_stop` uses only launcher facts (hint from the stop path, `limitHit`, "launch error:" prefix, end-check violations, exit code); asserted in test_run_task for stopped/timeout/limit/verification/implementation/completed.
+- H-04: covered by test_orphaned_descendant_blocks_the_next_launch plus the existing unconfirmed-pid tests; `--stop` and a new launch both refuse with a diagnosable error while a managed process still runs.
+- H-05: covered by test_failed_attempt_captures_drafts_and_hands_over and test_a_dead_workers_attempt_recovers_and_the_successor_is_told; `capture_recovery` records paths/status only (RECOVERY_MAX_FILES=200 bound), never file contents, and runs even with no commit and no Result.
+- H-06: covered by test_resume_sha_keeps_drafts_bad_sha_refuses_and_start_fresh_resets: `Resume: <sha>` requires ancestry of the worktree HEAD and keeps drafts; `start fresh` resets/cleans only that worktree; the successor's record and prompt carry the handover.
+- H-07: VERSION 2.13.0, AGENTS.md block synced, CHANGELOG migration notes written (install.py --update ships the two new tools via the template-owned tools/ dir; existing tool-wide holds keep working). decisions.md text proposed below.
+Found, not fixed:
+- .agentflow/tools/dispatch.py (not in Allowed files) still views holds tool-wide: it may issue a grant for a group-held tool, which the scoped `claim` then refuses and tick.run releases - a wait, never a blocked launch. Pinned by test_quota_groups.DispatchGroupTests.
+- .agentflow/tools/conductor-panel.ps1 displays scoped `tool:group` keys verbatim (generic iteration); no functional change needed.
+- install.py's model-options.json stub deliberately omits `quota_group` (optional field; absent = tool-wide semantics), matching upstream practice.
+- Attempt 1 of this task hit the 2400 s AGENTFLOW_WORKER_TIMEOUT mid-documentation; this attempt (2) reviewed, completed and verified its draft. The worktree draft was preserved under the task's own recovery rules.
+Proposed memory updates:
+- decisions.md: "2026-10-17 - T-030 (2.13.0): one shared provider-limit detector (limit_detection.py) now judges worker, tick and conductor logs - two signal classes (strong provider-directed phrasing at any exit code, weak quota words only with failure evidence) replaced three diverging regex copies that misread reports about product quotas. Observed holds are scoped to model quota groups (optional quota_group in model-options.json, hold key '<tool>:<group>'); account/access failures stay tool-wide. Attempts carry a classified stopReason and a bounded paths-only recovery record; `Resume: <sha>` continues the preserved draft, `start fresh` discards only that worktree; a successor is refused while managed children of the previous worker still run. Rejected: per-caller regexes (already diverged); teaching dispatch.py quota groups (out of scope - its tool-wide grant degrades to a wait at the scoped claim, pinned by tests)."
+- known-issues.md: the 2026-10-03 entry ("`limitHit` is a text match... Reopen if a tool reports limits in a structured way") is superseded by limit_detection.py at 2.13.0 - worth annotating when the Orchestrator next updates it.

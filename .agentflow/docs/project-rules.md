@@ -26,10 +26,14 @@ Workflow, role ownership and communication: [protocol](ai-handoff-protocol.md).
 - Align all affected documentation with accepted behavior through scoped Developer
   tasks, including README, English/Russian guides, protocol, roles/tool notes and
   migration/release documentation. Serialize shared release metadata.
-- The planned local WatermarkRemover pilot update is authorized after reading its
-  rules and checking active writers/local changes. Preserve project-owned state,
-  settings and open tasks; use installer dry-run. Conflicts require resolution,
-  never overwriting another writer or changing production.
+- Repository-only scope (explicit human clarification, 2026-10-17): all further
+  work is restricted to AgentFlow and its own task/disposable test checkouts.
+  WatermarkRemover is a separate project: no rollback of the previous update
+  and no further changes, updates, commits or worker launches there.
+  No modifications or rollout in any other product repository. Earlier pilot
+  references are historical/deferred scope, never current authorization.
+  Validate installer/migration/rollout in disposable AgentFlow fixtures;
+  keep any unmet external rollout criterion explicitly out of scope.
 - No tags, publication or deployment. The earlier push authorization covered
   completed v2.12.0 origin/main; it does not authorize future stage pushes.
 

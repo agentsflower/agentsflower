@@ -68,9 +68,9 @@ the shipped behavior.
 ## Acceptance criteria
 
 - [ ] I-01: The wheel/sdist carry every new dashboard asset (roadmap page, mockups excluded or explicitly justified); a package built from the sdist reproduces them outside the source checkout; zero new runtime dependencies.
-- [ ] I-02: install.py --update delivers the new dashboard files to an installed project and preserves project-owned plans, state, Task Files and settings; legacy project-plan syntax needs no migration; new optional metadata never overwrites project-owned content. Tested against a disposable installed project with an old-format plan.
+- [ ] I-02: install.py --update delivers the new dashboard files to a disposable fixture project (a scratch directory under temp, never a real installed project - repository-only scope) and preserves project-owned plans, state, Task Files and settings; legacy project-plan syntax needs no migration; new optional metadata never overwrites project-owned content. Tested against a disposable fixture carrying an old-format plan.
 - [ ] I-03: Documentation synchronized and truthful: dashboard README data contract and UI-RULES deltas, protocol dashboard section, root README/GUIDE.md/GUIDE.ru.md (roadmap view, the build/open command, snapshot rollback), RELEASE_NOTES and release-validation.md reflect exact verification status; no invented CI results, screenshots or listings.
-- [ ] I-04: `python .agentflow/dashboard/build.py` on a fresh installed project produces the full page set offline; the dashboard command (cli.py) exposes the roadmap page where applicable.
+- [ ] I-04: `python .agentflow/dashboard/build.py` on a fresh disposable fixture install produces the full page set offline; the dashboard command (cli.py) exposes the roadmap page where applicable.
 - [ ] I-05: VERSION/AGENTS block/CHANGELOG aligned as the Stage 5 dashboard release with honest migration notes for installed projects. Propose dated decisions.md text in the Result.
 - [ ] I-06: Full suite passes verbatim plus check_package.py.
 
