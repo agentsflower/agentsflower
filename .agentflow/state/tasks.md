@@ -18,12 +18,14 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-021 | Verify Linux defect repairs on a real kernel | 6 | tester | devin | done | T-020 | bafc2a02060146c0cf880e27bd66e4217d878399 | Same tool necessary: Codex conserved per human routing, agy/claude limited; replays T-019 Docker method on T-020 SHA | 2026-10-16 21:18 |
 | T-022 | Harden registry writes and conductor environment handover | 6 | developer | devin | done | T-024 | 0420265a1e2a5a35136f3b80039adc2bb8a5a177 | 0420265 exact artifact; developer 158 tests pass; T-023 independent review required | 2026-10-17 07:01 |
 | T-009 | Prepare multi-OS public CI | 6 | developer | devin | rejected | T-024 |  | Successor T-026: integrate preserved 6fe56f3 after accepted T-022 baseline repair; no CI config defect found | 2026-10-17 06:51 |
-| T-003 | Build distributable template package and unified CLI | 6 | developer | devin | ready | T-022,T-026 |  |  | 2026-10-17 06:51 |
+| T-003 | Build distributable template package and unified CLI | 6 | developer | devin | in progress | T-022,T-026 |  |  | 2026-10-17 07:13 |
 | T-024 | Repair noninteractive probe trust flags | 6 | developer | codex | done |  | 183171c19e2e115dfdc6f23af92b42471134e3af | 183171c exact probe-argv repair; native manual adapter; full-suite conductor timing flake disclosed | 2026-10-17 06:39 |
 | T-005 | Optional official-SDK MCP server and safe installer configuration | 6 | developer | devin | ready | T-003 |  |  | 2026-10-17 06:27 |
 | T-007 | Honest telemetry and English dashboard | 6 | developer | devin | ready | T-005 |  |  | 2026-10-17 06:27 |
 | T-010 | English public documentation and prepared v2.12.0 release | 6 | developer | devin | ready | T-007,T-008,T-026 |  |  | 2026-10-17 06:51 |
 | T-025 | Verify the narrow probe bootstrap | 6 | tester | codex | done | T-024 | 183171c19e2e115dfdc6f23af92b42471134e3af | Attempt 2: exact same artifact; reuse 27/152 pass evidence, one bounded B03 recovery call only | 2026-10-17 06:36 |
-| T-026 | Integrate CI after runtime baseline repair | 6 | developer | devin | ready | T-022 |  | Approved recovery successor of T-009 | 2026-10-17 06:51 |
+| T-026 | Integrate CI after runtime baseline repair | 6 | developer | devin | done | T-022 | a0b9c697a36e9d6bc5b0f94eaeb61fef96d1798c | Approved recovery successor of T-009 | 2026-10-17 07:12 |
 | T-023 | Independently verify runtime reliability repair | 6 | tester | devin | done | T-022 | 0420265a1e2a5a35136f3b80039adc2bb8a5a177 | Fresh independent Devin session; other tools limited/conserved | 2026-10-17 06:58 |
+| T-027 | Independently verify package and unified CLI | 6 | tester | devin | cancelled | T-003 |  | Wrong ID: tester for T-003 is reserved as T-004 per approved plan; recreated there before any work | 2026-10-17 07:33 |
+| T-004 | Independently verify package and unified CLI | 6 | tester | devin | in progress | T-003 |  | Tester for T-003 @ 1849b2bf; same tool per resource policy (agy/claude limited, codex conserved); replaces misnumbered T-027 | 2026-10-17 07:33 |
 

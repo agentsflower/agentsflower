@@ -1,0 +1,67 @@
+# T-004: Independently verify distributable package and unified CLI
+
+Role: tester
+Tool: devin
+Model: swe-2-medium
+Stage: 6
+Depends on: T-003
+Verifies: T-003 @ 1849b2bfd292f2d1fb3e19054f4029c5f42049e7
+
+## Goal
+
+Verify the agentflow-sdlc wheel/sdist and installed CLI independently of the
+developer's own run. Same tool is necessary under the human's resource policy
+(agy and claude limited, codex conserved); use a fresh isolated session. No
+product changes; all installs go to disposable venvs and disposable projects.
+
+## Read first
+
+- .agentflow/roles/tester.md
+- .agentflow/tasks/T-003-package-cli.md
+- pyproject.toml, setup.py, MANIFEST.in
+- src/agentflow/__init__.py, src/agentflow/cli.py
+- .agentflow/tools/cli.py
+- .agentflow/tests/test_cli.py
+- .agentflow/tests/check_package.py
+- .github/workflows/ci.yml (package job)
+- CHANGELOG.md (2.11.12 entry)
+
+## Allowed files
+
+- nothing
+
+## Do not touch
+
+- pyproject.toml, setup.py, MANIFEST.in, src/
+- .agentflow/tools/, .agentflow/tests/, .agentflow/dashboard/
+- .agentflow/state/
+- global Python environments, real PyPI or any index, credentials
+
+## Setup
+
+- nothing
+
+## Port
+
+- nothing
+
+## Rebuild together
+
+- nothing
+
+## Acceptance criteria
+
+- [ ] V-01: Build provenance is honest: the bundled template is generated at build time from install.py's owned list, no second tracked template tree exists in the checkout, and wheel+sdist exclude state, task files, project rules/plan, runtime, .git, dashboard output/versions and maintainer root instructions while including entry points, tools, tests and dashboard sources.
+- [ ] V-02: Installed CLI behaves: from a clean venv outside the source checkout (path with spaces), install and update a disposable git project with bundled resources, preserve project-owned files, and project operations resolve the intended root via --project/discovery — never writing into site-packages or bundled memory. `run` refuses on role mismatch before starting anything; deployer is forced manual; argv/exit codes pass through shell-free.
+- [ ] V-03: Distribution metadata is honest: Requires-Dist empty outside extras, build tooling optional only, Python >=3.10, no PyPI publication claim, local dist name agentflow-sdlc, version matches .agentflow/VERSION (2.11.12) with changelog and AGENTS block in sync.
+- [ ] V-04: All four verbatim checks pass on the verified commit; report real failures, skips and environment causes. Source branch/worktree/Task File baselines unchanged; macOS package evidence remains a declared gap, not a pass.
+
+## Checks
+
+- `python .agentflow/tools/cli.py --help` - source command interface.
+- `python -m unittest discover -s .agentflow/tests -p test_cli.py` - routing and refusal paths.
+- `python .agentflow/tests/check_package.py` - isolated wheel/sdist install/update integration; disposable environments only.
+- `python -m unittest discover -s .agentflow/tests` - full regression suite.
+
+## Result
+

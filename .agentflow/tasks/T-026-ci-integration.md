@@ -65,4 +65,19 @@ change product tools. One task integration commit, exact full SHA. No push.
 - `python -m unittest discover -s .agentflow/tests` - repaired-baseline CI compatibility.
 
 ## Result
+Outcome: completed
+Change: a0b9c697a36e9d6bc5b0f94eaeb61fef96d1798c on t-026-ci-integration
+Files:
+- .github/workflows/ci.yml - restored verbatim from preserved commit 6fe56f3418ac0d8e3b7a1c8e715ae9b37d56fc35 onto current main (716dc1f, includes T-022)
+- .agentflow/docs/release-validation.md - restored verbatim from the same preserved commit
+Checks:
+- `python -m unittest discover -s .agentflow/tests` -> pass (158 passed / 0 failed)
+Criteria without a command:
+- C-01 - diff vs HEAD~1 contains only the two allowed files, identical to the preserved commit (`git checkout 6fe56f3 -- <files>`); matrix 3 OS x quoted 3.10/3.11/3.12, fail-fast false, contents:read, persist-credentials false, timeout-minutes 20, push/pull_request/workflow_dispatch, no publish/model calls
+- C-02 - exact full suite passes on the integrated tree (158 tests, OK); nothing skipped or softened
+- C-03 - release-validation.md still separates prepared remote jobs from actual execution, states no green macOS result exists, gives human push/dispatch steps; no tag/push/release performed; VERSION untouched at 2.11.11
+Found, not fixed:
+- none
+Proposed memory updates:
+- none
 
