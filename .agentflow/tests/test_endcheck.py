@@ -68,8 +68,8 @@ class WorktreeCopyTests(unittest.TestCase):
         flow = self.root / ".agentflow"
         shutil.copytree(Path(__file__).resolve().parents[1] / "tools", flow / "tools", ignore=shutil.ignore_patterns("__pycache__"))
         (flow / "tasks").mkdir(parents=True)
+        shutil.copy(Path(__file__).resolve().parents[1] / "tasks" / "_template.md", flow / "tasks" / "_template.md")
         (flow / "tasks" / "T-001-probe.md").write_text(DEV.format(wt=self.wt), encoding="utf-8")
-        (flow / "tasks" / "_template.md").write_text("# Task File template\n", encoding="utf-8")
         git(base, "init", "-q", "-b", "main", str(self.root))
         git(self.root, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
         git(self.root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
@@ -107,6 +107,33 @@ class WorktreeCopyTests(unittest.TestCase):
         self.commit(self.wt, "bad edit")
         git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD")
         self.assertTrue(any("commits Task Files" in x for x in self.problems()))
+
+    def test_template_commit_alone_is_clean(self):
+        """Regression: _template.md is template-owned product, not a Task File (T-032 artifact a4f0642)."""
+        t = self.wt / ".agentflow/tasks/_template.md"
+        t.write_text(t.read_text(encoding="utf-8") + "\nedit\n", encoding="utf-8")
+        self.commit(self.wt, "template")
+        self.assertEqual(self.problems(), [])
+
+    def test_template_and_task_file_commit_flags_only_the_task_file(self):
+        (self.wt / ".agentflow/tasks/_template.md").write_text("edit\n", encoding="utf-8")
+        (self.wt / ".agentflow/tasks/T-999-evil.md").write_text("task\n", encoding="utf-8")
+        self.commit(self.wt, "both")
+        found = self.problems()
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("commits Task Files", found[0])
+        self.assertIn("T-999-evil.md", found[0])
+        self.assertNotIn("_template.md", found[0])
+
+    def test_runtime_file_commit_flags(self):
+        d = self.wt / ".agentflow/tasks/.runtime"
+        d.mkdir(parents=True)
+        (d / "T-001.json").write_text("{}\n", encoding="utf-8")
+        self.commit(self.wt, "runtime")
+        found = self.problems()
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("commits Task Files", found[0])
+        self.assertIn(".runtime", found[0])
 
     def test_task_edit_introduced_in_merge_rejected(self):
         (self.root / "main.txt").write_text("main\n")

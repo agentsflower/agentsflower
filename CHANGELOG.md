@@ -49,6 +49,24 @@ on the trial-merge result before any repository merges.
   `base`/`criteria` bind only the artifact under the legacy rule. No data
   migration is needed.
 
+## 2.13.3 - 2026-10-17
+
+Merge-history audit scope fix: a committed `.agentflow/tasks/_template.md`
+change on a developer branch no longer fails the end check. `_template.md` is
+template-owned product; a task that legitimately edits it was reported as
+"commits Task Files".
+
+- `gate.py worktree_copy_problems` audits `--name-only` output under
+  `.agentflow/tasks` with `_template.md` excluded; a commit touching it
+  together with real Task Files still flags and names the Task File, a
+  committed `.runtime/` file still flags, and un-auditable history (octopus
+  merge, unreadable diff) still fails closed. The flag message now names the
+  offending paths.
+- Migration for installed projects: `install.py --update` ships the corrected
+  `gate.py` and protocol text (`tools/`, `docs/` are template-owned). No data
+  or state change: attempts previously blocked only by a `_template.md`
+  commit can be re-checked with `run_task.py T-NNN --recheck`.
+
 ## 2.13.2 - 2026-10-17
 
 Roadmap mockups: the wide layout is repaired and the filter bar actually
