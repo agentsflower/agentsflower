@@ -305,6 +305,46 @@ class EvidenceTests(Base):
         self.assertIn("T-999", r.stdout)
         self.assertIn("scope", r.stdout)
 
+    def test_missing_runtime_evidence_of_this_task_is_rejected(self):
+        root, wt = self.dev_project()
+        sha = self.commit_in(wt, "src/probe.txt")
+        self.finish(root, result=self.dev_result(
+            sha, "Criteria:\n- P-01: pass - evidence: .agentflow/tasks/.runtime/T-001.verify.9.log\n"))
+        r = self.tool(root, "gate.py", "verify", "T-001", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not found", r.stdout)
+
+    def test_bare_path_list_is_still_an_evidence_claim(self):
+        """No `evidence:` marker, but the line is only a path: the claim is validated."""
+        root, wt = self.dev_project()
+        sha = self.commit_in(wt, "src/other.txt")
+        self.finish(root, result=self.dev_result(sha, "Criteria:\n- P-01: pass - src/probe.txt\n"))
+        r = self.tool(root, "gate.py", "verify", "T-001", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("src/probe.txt", r.stdout)
+        self.assertIn("not found", r.stdout)
+
+    def test_prose_path_tokens_are_not_evidence(self):
+        """T-034's flagged lines: verify/done, launch.argv, decisions.md & friends are prose."""
+        root, wt = self.dev_project()
+        sha = self.commit_in(wt, "src/probe.txt")
+        self.finish(root, result=self.dev_result(
+            sha, "Criteria:\n- P-01: pass - the verify/done record stores launch.argv; init/config "
+                 "events, records/checkpoints, debugging/risky acceptance, decisions.md text and "
+                 "decide/next-orchestrator/status/run prose are not file claims\n"))
+        r = self.tool(root, "gate.py", "verify", "T-001", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_described_paths_are_not_evidence_claims(self):
+        """A repo path named in prose - where a schema lives or will live - is not claimed evidence."""
+        root, wt = self.dev_project()
+        sha = self.commit_in(wt, "src/probe.txt")
+        self.finish(root, result=self.dev_result(
+            sha, "Criteria:\n- P-01: pass - the quota schema lives at .agentflow/docs/quota-policy.json "
+                 "and the produced file will be src/missing.txt\n"))
+        r = self.tool(root, "gate.py", "verify", "T-001", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
 
 class BindingTests(Base):
     """E-02: a bound verify record is invalidated by a new attempt, a moved artifact or base, or an
