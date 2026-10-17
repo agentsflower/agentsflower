@@ -14,6 +14,10 @@ never presented as a green macOS run.
   models, and performs no deployment or publishing.
 - `fail-fast: false`, so one failing cell does not hide results from the other eight;
   each job is bounded by `timeout-minutes: 20`.
+- A second job `package` runs `python .agentflow/tests/check_package.py` on
+  `ubuntu-latest` and `windows-latest` (Python 3.12): it provisions `build`/`setuptools`
+  into disposable venvs, builds the `agentflow-sdlc` wheel and sdist, and exercises the
+  installed CLI outside the source tree. The unit-test job stays stdlib-only and offline.
 - `AGENTFLOW_MACHINE_STATE_DIR` is pointed into `${{ runner.temp }}`, so the machine
   registry is isolated per job and no real AgentFlow credentials or host machine
   state are touched. Platform-specific tests keep their existing skips
