@@ -102,3 +102,25 @@ and must be recorded as honestly pending, never invented. No product changes.
 ## Result
 
 <!-- Filled by the worker below this heading only. Format: its role file. Nothing above this heading may change, and the header never repeats this heading text. -->
+
+Outcome: completed
+Verdict: pass
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_layout.py` -> pass (6 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_install.py` -> pass (15 passed / 0 failed)
+- `python .agentflow/tests/check_package.py` -> pass (all checks: wheel+sdist build, bundled template, `agentflow --version` prints 2.12.0, install/update on spaced path)
+- `python -m unittest discover -s .agentflow/tests` -> pass (204 tests, OK, 3 skipped, 149.7s)
+Evidence summary: .agentflow/tasks/.runtime/T-011.evidence/checks.txt
+Criteria:
+- V-01 GUIDE.md complete accurate English guide - pass - evidence: read in full at 0fcd773; covers source + local package install, update preservation, workspace, Windows/Linux/macOS paths, MCP opt-in with `--enable-orchestrator-tools`, machine-resource opt-in, worker lifecycle, honest metrics/`--demo`, recovery, permission boundaries; conductor/autostart marked Windows-only. Documented `agentflow` subcommands match cli.py parsers (install, run, gate, accept, ledger, mcp, dashboard) and run_task.py/install.py flags match their usage strings. All GUIDE/README links resolve to existing files. GUIDE.ru.md git blob 445608be is byte-identical to pre-T-010 GUIDE.md.
+- V-02 README truthful - pass - evidence: badges claim no green result (CI badge links to the workflow itself); Mermaid shows Orchestrator as single memory writer, Task File contracts, isolated Developer worktree / Tester disposable checkout, gate.py verbatim checks, accept.py merge, Deployer consuming an accepted SHA after human approval; text explicitly says isolation is worktree+end-checks, "not a universal sandbox guarantee".
+- V-03 production section honesty - pass - evidence: dated October 2026 maintainer-attested figures with explicit "aggregate snapshot across listings, not deduplicated unique people" caveat; only verified https://aisidebar.app linked, no guessed extension IDs; unresolved store links recorded in RELEASE_NOTES.md "Evidence status and limits".
+- V-04 assets and metadata - pass - evidence: .agentflow/docs/assets/dashboard.png (92146 bytes) opened and visually confirmed as a real T-008-era dashboard capture of this repository's own task data; README caption says real local capture. VERSION, AGENTS.md block, CHANGELOG 2.12.0 entry and pyproject (dynamic version from VERSION) all read 2.12.0. RELEASE_NOTES lists final behavior, evidence limits and human-only push/CI/tag/release steps including the exact `git tag -a v2.12.0 -m "..."` line. `git tag -l` shows only v2.4.0/v3.0.0; origin/main is 960f892 so nothing was pushed, published or tagged.
+- V-05 verbatim checks in disposable checkout - pass - evidence: ran at detached HEAD 0fcd773 in this review worktree; `git status --porcelain` empty before and after; remote nine-job CI, macOS pass and unresolved store URLs are stated as pending in README "Verification status" and RELEASE_NOTES, not claimed.
+New defects (outside the task):
+- none
+Cannot verify, needs:
+- Remote nine-job GitHub Actions run and the macOS cell: human-only release gate, correctly recorded as pending; not checkable locally.
+- Store listing URLs for "Export Chat from Gemini to Word", "YouTube Transcript", "AI Home Design": maintainer-only knowledge, correctly recorded as unresolved in RELEASE_NOTES.md.
+Proposed memory updates:
+- session-log: T-011 review of 0fcd773 -> verdict pass; all four checks green (204 tests, check_package ok); docs, metadata and honesty constraints verified; remote CI/macOS/store links remain the explicit human release gate.

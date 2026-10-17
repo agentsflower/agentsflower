@@ -412,3 +412,5 @@ now delete the reparse point itself before removing a checkout, which leaves the
 copying instead of linking (wasteful per checkout) and documenting manual care (the failure kept recurring).
 
 2026-10-15: Human explicitly confirms AgentFlow is an independently maintained project at vcherstar/AgentFlow. Source-authority rule belongs to this local template repository, not TuScript. Added mandatory rule in root AGENTS.md outside template-owned block: version/update authority is own origin and local development; parent/upstream repository requires explicit per-task request. Do not conflate parent's releases with this project's version. No remote changes or push.
+
+2026-10-17: Human explicitly authorized pushing the completed local release preparation to Git. This supersedes the earlier human-only push restriction for origin/main; it does not authorize tagging, publication, deployment or changing remotes. Remote CI/macOS evidence remains required before public release.
