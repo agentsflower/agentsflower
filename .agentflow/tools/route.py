@@ -369,7 +369,12 @@ def _log(tid, rec):
     rt.mkdir(parents=True, exist_ok=True)
     p = rt / f"{tid}.route.json"
     hist = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
-    p.write_text(json.dumps(hist + [rec], indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp = p.with_suffix(p.suffix + ".tmp")  # temp + replace: never a half-written record (protocol: Runtime state)
+    try:
+        tmp.write_text(json.dumps(hist + [rec], indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def main():

@@ -16,7 +16,6 @@ lists product repositories (folders under the workspace root, which is a small m
 its repositories in `Repo:`, and commits are written `<repo>@<sha>, ...`.
 """
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -53,13 +52,11 @@ def field(text, name):
 
 
 def header(text):  # everything above "## Result": the worker must not change it
-    # Trailing blank lines do not count: a worker that adds the missing "## Result" heading after an empty line
-    # changes nothing above it.
-    return re.sub(r"(?ms)^## Result[ \t]*$.*\Z", "", text.replace("\r\n", "\n")).rstrip() + "\n"
+    return ledger.header(text)
 
 
 def sha256(s):
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+    return ledger.sha256(s)
 
 
 def bullets(body):
@@ -285,8 +282,21 @@ def ledger_rows():
 
 
 def runtime(tid):
+    """The task's attempt history, or None. Malformed state is a gate error, never 'no attempt'."""
     p = RUNTIME / f"{tid}.json"
-    return json.loads(p.read_text(encoding="utf-8-sig")) if p.exists() else None
+    if not p.exists():
+        return None
+    try:
+        return ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), tid)
+    except (OSError, ValueError) as e:
+        raise TaskError(f"cannot read runtime state {p.name}: {e}")
+
+
+def write_atomic(path, obj):
+    """Runtime JSON: temp file + os.replace, so a crash mid-write never leaves a truncated record."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def last_attempt(tid):
@@ -497,7 +507,10 @@ def verify(tid):
     bad, checks, flagged = [], [], []
     RUNTIME.mkdir(parents=True, exist_ok=True)
     vpath = RUNTIME / f"{tid}.verify.json"
-    records = json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else []
+    try:
+        records = ledger.check_verify(json.loads(vpath.read_text(encoding="utf-8"))) if vpath.exists() else []
+    except (OSError, ValueError) as e:
+        raise TaskError(f"cannot read verify records {vpath.name}: {e}")
     n = len(records) + 1
     log = RUNTIME / f"{tid}.verify.{n}.log"
 
@@ -563,11 +576,12 @@ def verify(tid):
                     and all(v[:7] in ap for v in t["shas"].values())):
                 bad.append(f'prod needs "Approval: source=human target=prod sha={short} at=<time>" from the human in the Deployer session')
 
-    rec = {"n": n, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "attempt": att.get("n") if att else None,
-           "role": t["role"], "sha": sha, "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
+    rec = {"n": n, "taskId": tid, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "attempt": att.get("n") if att else None, "role": t["role"], "headerHash": t["headerHash"],
+           "sha": sha, "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
            "checksTouchedByTask": flagged, "log": str(log) if checks else None}
     records.append(rec)
-    vpath.write_text(json.dumps(records, indent=2), encoding="utf-8")
+    write_atomic(vpath, records)
     print(f"{tid} verify #{n}: {'PASS' if not bad else 'FAIL'} (sha {sha}, attempt {rec['attempt']})")
     for b in bad:
         print(f"  - {b}")
@@ -623,7 +637,10 @@ def portable(obj):
 def write(out, obj):
     data = json.dumps(portable(obj), indent=2)
     if out:
-        Path(out).write_text(data, encoding="utf-8")
+        p = Path(out)  # temp + replace: the launcher's hand-off file is never read half-written
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(data, encoding="utf-8")
+        os.replace(tmp, p)
     else:
         print(data)
 

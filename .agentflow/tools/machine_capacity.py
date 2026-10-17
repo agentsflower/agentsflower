@@ -9,6 +9,7 @@ import argparse
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -49,7 +50,44 @@ def state_dir():
     return Path(base).expanduser().resolve() / "AgentFlow" / "machine" if base else Path.home() / ".agentflow-machine"
 
 
+def _pid_start(pid):
+    """Process start as .NET ticks - the same measurement run_task.pid_start makes for attempt records,
+    duplicated here because this standalone tool cannot import the launcher. Windows: GetProcessTimes.
+    Linux: /proc jiffies -> epoch -> ticks. Elsewhere: `ps -o lstart=` -> ticks, or None (not measurable)."""
+    if os.name == "nt":
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return None
+        try:
+            times = [ctypes.c_ulonglong() for _ in range(4)]
+            if kernel.GetProcessTimes(handle, *(ctypes.byref(x) for x in times)):
+                return times[0].value + 504911232000000000  # FILETIME (1601) -> .NET ticks (0001)
+            return None
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        clk = os.sysconf("SC_CLK_TCK")
+        btime = next(int(line.split()[1]) for line in Path("/proc/stat").read_text().splitlines()
+                     if line.startswith("btime"))
+        stat = Path(f"/proc/{int(pid)}/stat").read_text().rsplit(")", 1)[1].split()
+        epoch = btime + int(stat[19]) / clk  # field 22 (starttime) after "pid (comm)" is removed
+        return int(epoch * 10_000_000) + 504911232000000000
+    except (OSError, IndexError, ValueError, StopIteration):
+        pass
+    try:
+        out = subprocess.run(["ps", "-p", str(int(pid)), "-o", "lstart="], capture_output=True, text=True,
+                             env={**os.environ, "LC_ALL": "C"}, timeout=10).stdout.strip()
+        epoch = datetime.strptime(out, "%a %b %d %H:%M:%S %Y").replace(tzinfo=timezone.utc).timestamp()
+        return int(epoch * 10_000_000) + 504911232000000000
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def _alive(pid, started=None):
+    """The lease holder still runs - the same identity rule as run_task.alive on every platform: a recorded
+    start must re-measure equal, so a reused pid cannot impersonate a live worker, and an unmeasurable or
+    failed identity check is never 'alive'. Without a recorded start only the pid itself can be checked."""
     if not pid:
         return False
     if os.name == "nt":
@@ -61,18 +99,21 @@ def _alive(pid, started=None):
             code = ctypes.c_ulong()
             if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value != 259:
                 return False
-            if started:
+            if started is not None:
                 times = [ctypes.c_ulonglong() for _ in range(4)]
-                if kernel.GetProcessTimes(handle, *(ctypes.byref(x) for x in times)):
-                    return times[0].value + 504911232000000000 == int(started)
+                if not kernel.GetProcessTimes(handle, *(ctypes.byref(x) for x in times)):
+                    return False  # alive but identity unverifiable: not the recorded lease holder
+                return times[0].value + 504911232000000000 == int(started)
             return True
         finally:
             kernel.CloseHandle(handle)
     try:
         os.kill(int(pid), 0)
-        return True
     except OSError:
         return False
+    if started is not None:
+        return _pid_start(pid) == int(started)
+    return True
 
 
 @contextmanager

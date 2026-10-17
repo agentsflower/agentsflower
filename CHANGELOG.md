@@ -2,6 +2,77 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.12.2 - 2026-10-17
+
+Lifecycle trust, second round (improvement plan section 1, independent review
+findings on 2.12.1): the fail-closed claim of 2.12.1 is now true at every
+runtime-state reader, acceptance is bound to the attempt it verifies, and a
+worker whose process identity is unconfirmed keeps its task locked.
+
+- Every runtime-state reader validates the shape it depends on, not just JSON
+  syntax: an empty container (`[]`, `null`, `{}`), a wrong-typed attempt field,
+  a verify record with a non-boolean `ok`, a limit record that is not an object
+  or whose `until` is not a string, a heartbeat without `holder`/`at`, a
+  runtime file naming no task or another task, or an attempt naming another
+  task are all diagnosable errors - never "no limits", "no orchestrator live"
+  or "no evidence". A malformed heartbeat blocks an orchestration claim rather
+  than being silently overwritten (`tick.py heartbeat --force` still takes over).
+- `ledger.py set --status done` now requires a verify record bound to the task,
+  the last attempt number, the current requirements hash and the full artifact
+  SHA(s), with that attempt `exited`: a stale PASS from an earlier attempt or a
+  different artifact no longer satisfies acceptance. Legacy records follow an
+  explicit rule: a record without `taskId` belongs to the file it lives in, and
+  a missing `attempt`/`headerHash` binds only the artifact.
+- `--stop` and dead-worker recovery keep the task locked while a live pid's
+  start identity is unconfirmed: no kill is sent to a possibly reused pid and
+  the attempt is not closed, so a second claim cannot coexist with a worker
+  that may still run. A verified stop or a verified identity releases the lock;
+  `--status` reports the block and `tick.py` surfaces it as a need.
+- `machine_capacity` lease liveness uses the same pid + recorded start identity
+  rule as the launcher on every platform: POSIX honors the recorded start,
+  Windows `GetProcessTimes` failure or an unmeasurable identity is not "alive",
+  and a reused pid can no longer fool a stale lease.
+- `route._log` (`T-NNN.route.json`) and the ledger's `tasks.md` save now use the
+  same temp-file-plus-`os.replace` atomic write as the runtime JSON writers.
+- Migration for installed projects: `install.py --update`. A wrong-shaped
+  `tool-limits.json` or `orchestrator.json` now blocks launches and
+  orchestration claims until repaired - the intended fail-closed behavior. An
+  attempt whose pid is alive but unverifiable keeps its lock: end the process
+  and `--stop` again. Legacy verify records remain valid under the documented
+  binding rule; re-running `gate.py verify` writes a fully bound record.
+
+## 2.12.1 - 2026-10-17
+
+Trustworthy task lifecycle (improvement plan section 1): claims, attempts and ledger
+transitions now pass verified state only, and malformed runtime state fails closed
+instead of reading as "no active work".
+
+- `ledger.py set` can no longer bypass the approval gate: a row whose Notes still start
+  with "awaiting approval" accepts only `approve`, a terminal `rejected`/`cancelled`, or a
+  `--notes` update that keeps the prefix. `--status in progress` additionally requires a
+  running attempt recorded by the launcher - a claim exists only while a real attempt runs.
+- Runtime JSON is written atomically everywhere (attempt `T-NNN.json`, `T-NNN.verify.json`,
+  `tick.json`, `tool-limits.json`, `orchestrator.json`, gate `--out` hand-off files), and a
+  malformed or structurally invalid record fails closed with a diagnosable error at read
+  time - never as "no active work" or "no evidence". Attempt and verify records are
+  schema-checked on read; `run_task.py --status` marks an unreadable file `state-error`
+  instead of skipping or crashing.
+- Verify records now bind task ID, attempt number, requirements hash (Task File header
+  hash) and the full artifact SHA; attempt records carry `taskId`. Legacy records stay
+  valid evidence: a record without `taskId` belongs to the file it lives in.
+- `tick.py` judges a worker process by pid plus recorded start identity - the same rule
+  the launcher uses, on every platform - so a reused pid can no longer impersonate a live
+  worker.
+- Regression coverage: the empty `--live` argv defect (PowerShell 5.1), octopus-merge
+  audit refusal and ordinary-merge history audit in disposable repositories, approval-bypass
+  and terminal-state launch refusals, schema validation and malformed-state fail-closed tests.
+- Migration for installed projects: `install.py --update`. In-flight attempts and legacy
+  verify records remain valid; nothing is rewritten. A corrupt `T-NNN.json` now blocks
+  launches and the ledger `in progress` transition until repaired or removed - that is the
+  intended fail-closed behavior, not a regression. A direct `ledger.py set --status
+  in progress` used outside the launcher stops working by design: issue attempts through
+  `run_task.py` (or `run-task.ps1`).
+
 ## 2.12.0 - 2026-10-17
 
 Public-release documentation milestone. No tool, protocol, role or dashboard

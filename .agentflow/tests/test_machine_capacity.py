@@ -65,12 +65,35 @@ class MachineCapacityTests(unittest.TestCase):
         second, reason = machine.claim("claude", self.projects[1], "T-002", port="4348", pid=os.getpid())
         self.assertTrue(second, reason)
 
-    @unittest.skipUnless(os.name == "nt", "Windows PID start-time guard")
     def test_dead_worker_is_cleaned_and_pid_start_guards_reuse(self):
+        """A recorded start that does not match the live process means a reused pid: the lease is
+        released on every platform, and an unmeasurable identity never counts as alive."""
         token, _ = machine.claim("codex", self.projects[0], "T-003", pid=os.getpid())
         self.assertTrue(machine.activate(token, os.getpid(), 1))
         next_token, reason = machine.claim("codex", self.projects[1], "T-003", pid=os.getpid())
         self.assertTrue(next_token, reason)
+
+    def test_alive_uses_pid_start_identity_on_every_platform(self):
+        """The lease check is the same identity rule the launcher applies to workers: without a recorded
+        start the pid alone decides; with one, a mismatch or an unmeasurable identity is not alive."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            self.assertTrue(machine._alive(p.pid))  # no recorded start: pid-only (legacy lease)
+            self.assertFalse(machine._alive(999999999))
+            start = machine._pid_start(p.pid)
+            if start is None:
+                self.skipTest("process start identity is not measurable on this platform")
+            self.assertTrue(machine._alive(p.pid, start))
+            self.assertFalse(machine._alive(p.pid, start + 10_000_000))  # same pid, wrong start
+            if os.name == "nt":  # a GetProcessTimes failure is not 'alive' either
+                with patch.object(machine.ctypes.windll.kernel32, "GetProcessTimes", return_value=0):
+                    self.assertFalse(machine._alive(p.pid, start))
+            else:  # identity cannot be re-measured
+                with patch.object(machine, "_pid_start", return_value=None):
+                    self.assertFalse(machine._alive(p.pid, start))
+        finally:
+            p.kill()
+            p.wait()
 
     def test_pending_handoff_survives_launcher_exit_until_worker_activates(self):
         token, _ = machine.claim("codex", self.projects[0], "T-003", pid=999999999)

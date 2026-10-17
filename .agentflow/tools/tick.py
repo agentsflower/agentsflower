@@ -15,7 +15,6 @@ every gate still applies. While an Orchestrator is live (fresh heartbeat), `run`
 `AGENTFLOW_SHARED_DISPATCHER=shadow` adds a read-only cross-project preview; `active` requires a shared grant before each automatic worker launch. Both modes preserve the existing acceptance gate.
 """
 import argparse
-import ctypes
 import json
 import os
 import re
@@ -28,9 +27,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
+import ledger  # noqa: E402
 import machine_capacity  # noqa: E402
 import route  # noqa: E402
 import dispatch  # noqa: E402
+import run_task  # noqa: E402
 
 TOOLS = FLOW_ROOT / "tools"
 RT = FLOW_ROOT / "tasks" / ".runtime"
@@ -71,11 +72,26 @@ def parse_iso(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
+class StateError(Exception):
+    """Malformed or unreadable runtime state: fail closed, never pretend the record does not exist."""
+    pass
+
+
 def read(p, default):
     try:
         return json.loads(p.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return default
+    except (OSError, ValueError) as e:
+        raise StateError(f"cannot read {p.name}: {e}")
+
+
+def read_map(p):
+    """A runtime object file (orchestrator heartbeat, tool limits): a wrong shape fails closed too."""
+    m = read(p, {})
+    if not isinstance(m, dict):
+        raise StateError(f"{p.name} is not a JSON object")
+    return m
 
 
 def write(p, obj):
@@ -103,20 +119,38 @@ def parse_reset(text, at=None):
     return at + timedelta(hours=1)
 
 
+def read_limits():
+    """The tool-limits map; a wrong shape fails closed (StateError): 'no limits' is never inferred from
+    a bad file. '_seen' is internal metadata, not a limit record, and is tolerated as-is."""
+    try:
+        return ledger.check_limits(read(LIMITS, {}))
+    except ValueError as e:
+        raise StateError(f"cannot read {LIMITS.name}: {e}")
+
+
 def record_limit(tool, text, at=None, seen=None):
-    lim = read(LIMITS, {})
+    lim = read_limits()
     until = parse_reset(text, at)
     lim[tool] = {"until": iso(until), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
     if seen:
-        lim.setdefault("_seen", {})[seen] = iso(at or now())
+        seen_map = lim.setdefault("_seen", {})
+        if not isinstance(seen_map, dict):
+            seen_map = lim["_seen"] = {}
+        seen_map[seen] = iso(at or now())
     write(LIMITS, lim)
     machine_capacity.record_limit(tool, until)
     return lim[tool]
 
 
 def limit_end(tool):
-    local = read(LIMITS, {}).get(tool)
-    local_end = parse_iso(local["until"]) if local else None
+    local = read_limits().get(tool)
+    if local:
+        try:
+            local_end = parse_iso(local["until"])
+        except ValueError as e:
+            raise StateError(f"{LIMITS.name}: bad 'until' for {tool}: {e}")
+    else:
+        local_end = None
     global_end = machine_capacity.limit_until(tool)
     return max((end for end in (local_end, global_end) if end), default=None)
 
@@ -133,8 +167,15 @@ def next_orchestrator(at=None, skip=()):
 
 # --- heartbeat ---------------------------------------------------------------------------------------------------
 def heartbeat(holder, force=False):
-    """Claim or refresh orchestration. Refused (returns the other holder) while a different holder is live."""
-    other = live_orchestrator()
+    """Claim or refresh orchestration. Refused (returns the other holder) while a different holder is live.
+    A malformed heartbeat file blocks the claim - it may hide a live holder and is never silently
+    overwritten; --force takes over anyway (the human's own session)."""
+    try:
+        other = live_orchestrator()
+    except StateError:
+        if not force:
+            raise
+        other = None
     if other and other.get("holder") != holder and not force:
         return other
     write(HEARTBEAT, {"holder": holder, "at": iso(now())})
@@ -142,42 +183,29 @@ def heartbeat(holder, force=False):
 
 
 def release(holder=None):
-    hb = read(HEARTBEAT, None)
+    hb = read_map(HEARTBEAT)
     if hb and (holder is None or hb.get("holder") == holder):
         HEARTBEAT.unlink(missing_ok=True)
 
 
 def live_orchestrator(at=None):
-    hb = read(HEARTBEAT, None)
-    if not hb or not hb.get("at"):
+    if not HEARTBEAT.exists():
         return None
-    return hb if (at or now()) - parse_iso(hb["at"]) < timedelta(minutes=stale_minutes()) else None
+    hb = read_map(HEARTBEAT)
+    if not isinstance(hb.get("holder"), str) or not hb["holder"] or not isinstance(hb.get("at"), str):
+        raise StateError(f"{HEARTBEAT.name}: malformed heartbeat record (needs holder and at)")
+    try:
+        at_hb = parse_iso(hb["at"])
+    except ValueError as e:
+        raise StateError(f"{HEARTBEAT.name}: bad heartbeat timestamp: {e}")
+    return hb if (at or now()) - at_hb < timedelta(minutes=stale_minutes()) else None
 
 
 # --- worker processes --------------------------------------------------------------------------------------------
 def alive(pid, pid_start=None):
-    """The worker process still runs. pid_start (.NET UTC ticks, written by run-task.ps1) guards against pid reuse."""
-    if not pid:
-        return False
-    if os.name == "nt":
-        k = ctypes.windll.kernel32
-        h = k.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        try:
-            code, ft = ctypes.c_ulong(), [ctypes.c_ulonglong() for _ in range(4)]
-            if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != 259:  # STILL_ACTIVE
-                return False
-            if pid_start and k.GetProcessTimes(h, *(ctypes.byref(x) for x in ft)):
-                return ft[0].value + 504911232000000000 == int(pid_start)  # FILETIME (1601) -> .NET ticks (0001)
-            return True
-        finally:
-            k.CloseHandle(h)
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except OSError:
-        return False
+    """The worker process still runs - the same identity rule the launcher uses (run_task.alive):
+    a recorded start must re-measure equal, so a reused pid can impersonate a live worker nowhere."""
+    return run_task.alive(pid, pid_start)
 
 
 def log_tail(att, n=4000):
@@ -223,10 +251,21 @@ def decide(rows, at=None):
         except (gate.TaskError, OSError) as e:
             out.append((tid, "need", f"Task File: {e}"))
             continue
-        att = gate.last_attempt(tid)
+        try:
+            att = gate.last_attempt(tid)
+        except gate.TaskError as e:
+            out.append((tid, "need", f"runtime state: {e}"))
+            continue
         running = bool(att) and att.get("status") == "running"
-        if running and not (att.get("manual") or alive(att.get("pid"), att.get("pidStart"))):
-            out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
+        if running and not att.get("manual"):
+            if run_task.attempt_alive(att):
+                out.append((tid, "wait", f"{att.get('tool')} is working (attempt {att.get('n')})"))
+            elif run_task.attempt_uncertain(att):
+                out.append((tid, "need", f"attempt {att.get('n')}: pid {att['pid']} is alive but its start "
+                                         "identity is unconfirmed (a possibly reused pid) - the task stays "
+                                         "locked; verify and stop it with run_task.py --stop"))
+            else:
+                out.append((tid, "need", "the worker process is gone without a final state (dead attempt): recover it"))
             continue
         if running:
             out.append((tid, "wait", f"{att.get('tool')} is working (attempt {att.get('n')})"))
@@ -276,9 +315,14 @@ def decide(rows, at=None):
 # --- acting ------------------------------------------------------------------------------------------------------
 def learn_limits(rows):
     """Record limits from finished attempts once, so later launches and the conductor skip those tools."""
-    seen = read(LIMITS, {}).get("_seen", {})
+    seen = read_limits().get("_seen", {})
+    if not isinstance(seen, dict):
+        seen = {}
     for tid in rows:
-        att = gate.last_attempt(tid)
+        try:
+            att = gate.last_attempt(tid)
+        except gate.TaskError:
+            continue  # unreadable runtime: decide() surfaces it as a need
         if not att or att.get("tool") in (None, "manual") or not hit_limit(att):
             continue
         key = f"{tid}#{att.get('n')}"
@@ -417,7 +461,8 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "would": [{"task": t, "action": a, "detail": d} for t, a, d in plan if a in ("accept", "launch")] if report_only else [],
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
-                  "limited": {k: v["until"] for k, v in read(LIMITS, {}).items() if k != "_seen" and limited(k)}}
+                  "limited": {k: v["until"] for k, v in read_limits().items()
+                              if k != "_seen" and limited(k)}}
         if dispatch_mode == "active":
             report["dispatchMode"] = "active"
         if shadow is not None:
@@ -449,6 +494,14 @@ def main():
     lp.add_argument("tool")
     lp.add_argument("text")
     a = ap.parse_args()
+    try:
+        return dispatch_cmd(a)
+    except StateError as e:
+        print(f"tick: {e}", file=sys.stderr)
+        return 1
+
+
+def dispatch_cmd(a):
     if a.cmd == "run":
         rep = run(a.dry_run, a.even_if_live)
         if a.json:
@@ -485,9 +538,9 @@ def main():
     if a.cmd == "status":
         hb = live_orchestrator()
         print(f"orchestrator: {hb['holder']} (heartbeat {hb['at']})" if hb else "orchestrator: none live")
-        for k, v in read(LIMITS, {}).items():
+        for k, v in read_limits().items():
             if k != "_seen" and limited(k):
-                print(f"limited: {k} until {v['until']} - {v['reason'][-80:]}")
+                print(f"limited: {k} until {v['until']} - {(v.get('reason') or '')[-80:]}")
         return 0 if hb else 1
     if a.cmd == "next-orchestrator":
         print(next_orchestrator(skip={x for x in a.skip.split(",") if x}))

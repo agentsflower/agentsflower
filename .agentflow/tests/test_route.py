@@ -11,6 +11,7 @@ import unittest
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 FLOW = Path(__file__).resolve().parents[1]
 KEY = "test-key-never-printed"
@@ -249,7 +250,13 @@ class RouteTests(unittest.TestCase):
         self.assertIn("request req_test", r.stdout)
 
     def test_started_task_is_not_rewritten(self):
-        subprocess.run([sys.executable, self.root / ".agentflow" / "tools" / "ledger.py", "set", "T-001", "--status",
+        led = self.root / ".agentflow" / "tools" / "ledger.py"
+        subprocess.run([sys.executable, led, "approve", "T-001"], check=True, capture_output=True)
+        rt = self.root / ".agentflow" / "tasks" / ".runtime"
+        rt.mkdir(parents=True, exist_ok=True)
+        (rt / "T-001.json").write_text(json.dumps({"taskId": "T-001", "attempts": [
+            {"n": 1, "status": "running", "manual": True}]}), encoding="utf-8")
+        subprocess.run([sys.executable, led, "set", "T-001", "--status",
                         "in progress"], check=True, capture_output=True)
         Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96}),
                         "effort": effort("medium"), "complexity": complexity(0.4)}
@@ -257,6 +264,24 @@ class RouteTests(unittest.TestCase):
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.task(), before)
+
+    def test_route_log_is_written_atomically(self):
+        """T-NNN.route.json goes through temp file + os.replace like every runtime record: a failed
+        replace keeps the previous history and strands no temp file."""
+        sys.path.insert(0, str(FLOW / "tools"))
+        import route  # noqa: E402
+        rt = self.root / ".agentflow" / "tasks" / ".runtime" / "T-001.route.json"
+        # the shared module cache points route.FLOW_ROOT at the real .agentflow: aim it at the fixture
+        with patch.object(route, "FLOW_ROOT", self.root / ".agentflow"):
+            route._log("T-001", {"n": 1, "choice": "devin"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 1)
+            with patch.object(os, "replace", side_effect=OSError("locked")):
+                with self.assertRaises(OSError):
+                    route._log("T-001", {"n": 2, "choice": "codex"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 1)  # the old history survived
+            route._log("T-001", {"n": 2, "choice": "codex"})
+            self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 2)
+            self.assertEqual(list(rt.parent.glob("*.tmp")), [])
 
     def test_tester_never_gets_the_developer_tool(self):
         sys.path.insert(0, str(self.root / ".agentflow" / "tools"))

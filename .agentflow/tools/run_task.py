@@ -88,6 +88,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ledger  # noqa: E402
 import machine_capacity  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
@@ -402,8 +403,15 @@ def kill_tree(pid):
 
 # --- runtime state (tasks/.runtime/T-NNN.json; attempts appended, never overwritten) --------------------------------
 def read_rt(tid):
+    """The task's attempt history, or None. Malformed or structurally invalid state fails closed:
+    a corrupt file is a diagnosable error, never 'no active work'."""
     p = RT_DIR / f"{tid}.json"
-    return json.loads(p.read_text(encoding="utf-8-sig")) if p.exists() else None
+    if not p.exists():
+        return None
+    try:
+        return ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), tid)
+    except (OSError, ValueError) as e:
+        raise LaunchError(f"cannot read runtime state {p.name}: {e}")
 
 
 def write_rt(tid, obj):
@@ -418,11 +426,23 @@ def last_attempt(rt):
 
 
 def attempt_alive(a):
-    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) and alive(a["pid"], a.get("pidStart"))
+    """Confirmed live: the attempt runs and a live process sits on its recorded pid whose start identity
+    matches the recorded one. Anything less is not proof the worker is alive."""
+    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) \
+        and a.get("pidStart") is not None and alive(a["pid"], a["pidStart"])
+
+
+def attempt_uncertain(a):
+    """A live process occupies the recorded pid but its identity cannot be confirmed (no start was recorded,
+    or it cannot be re-measured now): the pid may be the worker or a reused one. This is a diagnosable block,
+    never 'dead' and never a kill target - the task stays locked."""
+    return bool(a) and a.get("status") == "running" and bool(a.get("pid")) \
+        and not attempt_alive(a) and alive(a["pid"])
 
 
 def attempt_held(a):
-    return bool(a) and a.get("status") == "running" and (a.get("manual") or not a.get("pid") or attempt_alive(a))
+    return bool(a) and a.get("status") == "running" and (a.get("manual") or not a.get("pid")
+                                                       or attempt_alive(a) or attempt_uncertain(a))
 
 
 def live_tasks():
@@ -433,11 +453,11 @@ def live_tasks():
         if not re.match(r"^T-\d+\.json$", p.name):
             continue
         try:
-            rt = json.loads(p.read_text(encoding="utf-8-sig"))
+            rt = ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
         except (OSError, ValueError) as e:
             raise LaunchError(f"cannot read active runtime state {p.name}: {e}")  # corrupted state fails closed
         if attempt_held(last_attempt(rt)):
-            out.append(rt["taskId"])
+            out.append(rt.get("taskId") or p.stem)
     return out
 
 
@@ -584,14 +604,22 @@ def worker_env(t):
 
 # --- resource and permission checks before a worker start -----------------------------------------------------------
 def limit_until(tool):
-    """Observed quota/access limits, project file and shared machine registry; earliest expiry wins."""
+    """Observed quota/access limits, project file and shared machine registry; earliest expiry wins.
+    A malformed project record fails closed: 'no limits known' is never inferred from a bad file."""
     ends = []
-    try:
-        rec = json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig")).get(tool) if LIMITS_FILE.exists() else None
+    if LIMITS_FILE.exists():
+        try:
+            lim = ledger.check_limits(json.loads(LIMITS_FILE.read_text(encoding="utf-8-sig")))
+        except (OSError, ValueError) as e:
+            raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: {e}")
+        rec = lim.get(tool)
         if rec:
-            ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
-    except (OSError, ValueError, KeyError):
-        pass
+            try:
+                ends.append(datetime.strptime(rec["until"], "%Y-%m-%dT%H:%M:%SZ")
+                            .replace(tzinfo=timezone.utc))
+            except ValueError as e:
+                raise LaunchError(f"cannot read observed limits {LIMITS_FILE.name}: "
+                                  f"bad 'until' for {tool}: {e}")
     machine = machine_capacity.limit_until(tool)
     if machine:
         ends.append(machine)
@@ -709,14 +737,18 @@ def cmd_status():
         for p in sorted(RT_DIR.glob("T-*.json")):
             if not re.match(r"^T-\d+\.json$", p.name):
                 continue
-            rt = json.loads(p.read_text(encoding="utf-8-sig"))
+            try:
+                rt = ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
+            except (OSError, ValueError) as e:
+                print(f"{p.stem}  state-error: cannot read runtime state ({e})")
+                continue
             a = last_attempt(rt)
             if not a:
                 continue
             state = a.get("status")
             if state == "running" and not a.get("manual") and not attempt_alive(a):
-                state = "dead"
-            print(f"{rt['taskId']}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
+                state = "blocked" if attempt_uncertain(a) else "dead"
+            print(f"{rt.get('taskId') or p.stem}  {state:<8} attempt={a.get('n')}  tool={a.get('tool') or ''}  "
                   f"exit={a.get('exitCode') if a.get('exitCode') is not None else ''}  "
                   f"limitHit={a.get('limitHit')}  finished={a.get('finishedAt') or ''}")
     return 0
@@ -725,15 +757,16 @@ def cmd_status():
 def cmd_stop(tid):
     rt = read_rt(tid)
     a = last_attempt(rt)
-    if attempt_alive(a) and a.get("pidStart") is not None:
+    if attempt_alive(a):
         kill_tree(a["pid"])
-    elif a and a.get("status") == "running" and a.get("pid") and alive(a["pid"]):
-        # A process sits on the recorded pid but its start identity was never recorded or cannot be
-        # confirmed now: it may be a reused pid, so no kill is sent to it (refused unsafe takeover).
-        print(f"warning: {tid} pid {a['pid']} is alive but its start identity cannot be confirmed; "
-              "not killing it (a possibly reused pid). The attempt is closed as dead.", file=sys.stderr)
-        a["note"] = "; ".join(x for x in [a.get("note"),
-                                          "worker lost: pid alive but identity unconfirmed, not killed"] if x)
+    elif attempt_uncertain(a):
+        # A process sits on the recorded pid but its identity cannot be confirmed: it may be a reused pid,
+        # so no kill is sent to it - and closing the attempt would free the lock while the worker may
+        # still run. The lock releases only on a verified stop or a verified process identity.
+        raise LaunchError(f"{tid}: pid {a['pid']} is alive but its start identity cannot be confirmed "
+                          "(none recorded, or not measurable now) - a possibly reused pid is never killed "
+                          "and the task stays locked. If the process really is this worker, end it and run "
+                          f"run_task.py {tid} --stop again.")
     if a and a.get("status") == "running":
         a["exitCode"], a["note"] = -1, "; ".join(x for x in [a.get("note"), "stopped with --stop"] if x)
         complete_attempt(tid, rt, "error")
@@ -857,11 +890,12 @@ def cmd_launch(tid, tool, manual, grant):
         raise LaunchError(f"another launcher run is in progress ({lock}). Wait and check --status.")
     lease, worker_started, a, rt = None, False, None, None
     try:
-        try:
-            rt = read_rt(tid)  # a corrupted state file fails closed here
-        except (OSError, ValueError) as e:
-            raise LaunchError(f"cannot read active runtime state for {tid}: {e}")
+        rt = read_rt(tid)  # corrupted state fails closed in read_rt
         prev = last_attempt(rt)
+        if attempt_uncertain(prev):
+            raise LaunchError(f"{tid}: a process is alive on the recorded pid {prev.get('pid')} but its start "
+                              "identity is unconfirmed (a possibly reused pid) - the task stays locked until "
+                              "the process ends or its identity is verified")
         if attempt_held(prev):
             raise LaunchError(f"{tid} already has a running attempt ({prev.get('tool')}, pid {prev.get('pid')}). "
                               f"One task = one worker. Stop it first: run_task.py {tid} --stop")
@@ -902,7 +936,7 @@ def cmd_launch(tid, tool, manual, grant):
         if not rt:
             rt = {"taskId": tid, "attempts": []}
         n = len(rt["attempts"]) + 1
-        a = {"n": n, "tool": tool or "manual",
+        a = {"n": n, "taskId": tid, "tool": tool or "manual",
              "toolArgsHash": argv_hash(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")))
              if tool else None,
              "role": t["role"], "manual": manual, "status": "running", "pid": None, "pidStart": None,
