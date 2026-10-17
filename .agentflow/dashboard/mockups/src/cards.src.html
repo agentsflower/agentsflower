@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks __PROJECT__ · Roadmap mockup A — stage cards</title>
+<style>
+/*MOCKUP_CSS*/
+/* variant A: stage-first cards */
+.scard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.scard>.shead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.scard>.shead b{font-size:15px}
+.scard>.shead .ttl{font-size:14px}
+.scard>.shead .sp{flex:1}
+.tot{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.tot:last-child{border-bottom:0}
+</style>
+</head>
+<body>
+<div class="app">
+<header id="hdr"></header>
+
+<div class="card fbcard" id="fbar"></div>
+<div class="fbchosen" id="fchosen"></div>
+
+<aside class="side left">
+  <div class="card"><h2>Roadmap · plan source order</h2><div id="rail"></div></div>
+  <div class="card"><h2>Totals</h2><div id="totals"></div></div>
+</aside>
+
+<main class="center"><div class="stagecol" id="stagecol"></div></main>
+
+<aside class="side right">
+  <div class="card diag" id="diag"></div>
+  <div class="card" id="detail"><h2>Selection</h2><div class="mut">Click a task row or a link — details appear here.</div></div>
+</aside>
+</div>
+
+<script>
+/*MOCKUP_JS*/
+const DATA = __DATA__;
+M.initHeader(DATA.generated, DATA.project);
+const P = M.prep(DATA), byId = P.byId;
+let selTask = null, selStage = null;
+const esc = M.esc, col = M.col;
+
+function stageShown(s){ const f = new Set(fl.filtered().map(t => t.id)); return s.tasks.filter(t => f.has(t.id)); }
+
+function renderRail(){
+  const rows = DATA.stages.map(s => {
+    const shown = stageShown(s);
+    const tc = s.tasks.length ? `${shown.length===s.tasks.length?shown.length:shown.length+"/"+s.tasks.length} task${s.tasks.length===1?"":"s"}` : "No local tasks";
+    return `<button type="button" class="stg${selStage===s.id?" sel":""}" data-st="${s.id}">
+      <span class="nm"><b>Stage ${esc(s.id)}</b> · ${esc(s.title)}</span>
+      <span class="sub"><span class="tag" style="background:var(${M.DECL[s.declared]||"--s-ready"})">${esc(s.declared)}</span> ${tc}${s.recurring?" · recurring":""}</span>
+    </button>`;
+  }).join("");
+  const un = P.unmapped.length ? `<button type="button" class="stg" data-st="unmapped"><span class="nm"><b>Unmapped</b> · no matching plan stage</span><span class="sub">${P.unmapped.length} task${P.unmapped.length===1?"":"s"}</span></button>` : "";
+  document.getElementById("rail").innerHTML = rows + un;
+  document.querySelectorAll("#rail .stg").forEach(b => b.onclick = () => {
+    selStage = b.dataset.st; renderRail();
+    const el = document.getElementById("s" + selStage); if (el) el.scrollIntoView({block:"nearest"});
+  });
+}
+
+function renderTotals(){
+  const f = fl.filtered();
+  const decl = {}; DATA.stages.forEach(s => decl[s.declared] = (decl[s.declared]||0)+1);
+  const taskC = {}; M.ST_ORDER.forEach(k => taskC[k] = 0); f.forEach(t => taskC[t.status]++);
+  const ev = {pass:0,fail:0,stale:0,pending:0,unknown:0,untracked:0};
+  DATA.stages.forEach(s => { if(!s.ev.tracked) ev.untracked++; else ["pass","fail","stale","pending","unknown"].forEach(k => ev[k]+=s.ev[k]||0); });
+  document.getElementById("totals").innerHTML =
+    Object.entries(decl).map(([k,v]) => `<div class="tot"><span>Declared: ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="tot"><span>Tasks shown</span><b>${f.length} of ${DATA.tasks.length}</b></div>`
+    + Object.entries(taskC).filter(([,v]) => v).map(([k,v]) => `<div class="tot"><span><i class="cchip" style="padding:0"><i style="background:${col(k)}"></i></i> ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="tot"><span>Evidence · pass/fail/stale/pending/unknown</span><b>${ev.pass}/${ev.fail}/${ev.stale}/${ev.pending}/${ev.unknown}</b></div>`
+    + `<div class="tot"><span>Stages without tracked criteria</span><b>${ev.untracked}</b></div>`;
+}
+
+function stageCard(s){
+  const shown = stageShown(s);
+  return `<section class="scard" id="s${s.id}">
+    <div class="shead"><b>Stage ${esc(s.id)}</b><span class="ttl">${esc(s.title)}</span><span class="sp"></span><a class="src" href="${esc(s.sourceHref)}" title="${esc(s.source)}">${esc(s.sourceRef)} ↗</a></div>
+    ${s.warn ? `<div class="warn">⚠ ${esc(s.warn)}</div>` : ""}
+    ${M.factsHtml(s, shown)}
+    ${M.blockersHtml(s)}
+    ${M.extrasHtml(s)}
+    ${M.taskTable(shown, s.tasks.length)}
+  </section>`;
+}
+
+function renderStages(){
+  const cards = DATA.stages.map(stageCard).join("");
+  const un = P.unmapped.length ? `<section class="scard" id="sunmapped">
+      <div class="shead"><b>Unmapped</b><span class="ttl">tasks whose Stage has no plan entry</span></div>
+      <div class="warn">⚠ These tasks name a stage that is absent from the plan — they stay visible instead of being hidden or guessed.</div>
+      ${M.taskTable(P.unmapped.filter(t => fl.pass(t)), P.unmapped.length)}
+    </section>` : "";
+  document.getElementById("stagecol").innerHTML = cards + un;
+  M.bindLinks(document.getElementById("stagecol"), select);
+}
+
+function select(id){
+  const t = byId[id]; if (!t) return;
+  selTask = id;
+  document.getElementById("detail").innerHTML = M.taskCardLite(t, byId);
+  M.bindLinks(document.getElementById("detail"), select);
+  document.querySelectorAll("tr.row").forEach(r => r.classList.toggle("sel", r.dataset.go === id));
+}
+
+function render(){ renderRail(); renderTotals(); renderStages(); }
+const fl = M.mkFilters(DATA.tasks, render);
+document.getElementById("diag").innerHTML = M.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + M.provenanceCard(DATA);
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks __PROJECT__ · Roadmap mockup B — journey</title>
+<style>
+/*MOCKUP_CSS*/
+/* variant B: journey stepper — stages as positions on the plan path */
+.gl{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.gl:last-child{border-bottom:0}
+.howto{font-size:12px;color:var(--mut);line-height:1.5}
+.jhead .jh1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.jhead .jh1 .ttl{font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+</style>
+</head>
+<body>
+<div class="app">
+<header id="hdr"></header>
+
+<div class="card fbcard" id="fbar"></div>
+<div class="fbchosen" id="fchosen"></div>
+
+<aside class="side left">
+  <div class="card"><h2>At a glance</h2><div id="glance"></div></div>
+  <div class="card"><h2>How to read</h2><div class="howto">
+    The rail is the plan in source order — every declared stage is a node, with or without tasks.
+    Each node keeps three facts separate: the <b>declared status</b> the plan records,
+    the <b>local task counts</b> from the ledger, and the <b>recorded exit-criteria evidence</b>.
+    Dated spans are observed local records only; a stage with none says so instead of guessing.
+    Click a node to open its criteria, evidence and tasks.
+  </div></div>
+</aside>
+
+<main class="center"><div class="stagecol"><div class="jrail" id="jrail"></div></div></main>
+
+<aside class="side right">
+  <div class="card diag" id="diag"></div>
+  <div class="card" id="detail"><h2>Selection</h2><div class="mut">Click a task row or a link — details appear here.</div></div>
+</aside>
+</div>
+
+<script>
+/*MOCKUP_JS*/
+const DATA = __DATA__;
+M.initHeader(DATA.generated, DATA.project);
+const P = M.prep(DATA), byId = P.byId;
+const esc = M.esc, col = M.col;
+let selTask = null;
+// stages with work, warnings or recorded cycles open expanded; quiet historical ones stay folded
+const open = new Set(DATA.stages.filter(s => s.tasks.length || s.warn || s.recurring).map(s => s.id));
+
+function stageShown(s){ const f = new Set(fl.filtered().map(t => t.id)); return s.tasks.filter(t => f.has(t.id)); }
+function stageWhen(s){
+  const ds = [];
+  s.tasks.forEach(t => { if(t.created) ds.push(t.created); if(t.updated) ds.push(t.updated); });
+  if (s.recurring) s.recurring.cycles.forEach(c => c.recorded && ds.push(c.recorded));
+  if (s.criteria) s.criteria.forEach(c => c.evidence && c.evidence.recorded && ds.push(c.evidence.recorded));
+  if (!ds.length) return "no dated local records";
+  ds.sort();
+  return ds[0] === ds[ds.length-1] ? "recorded " + ds[0] : "records " + ds[0] + " → " + ds[ds.length-1];
+}
+function oneLiner(s){
+  const shown = stageShown(s);
+  const t = s.tasks.length ? (shown.length===s.tasks.length?s.tasks.length:shown.length+"/"+s.tasks.length)+" tasks" : "no local tasks";
+  const e = s.ev.tracked ? "evidence " + ["pass","fail","stale","pending","unknown"].filter(k=>s.ev[k]).map(k=>k+" "+s.ev[k]).join("/") : "evidence untracked";
+  return `${t} · ${e}`;
+}
+
+function renderGlance(){
+  const f = fl.filtered();
+  const decl = {}; DATA.stages.forEach(s => decl[s.declared] = (decl[s.declared]||0)+1);
+  document.getElementById("glance").innerHTML =
+    `<div class="gl"><span>Stages declared in the plan</span><b>${DATA.stages.length}</b></div>`
+    + Object.entries(decl).map(([k,v]) => `<div class="gl"><span>· ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="gl"><span>Stages with local tasks</span><b>${DATA.stages.filter(s=>s.tasks.length).length}</b></div>`
+    + `<div class="gl"><span>Tasks shown / total</span><b>${f.length} / ${DATA.tasks.length}</b></div>`
+    + `<div class="gl"><span>Unmapped tasks</span><b>${P.unmapped.length}</b></div>`;
+}
+
+function nodeHtml(s){
+  const shown = stageShown(s), isOpen = open.has(s.id);
+  return `<div class="jnode${isOpen?" open":""}" id="s${s.id}" style="--jc:var(${M.DECL[s.declared]||"--s-ready"})">
+    <div class="jhead" data-st="${s.id}" tabindex="0" role="button" aria-expanded="${isOpen}">
+      <div class="jh1"><b>Stage ${esc(s.id)}</b><span class="ttl">${esc(s.title)}</span>
+        <span class="tag" style="background:var(${M.DECL[s.declared]||"--s-ready"})">${esc(s.declared)}</span>
+        <a class="src" href="${esc(s.sourceHref)}" title="${esc(s.source)}" onclick="event.stopPropagation()">${esc(s.sourceRef)} ↗</a></div>
+      <div class="jwhen">${esc(stageWhen(s))} · ${esc(oneLiner(s))}${s.recurring?" · recurring":""}</div>
+    </div>
+    <div class="jbody"${isOpen?"":" hidden"}>
+      ${s.warn ? `<div class="warn">⚠ ${esc(s.warn)}</div>` : ""}
+      ${M.factsHtml(s, shown)}
+      ${M.blockersHtml(s)}
+      ${M.extrasHtml(s)}
+      ${M.taskTable(shown, s.tasks.length)}
+    </div>
+  </div>`;
+}
+
+function renderRail(){
+  const nodes = DATA.stages.map(nodeHtml).join("");
+  const un = P.unmapped.length ? `<div class="jnode${open.has("unmapped")?" open":""}" id="sunmapped" style="--jc:var(--s-rej)">
+      <div class="jhead" data-st="unmapped" tabindex="0" role="button">
+        <div class="jh1"><b>Unmapped</b><span class="ttl">tasks whose Stage has no plan entry</span></div>
+        <div class="jwhen">${P.unmapped.length} task${P.unmapped.length===1?"":"s"} — visible, not guessed</div>
+      </div>
+      <div class="jbody"${open.has("unmapped")?"":" hidden"}>
+        <div class="warn">⚠ These tasks name a stage that is absent from the plan.</div>
+        ${M.taskTable(P.unmapped.filter(t => fl.pass(t)), P.unmapped.length)}
+      </div>
+    </div>` : "";
+  document.getElementById("jrail").innerHTML = nodes + un;
+  document.querySelectorAll(".jhead").forEach(h => {
+    const toggle = () => {
+      const id = h.dataset.st;
+      open.has(id) ? open.delete(id) : open.add(id);
+      renderRail();
+    };
+    h.onclick = e => { if (e.target.closest("a,[data-go]")) return; toggle(); };
+    h.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } };
+  });
+  M.bindLinks(document.getElementById("jrail"), select);
+}
+
+function select(id){
+  const t = byId[id]; if (!t) return;
+  selTask = id;
+  document.getElementById("detail").innerHTML = M.taskCardLite(t, byId);
+  M.bindLinks(document.getElementById("detail"), select);
+  document.querySelectorAll("tr.row").forEach(r => r.classList.toggle("sel", r.dataset.go === id));
+}
+
+function render(){ renderGlance(); renderRail(); }
+const fl = M.mkFilters(DATA.tasks, render);
+document.getElementById("diag").innerHTML = M.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + M.provenanceCard(DATA);
+render();
+</script>
+</body>
+</html>
