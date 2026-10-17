@@ -140,3 +140,12 @@ A test-only temporary-directory cleanup race was fixed by waiting for worker exi
 2026-10-17 (devin-background): T-003 developer completed at 1849b2bf. Wrote Tester contract T-004-verify-package-cli.md (Verifies T-003 @ 1849b2bf, tool devin, swe-2-medium), ledger ready, attempt 1 launched (log .agentflow/tasks/.runtime/T-004.1.log). Initially misfiled as T-027; cancelled unused and recreated under the reserved ID T-004.
 
 2026-10-17 (devin-background): T-005 developer completed at 1665318 (optional MCP server, installer --mcp/--mcp-client, VERSION 2.11.13, CI mcp job). Wrote Tester contract T-006-verify-mcp-server.md (Verifies T-005 @ 1665318, tool devin, swe-2-medium), ledger ready, attempt 1 launched (log .agentflow/tasks/.runtime/T-006.1.log).
+
+## 2026-10-17: T-010 result in, T-011 final local review launched
+
+T-010 developer completed at 0fcd773 (English GUIDE, README, RELEASE_NOTES,
+real T-008 dashboard.png, 2.12.0 metadata sync; 204 tests + check_package pass).
+Orchestrator wrote the reserved T-011 Task File (tester, devin, swe-2-medium),
+ledger ready, attempt 1 launched. Verdict pass -> tick auto-accepts T-010. Any
+other verdict -> Orchestrator decides; remote CI/macOS push remains the human's
+separate release gate.

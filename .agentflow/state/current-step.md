@@ -24,3 +24,4 @@ push; T-011 reviews LOCAL preparation and honestly records this gap. Do not bloc
 other local work, tag/publish or invent a green remote run. No agent push.
 Keep rejected worktrees/foreign nul untouched. Human product URLs are optional
 missing input: ask/record unresolved sources, never guess extension IDs.
+
