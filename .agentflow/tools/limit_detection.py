@@ -28,9 +28,10 @@ output ("per-video quota reservation", "rate limits are per process",
 Quoted data is not the provider's own error: the content of structured
 non-error events (assistant, tool, successful result) is skipped entirely,
 and on a plain line a phrase framed as quoted output ("test failed:
-expected 200, got 429 <phrase>", "the API responded: '<phrase>'") stays
-subject matter. A bare provider sentence or an error-prefixed line keeps
-counting at any exit code.
+expected 200, got 429 <phrase>", "the API responded: '<phrase>'", a report
+verb like "the banner shows \"<phrase>\"" or an already-open quote span)
+stays subject matter. A bare provider sentence or an error-prefixed line
+keeps counting at any exit code.
 
 Retryable transport failures (UNAVAILABLE, connection refused, timeouts, 5xx)
 match no pattern: they stay normal retry/fallback errors, never a budget hold.
@@ -84,11 +85,13 @@ _OUTER_LINE = re.compile(r"^\s*(?:[\w.]+ )?(?:error|fatal|panic|exception)\b", r
 
 # Framing before a match that marks it as quoted subject matter, not the
 # tool's own report: test/assertion output, an HTTP status in a check, or
-# reported speech ("the API responded: 'out of credits'").
+# reported speech ("the API responded: 'out of credits'", "the banner shows
+# 'out of credits'").
 _QUOTE_FRAME = re.compile(
     r"\b(?:expected|assert(?:ion|ed)?|tests?|fixtures?|got|returned|"
-    r"responded|replied|reported|printed|output|response|said|says|"
-    r"quote[ds]?|shown|stderr|stdout)\b|status\s+(?:code\s+)?\d",
+    r"responded|replied|reported|print(?:ed|s)?|output|response|said|says|"
+    r"quote[ds]?|show[ns]?|displays?(?:ed)?|wrote|writ(?:es?|ten)|"
+    r"echo(?:es|ed)?|stderr|stdout)\b|status\s+(?:code\s+)?\d",
     re.I,
 )
 
@@ -140,11 +143,33 @@ def _candidates(text):
         yield line, bool(_OUTER_LINE.match(line)), False
 
 
+def _inside_quote(prefix):
+    """True when `prefix` ends inside an unclosed quoted span: report prose that
+    quotes the provider verbatim ("the transcript contains '<phrase>'"). An
+    apostrophe inside a word ("you've") is no delimiter, and a closing or
+    possessive `'` opens no span."""
+    inside = None
+    n = len(prefix)
+    for i, c in enumerate(prefix):
+        if c not in "\"'`":
+            continue
+        if inside is None:
+            if c == "'" and i and prefix[i - 1].isalnum():
+                continue  # a closing or possessive apostrophe opens no span
+            inside = c
+        elif c == inside and not (c == "'" and i + 1 < n
+                                  and prefix[i - 1].isalnum() and prefix[i + 1].isalnum()):
+            inside = None
+    return inside is not None
+
+
 def _quoted(candidate, start):
     """True when the match at `start` sits inside report prose that quotes the
-    phrase: test/assertion output, an HTTP status result or reported speech."""
+    phrase: test/assertion output, an HTTP status result, reported speech or an
+    already-open quoted span."""
     prefix = candidate[:start].rstrip()
-    return bool(_QUOTE_FRAME.search(prefix)) or prefix.endswith(('"', "'", "`"))
+    return (bool(_QUOTE_FRAME.search(prefix)) or prefix.endswith(('"', "'", "`"))
+            or _inside_quote(candidate[:start]))
 
 
 def detect_detail(text, exit_code=None):

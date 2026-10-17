@@ -804,6 +804,29 @@ class RunTaskTests(unittest.TestCase):
         self.assertEqual(a["quotaGroup"], "dg")
         self.assertEqual(a["resourceCheck"]["quotaGroup"], "dg")
 
+    def test_tool_wide_limit_names_the_tool_not_the_sessions_group(self):
+        """A bare '<tool>' hold blocks every session of that tool, and the refusal names the
+        tool-wide hold - not the session's own quota group."""
+        (self.flow / "docs").mkdir(exist_ok=True)
+        (self.flow / "docs" / "model-options.json").write_text(json.dumps({
+            "policy": "test", "options": {
+                "devin": {"tool": "devin", "quota_group": "dv"},
+                "devin-9": {"tool": "devin", "model_by_effort": {"high": "test-model-9"},
+                            "quota_group": "dg"}}}), encoding="utf-8")
+        task = self.flow / "tasks" / "T-001-probe.md"
+        task.write_text(task.read_text(encoding="utf-8")
+                        .replace("Tool: devin", "Tool: devin\nModel: test-model-9"), encoding="utf-8")
+        lim = self.flow / "tasks" / ".runtime" / "tool-limits.json"
+        lim.parent.mkdir(exist_ok=True)
+        until = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
+        self.fake_devin("exit /b 0", "exit 0")
+        lim.write_text(json.dumps({"devin": {"until": until, "reason": "test", "at": until}}),
+                       encoding="utf-8")
+        r = self.launch("T-001", "devin")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("devin is limited until", r.stdout + r.stderr)
+        self.assertNotIn("devin group dg is limited", r.stdout + r.stderr)
+
     # --- resource and permission preflight ----------------------------------------------------------------------
     def test_missing_executable_refuses_before_anything_is_created(self):
         r = self.launch("T-001", "devin",

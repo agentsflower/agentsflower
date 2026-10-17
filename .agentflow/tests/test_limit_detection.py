@@ -134,6 +134,30 @@ class DetectTests(unittest.TestCase):
             for code in (0, 1):
                 self.assertIsNone(ld.detect(tail, exit_code=code), tail)
 
+    def test_provider_phrase_quoted_in_report_prose_is_no_limit(self):
+        # A verbatim strong phrase inside quoted report prose - an unlisted report
+        # verb or an already-open quote span - stays subject matter at any exit code.
+        tails = (
+            "the banner shows \"you've hit your usage limit\"\n",
+            "the banner prints \"you've hit your usage limit\"\n",
+            "the page displays 'you've hit your usage limit'\n",
+            "the worker writes `you've hit your usage limit`\n",
+            "the tool echoes \"you've hit your usage limit\"\n",
+            "the transcript contains 'you've hit your usage limit' verbatim\n",
+            "\"you've hit your usage limit\", the provider's words\n",
+        )
+        for tail in tails:
+            for code in (0, 1):
+                self.assertIsNone(ld.detect(tail, exit_code=code), tail)
+
+    def test_phrase_after_a_closed_quote_still_counts(self):
+        # Only an open span quotes the match: once it closes, the phrase is the
+        # line's own statement again.
+        self.assertIsNotNone(ld.detect("status 'ok'; You've hit your usage limit\n",
+                                       exit_code=0))
+        self.assertIsNotNone(ld.detect("log \"probe done\" - hit your usage limit\n",
+                                       exit_code=1))
+
     def test_unstructured_real_budget_failures_still_detect(self):
         # The provider's own last words keep counting: bare sentences, error
         # lines, and failure lines without quote framing.

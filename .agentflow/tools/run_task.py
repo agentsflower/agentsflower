@@ -844,7 +844,9 @@ def resource_check(tool, model=None):
     check["quotaGroup"] = group
     end = limit_until(tool, group)
     if end and end > datetime.now(timezone.utc):
-        scope = f" group {group}" if group else ""
+        # Name the hold that actually blocks: the bare <tool> key stays tool-wide even when the
+        # session has a quota group; a group-scoped binding constraint names the group.
+        scope = f" group {group}" if group and end != limit_until(tool) else ""
         raise LaunchError(f"{tool}{scope} is limited until {end.strftime('%Y-%m-%dT%H:%M:%SZ')} "
                           "(observed quota/access limit); move the task to another tool or wait.")
     check["limits"] = "clear"
