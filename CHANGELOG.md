@@ -2,6 +2,27 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.11 - 2026-10-17
+
+- `machine_capacity.py` hardens the Windows registry write: `os.replace` of `registry.json` retries only
+  transient sharing/access failures (ERROR_SHARING_VIOLATION, ERROR_ACCESS_DENIED) with a short bounded
+  backoff. A permanent failure preserves the previous registry, removes the temp file and fails closed;
+  locking, lease fairness and cleanup are unchanged.
+- `conductor.ps1` hands the session environment to the spawned Orchestrator window in memory only: the
+  `AGENTFLOW_*` set is DPAPI-encrypted (CurrentUser) onto the child command line and decrypted in the new
+  process. `conductor.env.json` is no longer written, and a leftover plaintext file from an older version is
+  removed at the next handover, so raw `AGENTFLOW_*` values are never persisted.
+- `gate.py` no longer treats the documented `Rebuild together` answer `- nothing` as a shared resource:
+  independent tasks declaring it stop blocking one another; real resource overlap is still refused.
+- Built-in model probes were re-reviewed against the installed CLI help: codex (`exec --sandbox read-only
+  --skip-git-repo-check`), claude (`-p` skips the trust dialog, empty `--allowedTools`), agy
+  (`-p --output-format stream-json`) and devin (`-p --respect-workspace-trust false --permission-mode auto`)
+  already run noninteractive inference in an empty temporary directory without repository writes or permission
+  escalation; the argv contract is now pinned by tests.
+- Migration: update the installed template with `install.py --update`. On Windows, delete a leftover
+  `.agentflow/tasks/.runtime/conductor.env.json` if one exists (the conductor also removes it itself at the
+  next Orchestrator handover). No configuration changes are needed.
+
 ## 2.11.10 - 2026-10-17
 
 - Built-in Devin model probes explicitly use `--respect-workspace-trust false` and `--permission-mode auto`

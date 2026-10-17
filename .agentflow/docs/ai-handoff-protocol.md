@@ -202,7 +202,7 @@ An `exited` attempt says nothing about the task: only the Result and the ledger 
 
 ### Release order
 
-Parts that depend on each other (a library, then the studio that embeds it, then the site) are listed in the Deployer's Task File in dependency order and deployed in that order. Before the first deploy of the train the Deployer runs the smoke check against the current production, to prove the check is not stale. Each Task File names what is rebuilt with it (`Rebuild together`).
+Parts that depend on each other (a library, then the studio that embeds it, then the site) are listed in the Deployer's Task File in dependency order and deployed in that order. Before the first deploy of the train the Deployer runs the smoke check against the current production, to prove the check is not stale. Each Task File names what is rebuilt with it (`Rebuild together`); `- nothing` declares no shared resource.
 
 ### Recovery: stale task
 

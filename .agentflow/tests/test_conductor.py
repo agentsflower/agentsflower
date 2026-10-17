@@ -66,12 +66,13 @@ class ConductorTests(unittest.TestCase):
                "needs": list(needs), "waits": [], "nextOrchestrator": "", "limited": {}}
         (self.rt / "report.json").write_text(json.dumps(rep), encoding="utf-8")
 
-    def conduct(self, *args, next_tool="codex"):
+    def conduct(self, *args, next_tool="codex", env_extra=None):
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
         env.update({"AGENTFLOW_PYTHON": sys.executable, "FAKE_NEXT": next_tool,
                     "AGENTFLOW_MACHINE_STATE_DIR": str(self.root / "machine"),
                     "AGENTFLOW_CLAUDE": str(self.root / "fake-claude.cmd"),
                     "AGENTFLOW_CODEX": str(self.root / "fake-codex.cmd"), "AGENTFLOW_DEVIN": str(self.root / "fake-devin.cmd")})
+        env.update(env_extra or {})
         r = subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             str(self.root / ".agentflow" / "tools" / "conductor.ps1"), "-Once", "-NoNotify", *args],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120)
@@ -214,6 +215,23 @@ class ConductorTests(unittest.TestCase):
             first.kill()
             first.wait()
         self.assertEqual(self.panel_status(PWSH)[0], 1)
+
+    def test_environment_reaches_the_session_window_without_a_plaintext_file(self):
+        """AGENTFLOW_* (a dummy secret) is handed over in memory: the child tool sees it, no runtime file
+        serializes it, and a leftover conductor.env.json from an older version is removed (dummy secrets only)."""
+        self.report(needs=[NEED])
+        (self.root / "fake-codex.cmd").write_text(
+            "@echo off\r\necho secret-echo:%AGENTFLOW_DUMMY_SECRET%\r\nexit /b 0\r\n", encoding="ascii")
+        legacy = self.rt / "conductor.env.json"
+        legacy.write_text('{"AGENTFLOW_OLD": "stale-plaintext"}', encoding="utf-8")
+        self.conduct(env_extra={"AGENTFLOW_DUMMY_SECRET": "shh-dummy-secret"})
+        s = self.wait_finished(1)
+        log = Path(s["log"]).read_text(encoding="utf-8", errors="replace")
+        self.assertIn("secret-echo:shh-dummy-secret", log)
+        self.assertFalse(legacy.exists(), "plaintext env handover file still exists")
+        for p in self.rt.iterdir():
+            if p.is_file() and p.name != Path(s["log"]).name:
+                self.assertNotIn(b"shh-dummy-secret", p.read_bytes(), p.name)
 
     def test_all_tools_limited_starts_nothing(self):
         self.report(needs=[NEED])
