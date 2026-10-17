@@ -89,6 +89,60 @@ class MachineCapacityTests(unittest.TestCase):
         self.assertIn("globally limited", reason)
         self.assertIsNotNone(machine.limit_until("claude"))
 
+    @unittest.skipUnless(os.name == "nt", "Windows os.replace failures carry winerror")
+    def test_transient_replace_failures_retry_until_success(self):
+        real_replace = os.replace
+        calls = []
+
+        def flaky(src, dst):
+            calls.append(1)
+            if len(calls) < 3:
+                raise OSError(13, "denied", None, 5)  # ERROR_ACCESS_DENIED: scanner/indexer holds the file
+            return real_replace(src, dst)
+
+        with patch.object(os, "replace", side_effect=flaky):
+            token, reason = machine.claim("codex", self.projects[0], "T-010", pid=os.getpid())
+        self.assertTrue(token, reason)
+        self.assertEqual(len(calls), 3)
+        state = json.loads((Path(self.tmp.name) / "registry.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(state["leases"]), 1)
+        self.assertEqual(list(Path(self.tmp.name).glob("*.tmp")), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows os.replace failures carry winerror")
+    def test_permanent_replace_failure_fails_closed_and_cleans_up(self):
+        first, _ = machine.claim("codex", self.projects[0], "T-010", pid=os.getpid())
+        registry = Path(self.tmp.name) / "registry.json"
+        before = registry.read_bytes()
+        calls = []
+
+        def denied(src, dst):
+            calls.append(1)
+            raise OSError(13, "denied", None, 32)  # ERROR_SHARING_VIOLATION that never clears
+
+        with patch.object(machine, "REPLACE_DELAY", 0), \
+                patch.object(os, "replace", side_effect=denied):
+            with self.assertRaises(PermissionError):
+                machine.release(first)
+        self.assertEqual(len(calls), machine.REPLACE_ATTEMPTS, "bounded backoff: no infinite loop")
+        self.assertEqual(registry.read_bytes(), before, "the previous registry is preserved")
+        self.assertEqual(list(Path(self.tmp.name).glob("*.tmp")), [], "temp file leaked")
+        token, reason = machine.claim("codex", self.projects[1], "T-010", pid=os.getpid())
+        self.assertIsNone(token, "failed replace left no lease behind")
+        self.assertIn("no free machine slot", reason)
+
+    def test_non_retryable_replace_error_is_not_retried(self):
+        calls = []
+
+        def gone(src, dst):
+            calls.append(1)
+            raise FileNotFoundError("registry directory vanished")
+
+        with patch.object(os, "replace", side_effect=gone):
+            with self.assertRaises(FileNotFoundError):
+                machine.claim("codex", self.projects[0], "T-010", pid=os.getpid())
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(list(Path(self.tmp.name).glob("*.tmp")), [])
+
     def test_concurrent_launchers_cannot_both_claim_the_last_slot(self):
         script = FLOW / "tools" / "machine_capacity.py"
         env = dict(os.environ)

@@ -36,6 +36,9 @@ class ModelProbeArgvTests(unittest.TestCase):
                       "--permission-mode", "auto", "--model", "test-model"],
             "codex": ["exec", "--sandbox", "read-only", "--skip-git-repo-check",
                       "reply with the single word ok", "-m", "test-model"],
+            "claude": ["-p", "reply with the single word ok", "--allowedTools", "", "--model", "test-model"],
+            "agy": ["-p", "reply with the single word ok", "--output-format", "stream-json",
+                    "--model", "test-model"],
         }
         for tool, argv in expected.items():
             for denied in (False, True):
@@ -70,6 +73,24 @@ class ModelProbeArgvTests(unittest.TestCase):
                             self.assertTrue(evidence["at"])
                             self.assertNotIn("never serialize", str(evidence))
                     self.assertEqual(len(calls), 2)
+
+    def test_builtin_probes_match_installed_cli_help_without_escalation(self):
+        """Reviewed against installed --help (T-022): every built-in names the flag its CLI needs for
+        noninteractive inference in an empty untrusted temporary directory, and none escalates permissions."""
+        codex = run_task.MODEL_PROBE_ARGS["codex"]
+        self.assertIn("--skip-git-repo-check", codex)   # codex exec refuses outside a repository
+        self.assertEqual(codex[codex.index("--sandbox") + 1], "read-only")
+        devin = run_task.MODEL_PROBE_ARGS["devin"]
+        self.assertEqual(devin[devin.index("--respect-workspace-trust") + 1], "false")  # print mode fails untrusted
+        self.assertEqual(devin[devin.index("--permission-mode") + 1], "auto")           # read-only approval only
+        claude = run_task.MODEL_PROBE_ARGS["claude"]
+        self.assertIn("-p", claude)                     # print mode: the workspace trust dialog is skipped
+        self.assertEqual(claude[claude.index("--allowedTools") + 1], "")                # no tools at all
+        self.assertEqual(run_task.MODEL_PROBE_ARGS["agy"], ["-p", "reply with the single word ok",
+                                                          "--output-format", "stream-json"])
+        for argv in run_task.MODEL_PROBE_ARGS.values():
+            for forbidden in ("--dangerously-skip-permissions", "danger-full-access", "dangerous"):
+                self.assertNotIn(forbidden, argv)  # devin's "--permission-mode auto" is asserted above
 
 
 class RunTaskTests(unittest.TestCase):

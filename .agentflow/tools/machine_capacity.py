@@ -22,6 +22,24 @@ PENDING_SECONDS = 600
 READY_SECONDS = 600
 GRANT_SECONDS = 60
 
+# Windows transient replace failures (a scanner or indexer briefly holds registry.json):
+# ERROR_ACCESS_DENIED=5, ERROR_SHARING_VIOLATION=32. Anything else, and exhaustion, fails closed.
+REPLACE_ATTEMPTS = 10
+REPLACE_DELAY = 0.05
+
+
+def _replace_retry(temp, path):
+    """One atomic os.replace, retried with a short bounded backoff only while Windows reports a transient
+    sharing/access failure; a permanent failure leaves the previous registry untouched and raises."""
+    for left in range(REPLACE_ATTEMPTS, 0, -1):
+        try:
+            os.replace(temp, path)
+            return
+        except OSError as error:
+            if getattr(error, "winerror", None) not in (5, 32) or left == 1:
+                raise
+            time.sleep(REPLACE_DELAY)
+
 
 def state_dir():
     override = os.environ.get("AGENTFLOW_MACHINE_STATE_DIR")
@@ -93,8 +111,11 @@ def _locked():
             state.setdefault("dispatch", {"ready": {}, "grants": [], "last_served": {}})
             yield state
             temp = directory / f"registry.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-            temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-            os.replace(temp, path)
+            try:
+                temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+                _replace_retry(temp, path)
+            finally:
+                temp.unlink(missing_ok=True)
         finally:
             handle.seek(0)
             if os.name == "nt":

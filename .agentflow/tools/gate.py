@@ -193,7 +193,8 @@ def parse(tid):
          "branch": field(head, "Branch"), "worktree": field(head, "Worktree"),
          "depends": re.findall(r"T-\d+", field(head, "Depends on") or ""),
          "allowed": paths(section(text, "Allowed files")), "denied": paths(section(text, "Do not touch")),
-         "rebuild": [w for b in bullets(section(text, "Rebuild together")) if re.search(r"[a-z0-9]", w := b.replace("`", "").split()[0].lower())],
+         "rebuild": [w for b in bullets(section(text, "Rebuild together"))
+                     if re.search(r"[a-z0-9]", w := b.replace("`", "").split()[0].lower()) and w != "nothing"],
          "checks": commands(section(text, "Checks")), "acceptance": bullets(section(text, "Acceptance criteria")),
          "independent": field(head, "Independent check"), "target": "local", "env": {}, "setup": [],
          "headerHash": sha256(header(text)), "result": section(text, "Result")}

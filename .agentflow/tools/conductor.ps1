@@ -33,9 +33,11 @@ param(
   [switch]$Once,
   [switch]$DryRun,
   [switch]$NoNotify,
-  [ValidateSet('', 'codex', 'claude', 'agy', 'devin')][string]$Orchestrate   # internal: inside the session window
+  [ValidateSet('', 'codex', 'claude', 'agy', 'devin')][string]$Orchestrate,   # internal: inside the session window
+  [string]$Handover = ''                                                    # internal: DPAPI-encrypted environment
 )
 $ErrorActionPreference = 'Stop'
+try { [Security.Cryptography.ProtectedData] | Out-Null } catch { Add-Type -AssemblyName System.Security }  # WinPS 5.1
 $flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $root = (Resolve-Path (Join-Path $flowRoot '..')).Path
 $rtDir = Join-Path $flowRoot 'tasks\.runtime'
@@ -50,12 +52,12 @@ New-Item -ItemType Directory -Force $rtDir | Out-Null
 $env:PYTHONUTF8 = '1'
 [Console]::OutputEncoding = $OutputEncoding = [Text.UTF8Encoding]::new($false)   # tick.py prints UTF-8
 
-if ($Orchestrate) {   # environment handed over by the conductor (a Store-packaged pwsh does not pass it to a window)
-  $envFile = Join-Path $rtDir 'conductor.env.json'
-  if (Test-Path $envFile) {
-    $handed = Get-Content $envFile -Raw -Encoding utf8 | ConvertFrom-Json
+if ($Orchestrate -and $Handover) {   # environment handed over by the conductor: DPAPI CurrentUser, in memory only
+  try {                            # (a Store-packaged pwsh does not inherit it in a new window; nothing hits disk)
+    $handed = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect(
+      [Convert]::FromBase64String($Handover), $null, 'CurrentUser')) | ConvertFrom-Json
     foreach ($p in $handed.PSObject.Properties) { Set-Item "env:$($p.Name)" $p.Value }
-  }
+  } catch { Write-Warning "conductor environment handover unreadable: $($_.Exception.Message)" }
 }
 
 function Resolve-Exe([string]$name, [string]$override) {   # same rules as run-task.ps1
@@ -183,14 +185,17 @@ function Start-Orchestrator([string]$tool, $state, [string]$why) {
   $n = [int]($state.sessions) + 1
   $handover = [ordered]@{ PATH = $env:PATH }
   Get-ChildItem env: | Where-Object { $_.Name -like 'AGENTFLOW_*' } | ForEach-Object { $handover[$_.Name] = $_.Value }
-  [IO.File]::WriteAllText((Join-Path $rtDir 'conductor.env.json'), ($handover | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  # In-memory handover: DPAPI CurrentUser protects it on the command line; raw AGENTFLOW_* never reaches a file.
+  $blob = [Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect(
+    [Text.Encoding]::UTF8.GetBytes(($handover | ConvertTo-Json -Compress)), $null, 'CurrentUser'))
+  Remove-Item -Force (Join-Path $rtDir 'conductor.env.json') -ErrorAction SilentlyContinue   # legacy plaintext handover
   $session = [pscustomobject][ordered]@{ n = $n; tool = $tool; pid = $null; pidStart = $null; startedAt = (Now)
     finishedAt = $null; exitCode = $null; limitHit = $false; log = (Join-Path $rtDir "orchestrator.$n.log")
     machineLease = $leaseToken; why = $why }
   Set-Prop $state 'session' $session; Set-Prop $state 'sessions' $n
   Write-State $state
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
-  $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Orchestrate', $tool
+  $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Orchestrate', $tool, '-Handover', $blob
   $wp = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
   $state = Read-State
   if ($wp -and -not $state.session.finishedAt) {

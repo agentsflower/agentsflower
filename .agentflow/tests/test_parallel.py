@@ -89,6 +89,23 @@ class ParallelRuleTests(unittest.TestCase):
         self.assertTrue(self.preflight("devin")["ok"], self.preflight("devin")["problems"])
         self.assertTrue(self.preflight("codex", live="")["ok"])
 
+    def test_rebuild_nothing_sentinel_is_not_a_shared_resource(self):
+        """The documented "Rebuild together: - nothing" answer means no shared resource; two independent tasks
+        using it must not block each other, while a real shared resource still does."""
+        for tid in ("T-001", "T-002"):
+            p = self.flow / "tasks" / f"{tid}-probe.md"
+            p.write_text(p.read_text(encoding="utf-8").replace(
+                "## Acceptance criteria", "## Rebuild together\n\n- nothing\n\n## Acceptance criteria"),
+                encoding="utf-8")
+        pf = self.preflight("devin")
+        self.assertFalse(any("Rebuild together" in x for x in pf["problems"]), pf["problems"])
+        for tid in ("T-001", "T-002"):
+            p = self.flow / "tasks" / f"{tid}-probe.md"
+            p.write_text(p.read_text(encoding="utf-8").replace("- nothing", "- shared-lib"), encoding="utf-8")
+        pf = self.preflight("devin")
+        self.assertTrue(any("Rebuild together 'shared-lib' is shared with T-001" in x
+                            for x in pf["problems"]), pf["problems"])
+
     def test_tick_waits_for_a_slot_instead_of_calling_an_orchestrator(self):
         rt = Path(self.tmp.name) / "rt"
         refused = "T-002 preflight failed: codex allows 1 running session(s) on this machine (project rule); running: T-001"
