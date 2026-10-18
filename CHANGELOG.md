@@ -2,6 +2,44 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.3 - 2026-10-18
+
+Launch enforcement of the routing assessment (T-076, second bounded delivery
+of T-040): every worker launch that passes through `run_task.py` - direct,
+`--manual`, tick-driven and every retry - is now admitted on the persisted
+assessment record. Automatic scheduling, backup selection and reporting
+integration remain with T-078.
+
+- `run_task.py` calls `route.admission()` after preflight and the launch
+  budgets, before any probe, lease or spawn: the latest `assessment` event
+  must exist, match the task's current `requirementsHash` and be `ok`, and
+  the resolved tool/model/effort after `AGENTFLOW_<TOOL>_ARGS` overrides must
+  still meet the recorded requirement. Missing, stale, `blocked`,
+  `low-confidence` or `failed` records refuse the launch; a retry cannot
+  downgrade through environment flags or a weaker relaunched tool. Each
+  admitted launch appends an `admission` event to `T-NNN.route.json` (safe
+  metadata only); a `Routing exception:` header line is the auditable human
+  override and is recorded as a `human-exception` event, never as Jev
+  evidence.
+- The instance routing policy in `model-options.json` now encodes the
+  human's 2026-10-18 preference: Devin for development, fresh independent
+  testing and orchestration - tester independence is a fresh session on an
+  isolated checkout, not a different CLI. The human-reported Devin
+  availability window through 2026-11-01 is noted as qualitative, not a
+  measured balance. The model catalog and observed holds are unchanged.
+- Disposable launch probes cover refused missing/failed/stale assessments, a
+  refused env-args downgrade (also on retry), an admitted adequate selection
+  and the recorded human exception.
+
+Migration: worker launches now require a routing assessment - run
+`python .agentflow/tools/route.py T-NNN` before launching a task (the
+Orchestrator does this per the mandatory routing policy), or write a
+`Routing exception: <reason>` header line for an auditable human override.
+A project without `.agentflow/docs/model-options.json` can only launch via
+the exception path until it configures options and routes a task. Adopt the
+instance policy's `floor`/`prefer` keys and policy text to get the same
+adequacy-first Devin preference.
+
 ## 2.15.2 - 2026-10-18
 
 Routing assessment/admission core (T-074, first bounded delivery of T-040):

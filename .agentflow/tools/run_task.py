@@ -78,7 +78,10 @@ Permission and isolation matrix (a missing combination refuses the launch; the l
 Review isolation for a tester comes from the disposable checkout plus the end-of-attempt check; only codex adds a
 preventive sandbox on top. A tester on a CLI whose mode is not listed here is refused rather than run unsandboxed.
 
-Before a worker starts the launcher checks: the executable exists, a free account-access probe (built-in default or
+Before a worker starts the launcher checks: routing admission (route.py: a usable requirements-bound assessment,
+and the resolved tool/model/effort after env overrides must still meet the recorded requirement - a missing,
+stale or non-ok record refuses, and only a 'Routing exception:' header line overrides, recorded as a human
+decision), the executable exists, a free account-access probe (built-in default or
 AGENTFLOW_<TOOL>_PROBE; `off` = unsupported, refuses an unattended launch), an opted-in selected-model inference
 probe (AGENTFLOW_<TOOL>_MODEL_PROBE), observed quota/access limits (machine_capacity.py registry and
 tasks/.runtime/tool-limits.json), and machine capacity (slot + PORT claim). What was checked, from where, and when
@@ -138,6 +141,7 @@ import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
 import power_guard  # noqa: E402
 import quota_groups  # noqa: E402
+import route  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
 ROOT = REPO_ROOT
@@ -1616,6 +1620,21 @@ def cmd_launch(tid, tool, manual, grant):
             raise LaunchError(f"{tid}: {reason}. Nothing was started; the attempt records and their "
                               "recovery checkpoints are preserved - the Orchestrator decides the "
                               "successor task.")
+        # Routing admission (route.py, T-074): a usable assessment bound to the task's current
+        # requirementsHash, and the resolved tool/model/effort after env overrides still meets the
+        # recorded requirement. Retries and re-launches come through here identically - a weaker
+        # AGENTFLOW_<TOOL>_ARGS or a weaker relaunched tool is refused. Only a 'Routing exception:'
+        # header line overrides, and it is recorded as a human decision, never as Jev evidence.
+        problems, adm = route.admission(t, tool, rt_dir=RT_DIR)
+        if problems:
+            raise LaunchError(f"{tid}: routing admission refused, nothing was started:\n  - "
+                              + "\n  - ".join(problems)
+                              + f"\nRoute the task first: python .agentflow/tools/route.py {tid}"
+                              + " - or the human writes a 'Routing exception: <reason>' header line.")
+        route.log_admission(tid, adm, rt_dir=RT_DIR)
+        if adm["source"] == "human-exception":
+            print(f"{tid}: routing admission by explicit human exception: {adm.get('reason')}",
+                  file=sys.stderr)
         check = None
         if not manual:
             if t["role"] not in PERMISSIONS.get(tool, ()):

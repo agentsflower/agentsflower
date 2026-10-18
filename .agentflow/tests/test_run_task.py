@@ -377,7 +377,8 @@ class RunTaskTests(unittest.TestCase):
         gate_calls, task = [], {"id": "T-001", "role": "developer", "workdir": str(self.wt),
                                 "worktree": str(self.wt), "checkouts": [], "setup": [], "env": {},
                                 "target": "local", "prompt": "p", "model": None, "effort": None,
-                                "repos": [""], "baseline": {}}
+                                "repos": [""], "baseline": {},
+                                "file": str(self.flow / "tasks" / "T-001-probe.md")}
 
         def fake_gate(cmd, tid, more=()):
             gate_calls.append((cmd, list(more)))
@@ -1022,6 +1023,7 @@ Stage: 1
 Depends on: T-001
 Verifies: T-001 @ {sha}
 Resume: none
+Routing exception: disposable test fixture
 
 ## Allowed files
 
@@ -1193,6 +1195,162 @@ Resume: none
             "# rules\n\n## Preflight\n\n- delegate: on\n", encoding="utf-8")
         r = self.launch("T-001", "--manual", env=nested)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+class RoutingAdmissionTests(unittest.TestCase):
+    """T-076: the launcher gates every attempt (direct, --manual, retry) on the persisted routing
+    assessment via route.admission - live disposable launches, a fake devin CLI, no TypeSafe call."""
+
+    def setUp(self):
+        test_endcheck.WorktreeCopyTests.setUp(self)  # temp repo root "p" + worktree self.wt on t-001-probe
+        self.flow = self.root / ".agentflow"
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        self.env.update(AGENTFLOW_PYTHON=sys.executable, PYTHONUTF8="1",
+                        AGENTFLOW_MACHINE_STATE_DIR=str(Path(self.tmp.name) / "machine"),
+                        AGENTFLOW_DEVIN_MODEL_PROBE="on")  # opt into the built-in audited inference probe
+        self.env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + self.env["PATH"]
+        self.env.update(GIT_AUTHOR_NAME="test", GIT_AUTHOR_EMAIL="test@example.invalid",
+                        GIT_COMMITTER_NAME="test", GIT_COMMITTER_EMAIL="test@example.invalid")
+        self.tool("ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1",
+                  "--role", "developer", "--tool", "devin", "--status", "ready")
+        self.rt_dir = self.flow / "tasks" / ".runtime"
+        self.rt_file = self.rt_dir / "T-001.json"
+        self.route_file = self.rt_dir / "T-001.route.json"
+        self.task_file = self.flow / "tasks" / "T-001-probe.md"
+        (self.flow / "docs").mkdir(exist_ok=True)
+        (self.flow / "docs" / "model-options.json").write_text(json.dumps({"options": {
+            "devin-swe-2": {"tool": "devin",
+                            "model_by_effort": {"medium": "swe-2-medium", "high": "swe-2-high",
+                                                "max": "swe-2-max"},
+                            "quota_group": "devin"}}}), encoding="utf-8")
+
+    def tearDown(self):
+        for _ in range(10):
+            try:
+                test_endcheck.WorktreeCopyTests.tearDown(self)
+                return
+            except OSError:
+                time.sleep(0.5)
+
+    def tool(self, name, *args):
+        r = subprocess.run([sys.executable, str(self.flow / "tools" / name), *args],
+                           cwd=self.root, env=self.env, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def launch(self, *args, env=None, timeout=45):
+        return subprocess.run([sys.executable, str(self.flow / "tools" / "run_task.py"), *args],
+                              cwd=self.root, env={**self.env, **(env or {})},
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout)
+
+    def attempt(self):
+        return json.loads(self.rt_file.read_text(encoding="utf-8-sig"))["attempts"][-1]
+
+    def wait_state(self, want, timeout=30):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            a = self.attempt()
+            if a["status"] == want:
+                return a
+            time.sleep(0.2)
+        self.fail(f"attempt did not reach '{want}': {self.attempt()}")
+
+    def fake_devin(self, cmd, sh, probe="ok"):
+        pc = {"ok": 'if "%~2"=="reply with the single word ok" exit /b 0\r\n'}.get(probe, "")
+        ps = {"ok": 'if [ "$2" = "reply with the single word ok" ]; then exit 0; fi\n'}.get(probe, "")
+        self.env["AGENTFLOW_DEVIN"] = str(fake_tool(self.tmp.name, "fake-devin", pc + cmd, ps + sh))
+
+    def strip_exception(self):
+        """Remove the fixture's human exception so the recorded assessment is the only way in."""
+        self.task_file.write_text(
+            self.task_file.read_text(encoding="utf-8")
+            .replace("Routing exception: disposable test fixture\n", ""), encoding="utf-8")
+
+    def record(self, **kw):
+        """Persist a requirements-bound assessment record for T-001 (the T-074 schema)."""
+        self.rt_dir.mkdir(exist_ok=True)
+        rec = {"event": "assessment", "schemaVersion": 1, "task": "T-001", "source": "jev",
+               "at": "2026-10-18T00:00:00Z", "band": "high", "status": "ok",
+               "requirementsHash": gate.requirements_hash(self.task_file.read_text(encoding="utf-8")),
+               "required": {"effort": "high", "complexity": 0.4},
+               "selected": {"option": "devin-swe-2", "tool": "devin",
+                            "model": "swe-2-high", "effort": None}}
+        rec.update(kw)
+        hist = json.loads(self.route_file.read_text(encoding="utf-8")) if self.route_file.exists() else []
+        self.route_file.write_text(json.dumps(hist + [rec]), encoding="utf-8")
+
+    def route_events(self):
+        return json.loads(self.route_file.read_text(encoding="utf-8")) if self.route_file.exists() else []
+
+    def test_missing_stale_and_failed_assessments_refuse_before_anything(self):
+        self.strip_exception()
+        for args in (("T-001", "devin"), ("T-001", "--manual")):
+            with self.subTest(args=args):
+                r = self.launch(*args)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("routing admission refused", r.stdout + r.stderr)
+                self.assertIn("no recorded routing assessment", r.stdout + r.stderr)
+                self.assertFalse(self.rt_file.exists())
+        self.assertIn("ready", self.tool("ledger.py", "show", "T-001").stdout)  # no attempt acquired
+        self.record(status="failed", error="no TypeSafe key")
+        r = self.launch("T-001", "--manual")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("'failed'", r.stdout + r.stderr)
+        self.record(requirementsHash="0" * 64)  # an assessment against another contract is stale
+        r = self.launch("T-001", "--manual")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("stale", r.stdout + r.stderr)
+        self.assertFalse(self.rt_file.exists())
+
+    def test_env_override_downgrade_is_refused_on_launch_and_retry(self):
+        """I-02: AGENTFLOW_<TOOL>_ARGS cannot lower the resolved model below the recorded requirement -
+        a retry goes through the identical admission check."""
+        self.strip_exception()
+        self.record()  # requirement is effort >= high; the header names no model
+        env = {"AGENTFLOW_DEVIN_ARGS": "--model swe-2-medium"}
+        for _ in range(2):
+            r = self.launch("T-001", "devin", env=env)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("below the recorded requirement", r.stdout + r.stderr)
+        self.assertFalse(self.rt_file.exists())      # nothing spawned, nothing leased
+        # an adequate retry passes the same gate and records the admission
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\nexit /b 0', 'if [ "$1" = "auth" ]; then exit 0; fi\nexit 0')
+        r = self.launch("T-001", "devin", env={"AGENTFLOW_DEVIN_ARGS": "--model swe-2-high"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.wait_state("exited")
+        admitted = [e for e in self.route_events() if e.get("event") == "admission"]
+        self.assertEqual(len(admitted), 1, "only the admitted attempt is recorded")
+        self.assertEqual(admitted[0]["admitted"]["model"], "swe-2-high")
+
+    def test_adequate_assessed_selection_is_admitted_and_recorded(self):
+        self.strip_exception()
+        self.task_file.write_text(self.task_file.read_text(encoding="utf-8")
+                                  .replace("Tool: devin", "Tool: devin\nModel: swe-2-high"),
+                                  encoding="utf-8")
+        self.record()
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\nexit /b 0', 'if [ "$1" = "auth" ]; then exit 0; fi\nexit 0')
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.wait_state("exited")
+        self.assertEqual(a["requestedModel"], "swe-2-high")
+        last = self.route_events()[-1]
+        self.assertEqual((last["event"], last["source"]), ("admission", "jev"))
+        self.assertEqual(last["admitted"]["option"], "devin-swe-2")
+        self.assertEqual(last["admitted"]["tier"], "high")
+        self.assertFalse(last["deviation"], "the launch matches the recorded selection")
+        self.assertNotIn("reason", last)  # jev evidence, not a human override
+
+    def test_human_exception_admits_and_is_recorded_as_a_human_decision(self):
+        # The fixture task carries 'Routing exception: disposable test fixture' and no assessment exists.
+        r = self.launch("T-001", "--manual")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("human exception", r.stdout + r.stderr)
+        last = self.route_events()[-1]
+        self.assertEqual((last["event"], last["source"]), ("human-exception", "human-exception"))
+        self.assertIn("disposable test fixture", last["reason"])
+        self.assertTrue(last["overrode"], "the record names what the exception overrode")
+        self.assertEqual(self.launch("T-001", "--mark-finished").returncode, 0)
 
 
 def clean_tool_args(**update):

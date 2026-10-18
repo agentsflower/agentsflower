@@ -285,6 +285,71 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(len(json.loads(rt.read_text(encoding="utf-8"))), 2)
             self.assertEqual(list(rt.parent.glob("*.tmp")), [])
 
+    def test_instance_policy_prefers_devin_for_developer_and_tester(self):
+        """I-05 (T-076): the instance routing policy implements the human's 2026-10-18 preference -
+        Devin for development, fresh independent testing and orchestration - without lowering adequacy."""
+        sys.path.insert(0, str(FLOW / "tools"))
+        import route  # noqa: E402
+        cfg = json.loads((FLOW / "docs" / "model-options.json").read_text(encoding="utf-8"))
+        policy = cfg.get("policy") or ""
+        floor = cfg.get("floor") or {}
+        self.assertEqual(floor.get("option"), "devin-swe-2")
+        self.assertEqual(cfg["options"][floor["option"]]["tool"], "devin")
+        self.assertEqual(cfg.get("prefer"), ["devin"])
+        self.assertIn("fresh independent testing", policy)
+        self.assertIn("orchestration", policy)
+        self.assertIn("2026-11-01", policy, "the reported availability window is documented")
+        self.assertNotIn("different tool", policy,
+                         "no generic other-CLI preference may contradict the Devin preference")
+        # selection itself: for both roles the Devin floor leads the adequate candidates
+        today = TODAY.isoformat()
+        required = {"effort": "high", "complexity": 0.4}
+        for role in ("developer", "tester"):
+            with self.subTest(role=role):
+                avoid = "codex" if role == "tester" else None  # checked task ran on codex
+                with patch.object(route.machine_capacity, "limit_until", return_value=None), \
+                        patch.object(route, "cli_usable", return_value=True):
+                    eligible, _ = route.eligibility(cfg["options"], role, avoid, today)
+                cands = {n: o for n, o in eligible.items()
+                         if route.adequate_reason(o, required) is None}
+                self.assertIn("devin-swe-2", cands, f"{role}: the Devin floor option is adequate")
+                order = route.admission_order(cands, cfg, {"codex-gpt-6-astra": 0.99})
+                self.assertEqual(order[0], "devin-swe-2",
+                                 f"{role}: an adequate Devin option leads even over a higher Jev rank")
+
+    def test_routing_selects_devin_for_developer_and_tester_roles(self):
+        """I-05 end-to-end: with the prefer/floor policy both roles land on the Devin option even when
+        Jev ranks another CLI higher (the tester checks a task that ran on another tool)."""
+        (self.root / ".agentflow" / "docs" / "model-options.json").write_text(json.dumps({
+            "policy": "prefer devin", "jev_model": "jev-1.13.0",
+            "floor": {"option": "devin-high", "effort": "high"}, "prefer": ["devin"],
+            "options": {
+                "devin-high": {"tool": "devin",
+                               "model_by_effort": {"medium": "swe-2-medium", "high": "swe-2-high"},
+                               "roles": ["developer", "tester"]},
+                "codex-max": {"tool": "codex", "model": "gpt-6.1-sol",
+                              "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"],
+                              "roles": ["developer", "tester"]},
+                "claude": {"tool": "claude", "model": "sonnet",
+                           "roles": ["developer", "tester"]}}}), encoding="utf-8")
+        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.9, "devin-high": 0.1}),
+                        "effort": effort("high"), "complexity": complexity(0.4)}
+        r = self.route("T-001")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.log()[-1]
+        self.assertEqual((rec["role"], rec["choice"], rec["tool"]), ("developer", "devin-high", "devin"),
+                         "developer selection: the Devin floor leads an adequate field")
+        tester = TASK.replace("T-001", "T-002").replace("Role: developer", "Role: tester") \
+            .replace("Tool: claude", "Tool: agy") \
+            .replace("Depends on: none", "Depends on: T-001\nVerifies: T-001 @ " + "a" * 40)
+        (self.root / ".agentflow" / "tasks" / "T-002-check.md").write_text(tester, encoding="utf-8")
+        r = self.route("T-002")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = json.loads((self.root / ".agentflow" / "tasks" / ".runtime" / "T-002.route.json")
+                         .read_text(encoding="utf-8"))[-1]
+        self.assertEqual((rec["role"], rec["choice"], rec["tool"]), ("tester", "devin-high", "devin"),
+                         "tester selection prefers Devin too when the checked task ran elsewhere")
+
     def test_tester_never_gets_the_developer_tool(self):
         sys.path.insert(0, str(self.root / ".agentflow" / "tools"))
         import route  # noqa: E402  (the copy's module, for the pure filter)
