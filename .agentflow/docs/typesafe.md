@@ -54,5 +54,6 @@ uses or changes this integration works from the official documentation, not from
     a missing, stale or non-ok record is a diagnosable block, never an admission. A `Routing exception:` header
     line is the auditable human override and is recorded as a human decision, never as Jev evidence.
     `route.assessment_problems()`, `route.admission()`, `route.backup_ok()` and `route.log_admission()` are the
-    launch-side API (wired into the launcher by T-076); `admission()` re-checks the resolved model/effort after
-    `AGENTFLOW_<TOOL>_ARGS` overrides against the recorded requirement.
+    launch-side API wired into the launcher (T-076): every launch and retry is refused without a usable record,
+    and `admission()` re-checks the resolved model/effort after `AGENTFLOW_<TOOL>_ARGS` overrides against the
+    recorded requirement.

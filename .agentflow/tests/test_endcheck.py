@@ -37,6 +37,7 @@ Branch: t-001-probe
 Worktree: {wt}
 Independent check: none - probe
 Resume: none
+Routing exception: disposable test fixture
 
 ## Allowed files
 

@@ -566,12 +566,27 @@ def latest_assessment(tid, rt_dir=None):
     return None
 
 
+def _config_kv(a, nxt):
+    """The `key=value` a Codex `-c`/`--config` token carries (the `--config=k=v` spelling too), else None."""
+    if a in ("-c", "--config"):
+        return nxt if "=" in nxt else None
+    m = re.match(r"^(?:-c|--config)=(.+)$", a)
+    return m.group(1) if m and "=" in m.group(1) else None
+
+
+def _config_value(v):
+    """A `-c k=v` value parses as TOML: one pair of matching quotes is syntax, not part of the string."""
+    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'" else v
+
+
 def env_selected(tool):
     """(model, effort) AGENTFLOW_<TOOL>_ARGS would set when the Task File names none - the same tokens
     run_task.remove_overridden guards, duplicated here because this standalone tool cannot import the
-    launcher."""
+    launcher. The `-c`/`--config` k=v spellings are Codex flags: another tool's args keep them as
+    ordinary tokens. Codex layers its overrides in order, so a repeated key resolves to the LAST
+    occurrence, and its dedicated flag layer (-m/--model, --effort) outranks the -c keys."""
     args = [a for a in os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS", "").split() if a]
-    model = effort = None
+    model = effort = cfg_model = cfg_effort = None
     for i, a in enumerate(args):
         nxt = args[i + 1] if i + 1 < len(args) else ""
         if model is None and a in ("-m", "--model") and nxt:
@@ -582,9 +597,13 @@ def env_selected(tool):
             effort = nxt
         elif effort is None and a.startswith("--effort="):
             effort = a.split("=", 1)[1]
-        elif effort is None and a == "-c" and nxt.startswith("model_reasoning_effort="):
-            effort = nxt.split("=", 1)[1]
-    return model, effort
+        elif tool == "codex" and (kv := _config_kv(a, nxt)) is not None:
+            key, val = kv.split("=", 1)
+            if key == "model":
+                cfg_model = _config_value(val)
+            elif key == "model_reasoning_effort":
+                cfg_effort = _config_value(val)
+    return model or cfg_model, effort or cfg_effort
 
 
 def identity_tier(o, model, effort):

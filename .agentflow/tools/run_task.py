@@ -78,7 +78,10 @@ Permission and isolation matrix (a missing combination refuses the launch; the l
 Review isolation for a tester comes from the disposable checkout plus the end-of-attempt check; only codex adds a
 preventive sandbox on top. A tester on a CLI whose mode is not listed here is refused rather than run unsandboxed.
 
-Before a worker starts the launcher checks: the executable exists, a free account-access probe (built-in default or
+Before a worker starts the launcher checks: routing admission (route.py: a usable requirements-bound assessment,
+and the resolved tool/model/effort after env overrides must still meet the recorded requirement - a missing,
+stale or non-ok record refuses, and only a 'Routing exception:' header line overrides, recorded as a human
+decision), the executable exists, a free account-access probe (built-in default or
 AGENTFLOW_<TOOL>_PROBE; `off` = unsupported, refuses an unattended launch), an opted-in selected-model inference
 probe (AGENTFLOW_<TOOL>_MODEL_PROBE), observed quota/access limits (machine_capacity.py registry and
 tasks/.runtime/tool-limits.json), and machine capacity (slot + PORT claim). What was checked, from where, and when
@@ -138,6 +141,7 @@ import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
 import power_guard  # noqa: E402
 import quota_groups  # noqa: E402
+import route  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
 ROOT = REPO_ROOT
@@ -187,18 +191,39 @@ def env_seconds(name, default):
     return v if v > 0 else default
 
 
+def config_kv(a, nxt):
+    """The `key=value` a Codex `-c`/`--config` token carries (the `--config=k=v` spelling too), else None."""
+    if a in ("-c", "--config"):
+        return nxt if "=" in nxt else None
+    m = re.match(r"^(?:-c|--config)=(.+)$", a)
+    return m.group(1) if m and "=" in m.group(1) else None
+
+
+def config_value(v):
+    """A `-c k=v` value parses as TOML: one pair of matching quotes is syntax, not part of the string."""
+    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'" else v
+
+
 def selected_model(tool, model):
-    """The concrete model the worker would use: the task's Model line, else the one inside AGENTFLOW_<TOOL>_ARGS."""
+    """The concrete model the worker would use: the task's Model line, else the one inside AGENTFLOW_<TOOL>_ARGS.
+    `-c`/`--config` k=v is a Codex spelling only (parsed for codex); a repeated key resolves to the last
+    occurrence - Codex applies its overrides in order - and the dedicated -m/--model flag outranks it."""
     if model:
         return model
     args = split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS"))
+    flag = cfg = None
     for i, a in enumerate(args):
-        if a in ("-m", "--model") and i + 1 < len(args):
-            return args[i + 1]
-        m = re.match(r"^(?:-m|--model)=(.+)$", a)
-        if m:
-            return m.group(1)
-    return None
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if flag is None and a in ("-m", "--model") and nxt:
+            flag = nxt
+            continue
+        if flag is None and (m := re.match(r"^(?:-m|--model)=(.+)$", a)):
+            flag = m.group(1)
+            continue
+        if tool == "codex" and (kv := config_kv(a, nxt)) is not None \
+                and kv.split("=", 1)[0] == "model":
+            cfg = config_value(kv.split("=", 1)[1])
+    return flag or cfg
 
 # Wall-clock limit for one worker, enforced by the launcher itself (see the docstring): the tool process tree is
 # killed, the attempt recorded as a timeout error and the lease released. AGENTFLOW_WORKER_TIMEOUT overrides it
@@ -251,14 +276,17 @@ def split_args(value):
     return [a for a in (value or "").strip().split() if a]
 
 
-def remove_overridden(args, model, effort):
-    """The task's Model line wins over machine defaults (kept in step with the former PowerShell loop)."""
+def remove_overridden(args, model, effort, tool):
+    """The task's Model line wins over machine defaults (kept in step with the former PowerShell loop).
+    `-c`/`--config` pairs are filtered only for codex - another tool's same-spelled tokens pass through."""
     out, skip = [], False
     for i, a in enumerate(args):
         if skip:
             skip = False
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
+        kv = config_kv(a, nxt) if tool == "codex" else None
+        key = kv.split("=", 1)[0] if kv is not None else None
         if model and a in ("-m", "--model"):
             skip = True
             continue
@@ -269,8 +297,8 @@ def remove_overridden(args, model, effort):
             continue
         if effort and re.match(r"^--effort=", a):
             continue
-        if effort and a == "-c" and re.match(r"^model_reasoning_effort=", nxt):
-            skip = True
+        if (model and key == "model") or (effort and key == "model_reasoning_effort"):
+            skip = a in ("-c", "--config")  # the space-separated spelling's value is the next token
             continue
         out.append(a)
     return out
@@ -294,7 +322,8 @@ def model_args(tool, model, effort):
 
 def env_args(tool, model, effort):
     """AGENTFLOW_<TOOL>_ARGS, filtered so the task's Model line wins."""
-    return remove_overridden(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")), model, effort)
+    return remove_overridden(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")),
+                             model, effort, tool)
 
 
 def tool_argv(tool, role, prompt, model, effort, masked=False):
@@ -1616,6 +1645,21 @@ def cmd_launch(tid, tool, manual, grant):
             raise LaunchError(f"{tid}: {reason}. Nothing was started; the attempt records and their "
                               "recovery checkpoints are preserved - the Orchestrator decides the "
                               "successor task.")
+        # Routing admission (route.py, T-074): a usable assessment bound to the task's current
+        # requirementsHash, and the resolved tool/model/effort after env overrides still meets the
+        # recorded requirement. Retries and re-launches come through here identically - a weaker
+        # AGENTFLOW_<TOOL>_ARGS or a weaker relaunched tool is refused. Only a 'Routing exception:'
+        # header line overrides, and it is recorded as a human decision, never as Jev evidence.
+        problems, adm = route.admission(t, tool, rt_dir=RT_DIR)
+        if problems:
+            raise LaunchError(f"{tid}: routing admission refused, nothing was started:\n  - "
+                              + "\n  - ".join(problems)
+                              + f"\nRoute the task first: python .agentflow/tools/route.py {tid}"
+                              + " - or the human writes a 'Routing exception: <reason>' header line.")
+        route.log_admission(tid, adm, rt_dir=RT_DIR)
+        if adm["source"] == "human-exception":
+            print(f"{tid}: routing admission by explicit human exception: {adm.get('reason')}",
+                  file=sys.stderr)
         check = None
         if not manual:
             if t["role"] not in PERMISSIONS.get(tool, ()):
