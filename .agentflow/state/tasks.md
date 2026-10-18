@@ -61,5 +61,6 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-065 | Independently verify completion gate carrier | 5 | tester | devin | done | T-064 | 7f208e2 | Tester for T-064 @ 7f208e2; same tool necessary | 2026-10-17 21:15 |
 | T-068 | Evidence-path validator: only repo-path claims count as evidence | 5 | developer | devin | done | T-064 | 0193c0af3b34aab6dd3d577a3cb9138669c488ce | Unblocks T-034 carrier; machinery defect exposed by live use | 2026-10-17 23:16 |
 | T-069 | Independently verify evidence-gate scope fix | 5 | tester | devin | done | T-068 | 0193c0a | Tester for T-068 @ 0193c0a; same tool necessary (codex env-blocked, agy limited) | 2026-10-17 23:04 |
-| T-070 | Bounded autonomy carrier: T-034 artifact under corrected evidence gate | 5 | developer | devin | in progress | T-068 |  | Successor of rejected T-034; carries verified ccd74ba under the fixed evidence gate | 2026-10-18 00:04 |
+| T-070 | Bounded autonomy carrier: T-034 artifact under corrected evidence gate | 5 | developer | devin | review | T-068 |  | Successor of rejected T-034; carries verified ccd74ba under the fixed evidence gate | 2026-10-18 00:23 |
+| T-035 | Independently verify bounded autonomy carrier | 5 | tester | devin | in progress | T-070 |  | Tester for T-070 @ 52250de; same tool necessary (codex env-blocked, agy limited, claude disabled) | 2026-10-18 00:24 |
 
