@@ -37,7 +37,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-034 | Bounded autonomy: recorded model identity, quota policy, stop-hook prototype | 5 | developer | devin | rejected | T-064 |  | -> T-070 carrier: the new evidence-binding gate treats prose tokens (verify/done, launch.argv, records/checkpoints) as evidence paths - machinery defect exposed by live use; artifact itself complete+green at ccd74ba. Fix lands via T-068 first | 2026-10-17 22:25 |
 | T-036 | Concise instructions and full documentation alignment | 5 | developer | devin | ready | T-040 |  |  | 2026-10-17 11:40 |
 | T-038 | Evaluation scenarios, open-task migration, Stage 5 release metadata | 5 | developer | devin | ready | T-036 |  |  | 2026-10-17 11:08 |
-| T-040 | Mandatory assessed adequacy routing: persisted Jev assessment, floor, launch admission | 5 | developer | devin | ready | T-034 |  |  | 2026-10-17 11:40 |
+| T-040 | Mandatory assessed adequacy routing: persisted Jev assessment, floor, launch admission | 5 | developer | devin | in progress | T-034 |  |  | 2026-10-18 01:26 |
 | T-042 | Clickable roadmap-view mockup for human selection | 5 | developer | devin | done |  | d75d91daf642c0bd7de42f28913bcfcbe52d80fb |  | 2026-10-17 11:56 |
 | T-044 | Roadmap data layer: plan parser, stage records, payload schema, diagnostics | 5 | developer | devin | ready | T-038 |  |  | 2026-10-17 11:40 |
 | T-046 | Roadmap view UI: stage cards, drill-down, diagnostics, themes | 5 | developer | devin | ready | T-044 |  |  | 2026-10-17 11:40 |
@@ -61,6 +61,6 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-065 | Independently verify completion gate carrier | 5 | tester | devin | done | T-064 | 7f208e2 | Tester for T-064 @ 7f208e2; same tool necessary | 2026-10-17 21:15 |
 | T-068 | Evidence-path validator: only repo-path claims count as evidence | 5 | developer | devin | done | T-064 | 0193c0af3b34aab6dd3d577a3cb9138669c488ce | Unblocks T-034 carrier; machinery defect exposed by live use | 2026-10-17 23:16 |
 | T-069 | Independently verify evidence-gate scope fix | 5 | tester | devin | done | T-068 | 0193c0a | Tester for T-068 @ 0193c0a; same tool necessary (codex env-blocked, agy limited) | 2026-10-17 23:04 |
-| T-070 | Bounded autonomy carrier: T-034 artifact under corrected evidence gate | 5 | developer | devin | review | T-068 |  | Successor of rejected T-034; carries verified ccd74ba under the fixed evidence gate | 2026-10-18 00:23 |
-| T-035 | Independently verify bounded autonomy carrier | 5 | tester | devin | in progress | T-070 |  | Tester for T-070 @ 52250de; same tool necessary (codex env-blocked, agy limited, claude disabled) | 2026-10-18 00:24 |
+| T-070 | Bounded autonomy carrier: T-034 artifact under corrected evidence gate | 5 | developer | devin | done | T-068 | 52250de0747d7dc7f81e459b556d14befb7fcc8d | Successor of rejected T-034; carries verified ccd74ba under the fixed evidence gate | 2026-10-18 01:25 |
+| T-035 | Independently verify bounded autonomy carrier | 5 | tester | devin | done | T-070 | 52250de | Tester for T-070 @ 52250de; same tool necessary (codex env-blocked, agy limited, claude disabled) | 2026-10-18 00:42 |
 

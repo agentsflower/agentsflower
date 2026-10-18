@@ -53,7 +53,8 @@ selection; extend into enforced admission, do not rebuild.
 ## Do not touch
 
 - .agentflow/state/
-- .agentflow/tasks/ (other Task Files)
+- .agentflow/tasks/t-*.md (other Task Files)
+- .agentflow/tasks/.runtime/
 - .github/
 - README.md, GUIDE.md, GUIDE.ru.md, RELEASE_NOTES.md (docs task owns them)
 - pyproject.toml, setup.py, MANIFEST.in, .agentflow/dashboard/
