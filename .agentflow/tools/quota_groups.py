@@ -36,23 +36,33 @@ def default_group(tool, opts=None):
     return (opts.get(tool) or {}).get("quota_group")
 
 
+def option_for(tool, model=None, opts=None):
+    """(name, option) describing what a <tool> session on <model> runs, or (None, None).
+
+    model None -> the option named after the tool, which describes the CLI's own default model.
+    A configured model -> the option carrying it, as "model" or a "model_by_effort" value.
+    An unknown model -> (None, None): what it really is cannot be known from the configuration."""
+    opts = options() if opts is None else opts
+    if not tool:
+        return None, None
+    if model is None:
+        return (tool, opts[tool]) if tool in opts else (None, None)
+    for name, o in opts.items():
+        if o.get("tool") != tool:
+            continue
+        if model == o.get("model") or model in (o.get("model_by_effort") or {}).values():
+            return name, o
+    return None, None
+
+
 def group_for(tool, model=None, opts=None):
     """The quota group a <tool> session on <model> consumes.
 
     model None -> the tool's default group (the CLI's own model choice). A configured model -> its
     option's group (None when the option is ungrouped). An unknown model -> None: only tool-wide
     holds apply, since its real group cannot be known."""
-    opts = options() if opts is None else opts
-    if not tool:
-        return None
-    if model is None:
-        return default_group(tool, opts)
-    for o in opts.values():
-        if o.get("tool") != tool:
-            continue
-        if model == o.get("model") or model in (o.get("model_by_effort") or {}).values():
-            return o.get("quota_group")
-    return None
+    _name, o = option_for(tool, model, opts)
+    return (o or {}).get("quota_group")
 
 
 def main():

@@ -1,6 +1,7 @@
-"""Recommend the tool, model and reasoning effort for one task with TypeSafe AI (Jev).
+"""Assess the tool, model and reasoning effort for one task with TypeSafe AI (Jev), and enforce the
+recorded assessment at every worker launch.
 
-  python .agentflow/tools/route.py T-007              # print the recommendation
+  python .agentflow/tools/route.py T-007              # print the recommendation, persist the assessment
   python .agentflow/tools/route.py T-007 --apply      # write Tool: / Model: into a task that has not started (high band)
 
 Built to the TypeSafe documentation (https://docs.typesafe.ai, summary in .agentflow/docs/typesafe.md); read it
@@ -16,20 +17,36 @@ Options: `.agentflow/docs/model-options.json` (project-owned):
 
   {"policy": "how to choose, in words (cost, free windows, independence)",
    "jev_model": "jev-1.13.0",
+   "floor": {"option": "devin-swe-2", "effort": "high"},   # minimum permitted default, never a downgrade
+   "prefer": ["devin"],                                   # CLI preference among adequate options only
    "options": {"<id>": {"tool": "codex|claude|agy|devin", "model": "...",
                         "efforts": ["low", "medium", "high"],
                         "model_by_effort": {"low": "model-low", "high": "model-high"},
+                        "tier": "high",                   # effort-less models only: declared capability tier
                         "what": "what it is good at", "not_for": "what to keep away from it", "examples": ["..."],
                         "roles": ["developer", "tester"], "from": "YYYY-MM-DD", "until": "YYYY-MM-DD",
-                        "max_complexity": 0|1|2, "escalate_to": "<id>"}}}
+                        "max_complexity": 0|1|2, "escalate_to": "<id>", "quota_group": "..."}}}
 
 An option outside its from/until window or not meant for the task's role is left out; a tester never gets the tool
 of the developer task it checks while another option remains (protocol: Tool Routing, independence).
 
+Enforcement (the routing policy): every call persists an assessment record - schemaVersion 1, event
+"assessment" - in .agentflow/tasks/.runtime/T-NNN.route.json, bound to the task's requirementsHash
+(header minus the routing fields Tool/Model/Backup/Routing exception/Resume). Its `status` is
+  ok              an adequate option was selected under the ordering: the floor option first when it can
+                  meet the requirement, then preferred CLIs, then everything else - each by Jev ranking;
+  blocked         nothing adequate is usable (the record names why per option) - the launch waits;
+  low-confidence  Jev answered below the low band - never admission evidence;
+  failed          the assessment could not complete (no key, API error, no options file) - never evidence.
+Launch admission (run_task.py, and tick.py's automatic launches): the latest assessment must exist, match
+the current requirementsHash and be status ok, and the resolved identity after env/CLI overrides
+(AGENTFLOW_<TOOL>_ARGS filtered by the task's Model line) must still meet the recorded requirement - the
+same rule binds backups, retries and resumed attempts. Only a `Routing exception: <reason>` header line
+overrides a failed or missing assessment, and it is recorded as a human exception, never as Jev evidence.
+
 Key: TYPESAFE_API_KEY, or a file named by AGENTFLOW_TYPESAFE_KEY_FILE (outside the repository); never printed or
 stored. Base URL: TYPESAFE_BASE_URL (default https://api.typesafe.ai). Exit: 0 high band, 4 medium band (printed, not
-applied), 3 no decision. Every call prints and logs Jev's version, token usage and request id
-(.agentflow/tasks/.runtime/T-NNN.route.json). A recommendation is advice: the Orchestrator owns the choice.
+applied), 3 no decision, 5 blocked. Every call prints and logs Jev's version, token usage and request id.
 """
 import argparse
 import glob
@@ -42,19 +59,21 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
 import machine_capacity  # noqa: E402
+import quota_groups  # noqa: E402
 
 API = os.environ.get("TYPESAFE_BASE_URL", "https://api.typesafe.ai").rstrip("/") + "/v1/systemone"
 OPTIONS = FLOW_ROOT / "docs" / "model-options.json"
 JEV_MODEL = "jev-1.13.0"  # pinned: the bands below are set for this version (docs: Models)
 HIGH, LOW = 0.9, 0.5      # docs: Confidence - act above 0.9, confirm 0.5-0.9, a person decides below 0.5
-OK, NO_DECISION, MEDIUM = 0, 3, 4
+OK, NO_DECISION, MEDIUM, BLOCKED = 0, 3, 4, 5
+CLI_TOOLS = ("codex", "claude", "agy", "devin")  # the launcher's managed CLIs (as run_task.TOOLS)
 COMPLEXITY = [
     {"summary": "Small", "signals": "one area, clear steps, mechanical or well-trodden change, little risk"},
     {"summary": "Moderate", "signals": "several files within one feature, ordinary tests, known patterns"},
@@ -91,20 +110,23 @@ def api_key():
     raise NoDecision("no TypeSafe key: set TYPESAFE_API_KEY or AGENTFLOW_TYPESAFE_KEY_FILE")
 
 
-def available(options, role, avoid_tool=None, today=None):
-    today = today or date.today().isoformat()
-    out = {k: v for k, v in options.items()
-           if (not v.get("roles") or role in v["roles"])
-           and v.get("from", "0000") <= today <= v.get("until", "9999")}
-    if avoid_tool:
-        other = {k: v for k, v in out.items() if v.get("tool") != avoid_tool}
-        out = other or out
-    return out
+def static_reason(o, role, avoid_tool, today):
+    """Why an option is out regardless of the machine: role, tester independence or the from/until window."""
+    if o.get("roles") and role not in o["roles"]:
+        return f"not for role {role}"
+    if avoid_tool and o.get("tool") == avoid_tool:
+        return f"kept off {avoid_tool}: the checked task ran on it (tester independence)"
+    if o.get("from", "0000") > today:
+        return f"available from {o['from']}"
+    if o.get("until", "9999") < today:
+        return f"until {o['until']} has passed"
+    return None
 
 
-def cli_usable(tool):
-    """Known CLI and quota state; account access may still fail at launch."""
-    if machine_capacity.limit_until(tool):
+def cli_usable(tool, group=None):
+    """Known CLI and quota state; account access may still fail at launch. A hold on the bare tool key
+    stays tool-wide; a hold on '<tool>:<group>' blocks only that quota group."""
+    if machine_capacity.limit_until(tool, group):
         return False
     if os.environ.get("AGENTFLOW_ROUTE_ASSUME_CLI_AVAILABLE") == "1":  # local API stand-in tests
         return True
@@ -114,20 +136,91 @@ def cli_usable(tool):
     return shutil.which(tool) is not None
 
 
-def backup_option(options, probabilities, primary, complexity, complexity_confidence):
-    """Highest-ranked option on another tool that can handle the measured complexity."""
-    if primary not in options:
-        return None, None
-    tool = options[primary]["tool"]
-    for name, probability in sorted(probabilities.items(), key=lambda item: -item[1]):
-        candidate = options.get(name)
-        if not candidate or candidate["tool"] == tool:
-            continue
-        limit = candidate.get("max_complexity")
-        if limit is not None and complexity_confidence >= LOW and complexity > float(limit) + 0.5:
-            continue
-        return name, probability
-    return None, None
+def live_reason(o):
+    """Why the option is unusable right now (observed hold on its quota group, or no executable)."""
+    end = machine_capacity.limit_until(o["tool"], o.get("quota_group"))
+    if end:
+        return f"limited until {end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    return None if cli_usable(o["tool"], o.get("quota_group")) else f"no {o['tool']} executable"
+
+
+def eligibility(options, role, avoid_tool, today):
+    """(eligible, reasons): options offered to Jev now, plus why each remaining option is out. When the
+    independence filter would leave a tester nothing, the avoided tool stays (as available() did)."""
+    eligible, reasons = {}, {}
+    for name, o in options.items():
+        r = static_reason(o, role, avoid_tool, today) or live_reason(o)
+        (reasons if r else eligible).__setitem__(name, r or o)
+    if avoid_tool and not any(o.get("tool") != avoid_tool for o in eligible.values()):
+        for name, o in options.items():
+            if name in eligible:
+                continue
+            r = static_reason(o, role, None, today) or live_reason(o)
+            if r is None:
+                eligible[name] = o
+                reasons.pop(name, None)
+    return eligible, reasons
+
+
+def available(options, role, avoid_tool=None, today=None):
+    """Options usable for the role right now - role, availability window, machine state, tester
+    independence. Kept for the callers that need the bare dict; eligibility() also gives the reasons."""
+    return eligibility(options, role, avoid_tool, today or date.today().isoformat())[0]
+
+
+def option_ceiling(o):
+    """The highest effort tier the option can express; effort-less models sit at their declared 'tier'
+    (or default_effort), else medium."""
+    supported = [x for x in supported_efforts(o) if x in EFFORT_ORDER]
+    if supported:
+        return max(EFFORT_ORDER.index(x) for x in supported)
+    declared = o.get("tier") or o.get("default_effort") or "medium"
+    return EFFORT_ORDER.index(declared) if declared in EFFORT_ORDER else -1
+
+
+def adequate_reason(o, required):
+    """Why an option cannot meet the requirement, or None. Capability is capability/effort based -
+    no universal ranking: the option qualifies when it can express a tier at or above the required
+    effort and its complexity cap covers the assessed complexity."""
+    cx, cap = (required or {}).get("complexity"), o.get("max_complexity")
+    if cap is not None and cx is not None and float(cx) > float(cap) + 0.5:
+        return f"complexity {cx:.2f} exceeds its cap {cap}"
+    need = (required or {}).get("effort")
+    if need and need in EFFORT_ORDER and option_ceiling(o) < EFFORT_ORDER.index(need):
+        return f"needs effort >= {need}; this option reaches only {EFFORT_ORDER[option_ceiling(o)]}"
+    return None
+
+
+def resolve_requirement(o, required_effort):
+    """(model, effort_flag, tier) this option must run to MEET the requirement, or (None, None, None)
+    when it cannot reach it. Unlike nearest_effort this never resolves below the requirement."""
+    supported = supported_efforts(o)
+    if not supported:
+        return o.get("model"), o.get("effort"), o.get("tier") or o.get("default_effort") or "medium"
+    need = required_effort if required_effort in EFFORT_ORDER else \
+        o.get("default_effort") if o.get("default_effort") in EFFORT_ORDER else "medium"
+    higher = [x for x in supported if x in EFFORT_ORDER and EFFORT_ORDER.index(x) >= EFFORT_ORDER.index(need)]
+    if not higher:
+        return None, None, None
+    tier = higher[0]
+    by_effort = o.get("model_by_effort") or {}
+    model = by_effort.get(tier, o.get("model"))
+    effort = None if by_effort or o.get("effort_in_model") else tier
+    return model, effort, tier
+
+
+def admission_order(candidates, cfg, probabilities):
+    """The policy order over adequate+usable options: the configured floor option first, then the
+    preferred CLIs, then the rest - inside each group by Jev probability. CLI preference never ranks an
+    inadequate option: this sorts only options that already meet the requirement."""
+    floor_option = (cfg.get("floor") or {}).get("option")
+    prefer = cfg.get("prefer") or []
+
+    def key(name):
+        o = candidates[name]
+        rank = 0 if name == floor_option else 1 if o.get("tool") in prefer else 2
+        return (rank, -probabilities.get(name, 0), name)
+    return sorted(candidates, key=key)
 
 
 def criterion(o):
@@ -210,52 +303,10 @@ def ask(state, qs, key, jev_model, opener=urllib.request.urlopen, tries=3):
     raise NoDecision("TypeSafe is busy (429/529)")
 
 
-def combine(options, answers):
-    """Deterministic rule over independent answers (docs: How to build - combine in code)."""
-    opt, cx = answers["option"], answers.get("complexity", {})
-    pick, note = opt.get("choice"), None
-    o = options.get(pick, {})
-    score, cx_conf = float(cx.get("score", 0)), float(cx.get("confidence", 0))
-    limit = o.get("max_complexity")
-    if limit is not None and score > float(limit) + 0.5 and cx_conf >= LOW:
-        target = o.get("escalate_to")
-        if target in options:
-            note = f"complexity {score:.2f} is above {pick}'s max_complexity {limit}: escalated to {target}"
-            pick = target
-        else:
-            note = f"complexity {score:.2f} is above {pick}'s max_complexity {limit}, and no escalate_to is available"
-    return pick, note
-
-
 def supported_efforts(option):
     """Return effort tiers in canonical order; model_by_effort keys are concrete CLI variants."""
     values = option.get("efforts") or list((option.get("model_by_effort") or {}).keys())
     return [x for x in EFFORT_ORDER if x in values] + [x for x in values if x not in EFFORT_ORDER]
-
-
-def nearest_effort(selected, supported):
-    """Map a generic Jev tier to a model's closest tier, preferring more reasoning on an equal distance."""
-    if not supported:
-        return None
-    if selected in supported:
-        return selected
-    selected_i = EFFORT_ORDER.index(selected) if selected in EFFORT_ORDER else EFFORT_ORDER.index("medium")
-    ranked = [(abs(EFFORT_ORDER.index(x) - selected_i), -EFFORT_ORDER.index(x), x)
-              for x in supported if x in EFFORT_ORDER]
-    return min(ranked)[2] if ranked else supported[0]
-
-
-def resolve_option(option, selected_effort):
-    """Resolve the family and generic effort into flags that the selected CLI actually accepts."""
-    supported = supported_efforts(option)
-    if not supported:
-        return option.get("model"), option.get("effort"), None
-    requested = selected_effort or option.get("default_effort") or "medium"
-    resolved = nearest_effort(requested, supported)
-    by_effort = option.get("model_by_effort") or {}
-    model = by_effort.get(resolved, option.get("model"))
-    effort = None if by_effort or option.get("effort_in_model") else resolved
-    return model, effort, resolved
 
 
 def band(conf):
@@ -281,67 +332,175 @@ def set_header(path, tool, model, effort, backup=None):
     Path(path).write_text(head + sep + rest, encoding="utf-8", newline="\n")
 
 
-def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
+def now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _config():
     if not OPTIONS.exists():
         raise NoDecision(f"no {OPTIONS.relative_to(FLOW_ROOT.parent).as_posix()}")
-    cfg = json.loads(OPTIONS.read_text(encoding="utf-8-sig"))
+    try:
+        cfg = json.loads(OPTIONS.read_text(encoding="utf-8-sig"))
+    except ValueError as e:
+        raise NoDecision(f"cannot read {OPTIONS.name}: {e}")
+    return cfg
+
+
+def _required(jev_effort, complexity, cfg):
+    """The launch-binding requirement: Jev's effort is a floor-adjusted minimum - the project floor
+    lifts it, never lowers it."""
+    need = None
+    floor_eff = (cfg.get("floor") or {}).get("effort")
+    for e in (jev_effort, floor_eff):
+        if e in EFFORT_ORDER and (need is None or EFFORT_ORDER.index(e) > EFFORT_ORDER.index(need)):
+            need = e
+    return {"effort": need, "complexity": complexity}
+
+
+def _floor_record(cfg):
+    spec = cfg.get("floor") or {}
+    name = spec.get("option")
+    o = (cfg.get("options") or {}).get(name or "", {})
+    model, _effort, tier = resolve_requirement(o, spec.get("effort")) if o else (None, None, None)
+    return {"option": name, "tool": o.get("tool"), "model": model, "effort": spec.get("effort"),
+            "resolvedModel": model, "resolvedTier": tier} if name else None
+
+
+def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
+    """Assess the task and persist the record a launch is admitted on. The assessment is written
+    whenever the Task File parses - including failed and blocked outcomes - because silence here
+    would read as 'not assessed', which is itself a refusal."""
     t = gate.parse(tid)
     text = Path(t["file"]).read_text(encoding="utf-8-sig")
-    avoid = None
-    if t["role"] == "tester":
-        avoid = gate.field(gate.header(Path(t["checked"]["file"]).read_text(encoding="utf-8-sig")), "Tool")
-    opts = available(cfg.get("options", {}), t["role"], avoid, today)
-    opts = {name: option for name, option in opts.items() if cli_usable(option["tool"])}
-    if not opts:
-        raise NoDecision(f"no option is available today for a {t['role']} task")
-    answers, meta = ask(task_state(t, text, today), questions(opts, cfg.get("policy", "")), api_key(),
-                        cfg.get("jev_model", JEV_MODEL), opener)
+    today = today or date.today().isoformat()
+    rec = {"event": "assessment", "schemaVersion": 1, "task": tid, "at": now_iso(), "source": "jev",
+           "requirementsHash": gate.requirements_hash(text), "role": t["role"],
+           "status": "failed", "error": None, "applied": False}
+    try:
+        cfg = _config()
+        avoid = None
+        if t["role"] == "tester":
+            avoid = gate.field(gate.header(Path(t["checked"]["file"]).read_text(encoding="utf-8-sig")), "Tool")
+        all_options = cfg.get("options", {})
+        eligible, excluded = eligibility(all_options, t["role"], avoid, today)
+        rec["excluded"] = excluded
+        rec["eligibleOptions"] = sorted(eligible)
+        if not eligible:
+            rec["status"] = "blocked"
+            rec["required"] = _required(None, None, cfg)
+            rec["blocked"] = f"no option is eligible or usable today for a {t['role']} task"
+            _log(tid, rec)
+            print(f"{tid}: blocked - {rec['blocked']}: " +
+                  "; ".join(f"{k}: {v}" for k, v in list(excluded.items())[:6]))
+            return BLOCKED
+        answers, meta = ask(task_state(t, text, today), questions(eligible, cfg.get("policy", "")),
+                            api_key(), cfg.get("jev_model", JEV_MODEL), opener)
+    except NoDecision as e:
+        rec["error"] = str(e)
+        _log(tid, rec)
+        print(f"{tid}: assessment failed: {e}")
+        return NO_DECISION
+    rec["jev"] = meta
+    rec["requestId"] = meta.get("requestId")
     opt, cx = answers["option"], answers.get("complexity", {})
     effort_answer = answers.get("effort", {})
     option_conf = float(opt.get("confidence", 0))
-    probs = sorted(opt.get("probabilities", {}).items(), key=lambda kv: -kv[1])
-    margin = probs[0][1] / probs[1][1] if len(probs) > 1 and probs[1][1] else None
-    pick, note = combine(opts, answers)
-    if pick not in opts:
-        raise NoDecision("Jev selected an option that is unavailable for this task")
-    o = opts.get(pick, {})
-    needs_effort = bool(supported_efforts(o))
-    effort_conf = float(effort_answer.get("confidence", 0)) if needs_effort else None
-    selected_effort = effort_answer.get("choice") if needs_effort else None
-    model, task_effort, resolved_effort = resolve_option(o, selected_effort)
-    backup_name, backup_probability = backup_option(opts, opt.get("probabilities", {}), pick,
-                                                     float(cx.get("score", 0)), float(cx.get("confidence", 0)))
-    backup = opts.get(backup_name) if backup_name else None
-    backup_model, backup_effort, _ = resolve_option(backup, selected_effort) if backup else (None, None, None)
-    conf = min(option_conf, effort_conf) if effort_conf is not None else option_conf
-    rec = {"task": tid, "at": date.today().isoformat(), **meta, "eligibleOptions": sorted(opts),
-           "jevChoice": opt.get("choice"), "choice": pick,
-           "confidence": conf, "optionConfidence": option_conf, "band": band(conf),
-           "probabilities": dict(probs), "complexity": cx.get("score"),
-           "complexityConfidence": cx.get("confidence"), "escalation": note,
-           "jevEffort": selected_effort, "effortConfidence": effort_conf, "resolvedEffort": resolved_effort,
-           "tool": o.get("tool"), "model": model, "effort": task_effort, "applied": False}
-    rec.update({"backupChoice": backup_name, "backupProbability": backup_probability,
-                "backupTool": backup.get("tool") if backup else None,
-                "backupModel": backup_model, "backupEffort": backup_effort})
-    print(f"{tid}: {pick} -> Tool: {o.get('tool')}"
-          + (f", Model: {model}" + (f", effort={task_effort}" if task_effort else "") if model else ""))
-    effort_text = (f"; effort {selected_effort} -> {resolved_effort} (confidence {effort_conf:.2f})"
-                   if effort_conf is not None else "")
+    effort_conf = float(effort_answer.get("confidence", 0)) if effort_answer else None
+    probs = dict(sorted(opt.get("probabilities", {}).items(), key=lambda kv: -kv[1]))
+    margin = sorted(probs.values(), reverse=True)
+    margin = margin[0] / margin[1] if len(margin) > 1 and margin[1] else None
+    cx_score = float(cx.get("score", 0)) if cx else None
+    required = _required(effort_answer.get("choice"), cx_score, cfg)
+    inadequate, candidates = {}, {}
+    for name, o in eligible.items():
+        r = adequate_reason(o, required)
+        (inadequate if r else candidates).__setitem__(name, r or o)
+    order = admission_order(candidates, cfg, probs)
+    # Options that meet the requirement but cannot run now: the resource reason a blocked launch waits on.
+    held = {}
+    for name, o in all_options.items():
+        if name in candidates or name in inadequate:
+            continue
+        if static_reason(o, t["role"], avoid, today) or adequate_reason(o, required):
+            continue
+        if live_reason(o):
+            held[name] = live_reason(o)
+    choice = order[0] if order else None
+    jev_choice = opt.get("choice")
+    needs_effort = bool(choice and supported_efforts(candidates[choice]))
+    conf = min(option_conf, effort_conf) if needs_effort and effort_conf is not None else option_conf
+    selected, sel_model, sel_effort, sel_tier = None, None, None, None
+    if choice:
+        o = candidates[choice]
+        sel_model, sel_effort, sel_tier = resolve_requirement(o, required["effort"])
+        selected = {"option": choice, "tool": o.get("tool"), "model": sel_model,
+                    "effort": sel_effort, "resolvedEffort": sel_tier}
+    backup = None
+    if choice:
+        for name in order[1:]:
+            if candidates[name].get("tool") != candidates[choice].get("tool"):
+                bm, be, bt = resolve_requirement(candidates[name], required["effort"])
+                backup = {"option": name, "tool": candidates[name].get("tool"), "model": bm,
+                          "effort": be, "resolvedEffort": bt, "probability": probs.get(name)}
+                break
+    if not choice:
+        rec["status"] = "blocked"
+        rec["blocked"] = f"no option meets the requirement (effort >= {required['effort'] or '-'})"
+        reasons = [f"{n}: {w}" for n, w in inadequate.items()] + [f"{n}: {w}" for n, w in held.items()]
+        if reasons:
+            rec["blocked"] += "; " + "; ".join(reasons[:6])
+    elif conf < LOW:
+        rec["status"] = "low-confidence"
+    else:
+        rec["status"] = "ok"
+    if choice == jev_choice:
+        reason = "meets the requirement"
+    elif jev_choice in inadequate:
+        reason = f"{jev_choice} is below the requirement ({inadequate[jev_choice]})"
+    elif jev_choice in held:
+        reason = f"{jev_choice} is held ({held[jev_choice]}); {choice} is the adequate pick"
+    elif jev_choice in candidates:
+        reason = f"{jev_choice} is adequate; the policy order prefers {choice}"
+    elif jev_choice:
+        reason = f"{jev_choice} is not eligible ({excluded.get(jev_choice, 'unconfigured')}); {choice} is the pick"
+    else:
+        reason = "Jev named no option; the policy order selected"
+    rec.update({"floor": _floor_record(cfg), "prefer": cfg.get("prefer") or [],
+                "required": required, "inadequate": inadequate, "adequateHeld": held,
+                "candidates": order, "jevChoice": jev_choice, "choice": choice,
+                "probabilities": probs, "confidence": conf, "band": band(conf),
+                "optionConfidence": option_conf, "effortConfidence": effort_conf,
+                "jevEffort": effort_answer.get("choice"), "complexity": cx_score,
+                "complexityConfidence": cx.get("confidence"), "selectionReason": reason,
+                "selected": selected, "tool": (selected or {}).get("tool"), "model": sel_model,
+                "effort": sel_effort, "resolvedEffort": sel_tier, "backup": backup,
+                "backupChoice": (backup or {}).get("option"), "backupTool": (backup or {}).get("tool"),
+                "backupModel": (backup or {}).get("model"), "backupEffort": (backup or {}).get("effort"),
+                "backupProbability": (backup or {}).get("probability"),
+                "availability": {"at": rec["at"], "source": "cli executables + observed limits (machine registry)"}})
+    print(f"{tid}: {choice or '-'} -> Tool: {(selected or {}).get('tool')}"
+          + (f", Model: {sel_model}" + (f", effort={sel_effort}" if sel_effort else "") if sel_model else ""))
+    effort_text = (f"; effort {effort_answer.get('choice')} -> {sel_tier} (confidence {effort_conf:.2f})"
+                   if needs_effort and effort_conf is not None else "")
     print(f"  option confidence {option_conf:.2f}" + (f", top/second {margin:.1f}x" if margin else "")
           + effort_text + f"; overall {conf:.2f} ({band(conf)})"
-          + f"; complexity {float(cx.get('score', 0)):.2f} of 2 (confidence {float(cx.get('confidence', 0)):.2f})")
-    for k, v in probs[:5]:
+          + f"; complexity {cx_score or 0:.2f} of 2 (confidence {float(cx.get('confidence', 0)):.2f})"
+          + f"; required effort >= {required['effort'] or '-'}")
+    for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[:5]:
         print(f"  {v:.2f}  {k}")
-    if note:
-        print(f"  {note}")
+    if choice and choice != jev_choice:
+        print(f"  {reason}" + (f": escalated to {choice}" if jev_choice in inadequate else ""))
     if backup:
-        print(f"  backup {backup_name} -> Tool: {backup['tool']}"
-              + (f", Model: {backup_model}" if backup_model else ""))
+        print(f"  backup {backup['option']} -> Tool: {backup['tool']}"
+              + (f", Model: {backup['model']}" if backup["model"] else ""))
     u = meta.get("usage") or {}
     print(f"  TypeSafe {meta.get('model')}: {u.get('input_tokens', '?')} in / {u.get('output_tokens', '?')} out tokens,"
           f" request {meta.get('requestId') or '-'}")
-    if conf < LOW:
+    if rec["status"] == "blocked":
+        print(f"  blocked: {rec['blocked']}")
+        _log(tid, rec)
+        return BLOCKED
+    if rec["status"] == "low-confidence":
         print("  low confidence: no decision; decide by tool-routing.md")
         _log(tid, rec)
         return NO_DECISION
@@ -352,20 +511,27 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     if apply:
         status = gate.ledger_rows().get(tid, {}).get("Status")
         if status not in (None, "", "ready", "blocked"):
+            _log(tid, rec)
             raise NoDecision(f"{tid} is '{status}': --apply changes only a task that has not started")
-        set_header(t["file"], o["tool"], model, task_effort,
-                   (backup["tool"], backup_model, backup_effort) if backup else None)
+        set_header(t["file"], selected["tool"], sel_model, sel_effort,
+                   (backup["tool"], backup["model"], backup["effort"]) if backup else None)
         if status:
-            subprocess.run([sys.executable, str(FLOW_ROOT / "tools" / "ledger.py"), "set", tid, "--tool", o["tool"]],
-                           check=True, capture_output=True)
+            subprocess.run([sys.executable, str(FLOW_ROOT / "tools" / "ledger.py"), "set", tid,
+                            "--tool", selected["tool"]], check=True, capture_output=True)
         rec["applied"] = True
         print(f"  applied to {Path(t['file']).name}")
     _log(tid, rec)
     return OK
 
 
-def _log(tid, rec):
-    rt = FLOW_ROOT / "tasks" / ".runtime"
+# --- persisted records and launch admission ------------------------------------------------------------------------
+def _rt_dir(rt_dir=None):
+    """The record folder, resolved per call: a patched or relocated FLOW_ROOT must redirect it."""
+    return Path(rt_dir) if rt_dir else FLOW_ROOT / "tasks" / ".runtime"
+
+
+def _log(tid, rec, rt_dir=None):
+    rt = _rt_dir(rt_dir)
     rt.mkdir(parents=True, exist_ok=True)
     p = rt / f"{tid}.route.json"
     hist = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
@@ -375,6 +541,183 @@ def _log(tid, rec):
         os.replace(tmp, p)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def history(tid, rt_dir=None):
+    """The persisted routing history of one task. Malformed content raises ValueError - a record that
+    cannot be read admits nothing."""
+    p = _rt_dir(rt_dir) / f"{tid}.route.json"
+    if not p.exists():
+        return []
+    data = json.loads(p.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, list) or any(not isinstance(e, dict) for e in data):
+        raise ValueError(f"{p.name}: expected a list of records")
+    for e in data:
+        if e.get("task") not in (None, tid):
+            raise ValueError(f"{p.name}: a record belongs to {e.get('task')}")
+    return data
+
+
+def latest_assessment(tid, rt_dir=None):
+    """The newest persisted assessment (schemaVersion 1), or None."""
+    for e in reversed(history(tid, rt_dir)):
+        if e.get("event") == "assessment" and e.get("schemaVersion") == 1:
+            return e
+    return None
+
+
+def env_selected(tool):
+    """(model, effort) AGENTFLOW_<TOOL>_ARGS would set when the Task File names none - the same tokens
+    run_task.remove_overridden guards, duplicated here because this standalone tool cannot import the
+    launcher."""
+    args = [a for a in os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS", "").split() if a]
+    model = effort = None
+    for i, a in enumerate(args):
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if model is None and a in ("-m", "--model") and nxt:
+            model = nxt
+        elif model is None and (m := re.match(r"^(?:-m|--model)=(.+)$", a)):
+            model = m.group(1)
+        elif effort is None and a == "--effort" and nxt:
+            effort = nxt
+        elif effort is None and a.startswith("--effort="):
+            effort = a.split("=", 1)[1]
+        elif effort is None and a == "-c" and nxt.startswith("model_reasoning_effort="):
+            effort = nxt.split("=", 1)[1]
+    return model, effort
+
+
+def identity_tier(o, model, effort):
+    """The effort tier a launch on this option actually reaches. model_by_effort names encode their tier;
+    an efforts-style option runs at the effort flag (header line beats machine args); the rest sit at
+    their declared 'tier' (or default_effort), else medium."""
+    if model:
+        for tier, m in (o.get("model_by_effort") or {}).items():
+            if m == model:
+                return tier
+    return effort or o.get("default_effort") or o.get("tier") or "medium"
+
+
+def identity_problems(required, tool, header_model, header_effort):
+    """Why the launch the header+env actually resolve to cannot meet the recorded requirement."""
+    required = required or {}
+    env_model, env_effort = env_selected(tool)
+    model, effort = header_model or env_model, header_effort or env_effort
+    name, o = quota_groups.option_for(tool, model)
+    if o is None:
+        if model:
+            return [f"{tool} model '{model}' is not in model-options.json: adequacy cannot be verified"]
+        return [f"model-options.json describes no default model for {tool}: name one in the Task File's "
+                "Model: line or in the configuration"]
+    tier = identity_tier(o, model, effort)
+    problems = []
+    need = required.get("effort")
+    if need and need in EFFORT_ORDER:
+        if tier not in EFFORT_ORDER:
+            problems.append(f"{tool} would run '{model or 'the default model'}' at an unverifiable effort "
+                            f"('{tier}'): the recorded requirement is >= {need}")
+        elif EFFORT_ORDER.index(tier) < EFFORT_ORDER.index(need):
+            problems.append(f"{tool} would run '{model or 'the default model'}' at effort {tier}: below the "
+                            f"recorded requirement >= {need}")
+    cap, cx = o.get("max_complexity"), required.get("complexity")
+    if cap is not None and cx is not None and float(cx) > float(cap) + 0.5:
+        problems.append(f"{name} caps at complexity {cap}; the task was assessed {cx:.2f}")
+    return problems
+
+
+def assessment_problems(t, rt_dir=None):
+    """(problems, record): whether the task carries a usable assessment - the record-level gate tick.py
+    runs without resolving the launch's env overrides. A `Routing exception:` line admits and is
+    reported as a human exception, not as evidence."""
+    try:
+        text = Path(t["file"]).read_text(encoding="utf-8-sig")
+        req_hash = gate.requirements_hash(text)
+    except (KeyError, TypeError, OSError) as e:
+        return [f"the Task File cannot be read for admission: {e}"], None
+    exception = gate.field(gate.header(text), "Routing exception")
+    try:
+        rec = latest_assessment(t["id"], rt_dir)
+    except ValueError as e:
+        rec, problems = None, [f"the routing record is unreadable: {e}"]
+    else:
+        problems = []
+        if rec is None:
+            problems.append("no recorded routing assessment: run route.py on the task, or write a "
+                            "'Routing exception: <reason>' line into its header")
+        elif rec.get("requirementsHash") != req_hash:
+            problems.append("the recorded assessment is stale: the task contract changed "
+                            "(requirementsHash differs); route the task again")
+        elif rec.get("status") != "ok":
+            detail = rec.get("blocked") or rec.get("error") or ""
+            problems.append(f"the recorded assessment is '{rec.get('status')}'"
+                            + (f": {detail}" if detail else ""))
+    if problems and exception:
+        return [], {"source": "human-exception", "reason": exception, "requirementsHash": req_hash,
+                    "overrode": problems}
+    if problems:
+        return problems, None
+    return [], {"source": "jev", "requirementsHash": req_hash, "assessedAt": rec.get("at"),
+                "jevRequestId": (rec.get("jev") or {}).get("requestId"), "band": rec.get("band"),
+                "required": rec.get("required"), "floor": rec.get("floor"), "selected": rec.get("selected")}
+
+
+def admission(t, tool, rt_dir=None):
+    """(problems, evidence): the launch-side gate. assessment_problems plus the resolved-identity check:
+    after env/CLI overrides the selected model/effort must still meet the recorded requirement."""
+    problems, evidence = assessment_problems(t, rt_dir)
+    if problems or not evidence or evidence["source"] != "jev":
+        return problems, evidence
+    if tool and tool in CLI_TOOLS:
+        problems = identity_problems(evidence.get("required"), tool, t.get("model"), t.get("effort"))
+        if problems:
+            if text_exc := _routing_exception(t):
+                return [], {"source": "human-exception", "reason": text_exc,
+                            "requirementsHash": evidence["requirementsHash"], "overrode": problems}
+            return problems, None
+        env_model, env_effort = env_selected(tool)
+        model, effort = t.get("model") or env_model, t.get("effort") or env_effort
+        _name, o = quota_groups.option_for(tool, model)
+        evidence = dict(evidence)
+        evidence["admitted"] = {"tool": tool, "model": model, "effort": effort,
+                                "tier": identity_tier(o, model, effort),
+                                "option": _name}
+        sel = evidence.get("selected") or {}
+        evidence["deviation"] = bool(sel) and (sel.get("tool"), sel.get("model"), sel.get("effort")) != \
+            (tool, model, effort)
+    return [], evidence
+
+
+def _routing_exception(t):
+    try:
+        return gate.field(gate.header(Path(t["file"]).read_text(encoding="utf-8-sig")), "Routing exception")
+    except (KeyError, TypeError, OSError):
+        return None
+
+
+def log_admission(tid, evidence, rt_dir=None):
+    """Record one admitted launch: 'admission' for Jev evidence, 'human-exception' when a person
+    overrode the gate - the latter is always visible as a human decision, never as Jev evidence."""
+    ev = {"event": "admission" if evidence["source"] == "jev" else "human-exception",
+          "task": tid, "at": now_iso(), "requirementsHash": evidence.get("requirementsHash"),
+          "source": evidence["source"], "admitted": evidence.get("admitted"),
+          "deviation": evidence.get("deviation")}
+    if evidence["source"] == "human-exception":
+        ev["reason"] = evidence.get("reason")
+        ev["overrode"] = evidence.get("overrode")
+    _log(tid, ev, rt_dir)
+
+
+def backup_ok(tid, tool, model, effort, rt_dir=None):
+    """(ok, reason): may the recorded backup serve this task? Same requirement as the primary - a weaker
+    backup is ineligible."""
+    try:
+        rec = latest_assessment(tid, rt_dir)
+    except ValueError as e:
+        return False, f"the routing record is unreadable: {e}"
+    if rec is None or rec.get("status") != "ok":
+        return False, "no ok assessment is recorded for the task"
+    problems = identity_problems(rec.get("required"), tool, model, effort)
+    return (False, "; ".join(problems)) if problems else (True, "")
 
 
 def main():

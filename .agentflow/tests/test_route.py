@@ -181,9 +181,11 @@ class RouteTests(unittest.TestCase):
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Tool: codex\nModel: gpt-6.1-sol, effort=xhigh\n", self.task())
-        self.assertIn("Backup Tool: claude\n", self.task())
+        # the task needs xhigh: claude tops out at medium, so the adequate devin-max is the backup
+        self.assertIn("Backup Tool: devin\nBackup Model: swe-2-max\n", self.task())
         self.assertIn("| codex |", (self.root / ".agentflow" / "state" / "tasks.md").read_text(encoding="utf-8"))
-        self.assertEqual(self.log()[-1]["backupChoice"], "claude")
+        self.assertEqual(self.log()[-1]["backupChoice"], "devin-max")
+        self.assertIn("claude", self.log()[-1]["inadequate"])
 
     def test_backup_is_highest_ranked_other_platform_with_model(self):
         Fake.answers = {"option": option("codex-max", 0.95,
@@ -287,9 +289,12 @@ class RouteTests(unittest.TestCase):
         sys.path.insert(0, str(self.root / ".agentflow" / "tools"))
         import route  # noqa: E402  (the copy's module, for the pure filter)
         opts = {"a": {"tool": "codex"}, "b": {"tool": "claude"}, "c": {"tool": "codex", "roles": ["developer"]}}
-        self.assertEqual(sorted(route.available(opts, "tester", avoid_tool="claude")), ["a"])
-        self.assertEqual(sorted(route.available({"x": {"tool": "claude"}}, "tester", avoid_tool="claude")), ["x"],
-                         "the only option stays when nothing else is left")
+        # available() consults the live machine; pin both sides so the host's CLIs and holds cannot leak in
+        with patch.object(route.machine_capacity, "limit_until", return_value=None), \
+                patch.object(route, "cli_usable", return_value=True):
+            self.assertEqual(sorted(route.available(opts, "tester", avoid_tool="claude")), ["a"])
+            self.assertEqual(sorted(route.available({"x": {"tool": "claude"}}, "tester", avoid_tool="claude")), ["x"],
+                             "the only option stays when nothing else is left")
 
 
 if __name__ == "__main__":

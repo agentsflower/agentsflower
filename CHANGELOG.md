@@ -2,6 +2,48 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.2 - 2026-10-18
+
+Routing assessment/admission core (T-074, first bounded delivery of T-040):
+every `route.py` call now persists a requirements-bound assessment record,
+and the admission API a launch will be gated on is exported for T-076 to
+wire into `run_task.py`/`tick.py`. This release is API-only: launch
+enforcement is still pending, T-040 is not complete.
+
+- `route.py` persists `.agentflow/tasks/.runtime/T-NNN.route.json` as
+  schemaVersion 1 `assessment` events bound to `requirementsHash` — the task
+  header minus the routing fields (Tool/Model/Backup/Routing
+  exception/Resume), so a routing retry never invalidates the record but a
+  contract change does. `status` is one of `ok`, `blocked`,
+  `low-confidence`, `failed`; every outcome, including a failed call, is
+  persisted rather than silent.
+- Selection is requirement-first: an option below the assessed effort or
+  over its complexity cap is never a candidate, whatever its Jev rank. Among
+  adequate options the configured `floor` leads, then `prefer`red CLIs, then
+  Jev probability. New model-options.json keys: `floor`
+  (`{"option", "effort"}`), `prefer` and per-option `tier`/`quota_group`
+  documentation.
+- New launch-side API for T-076: `route.assessment_problems()`,
+  `route.admission()`, `route.backup_ok()`, `route.log_admission()`,
+  `route.history()`/`route.latest_assessment()`. A missing, stale or non-ok
+  record is a diagnosable block; a `Routing exception:` task header line
+  overrides it and is logged as a `human-exception` event — distinguishable
+  from Jev evidence, never presented as it. `admission()` re-checks the
+  resolved model/effort after `AGENTFLOW_<TOOL>_ARGS` overrides; backups and
+  retries must meet the same requirement and cannot bypass quota groups.
+- Exit code 5 means blocked: nothing adequate is usable today, and the
+  record names the per-option reason plus any adequate-but-held option.
+- Draft regressions repaired: the route log follows the configured
+  `FLOW_ROOT` (not an import-time constant), and an inadequate backup is
+  rejected instead of kept — the obsolete test expecting a below-requirement
+  Claude backup now asserts the adequate one.
+
+Migration: nothing required — the record file is additive and launches are
+not gated yet. Installed projects that want the floor/preference ordering
+before T-076 may add `floor` and `prefer` to their
+`.agentflow/docs/model-options.json`; existing `options` entries are
+unchanged. Launch admission arrives with T-076.
+
 ## 2.15.1 - 2026-10-18
 
 Urgent repair of worker bounds exposed by T-040 (T-072 watchdog and T-080

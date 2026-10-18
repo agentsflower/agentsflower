@@ -13,8 +13,8 @@ import route  # noqa: E402
 
 def recommend(goal, config, current_tool=None, current_model=None, asker=route.ask, key=None,
               kind="plan"):
-    options = route.available(config.get("options", {}), "orchestrator")
-    options = {name: option for name, option in options.items() if route.cli_usable(option["tool"])}
+    options, _excluded = route.eligibility(config.get("options", {}), "orchestrator", None,
+                                           date.today().isoformat())
     if not options:
         raise route.NoDecision("no configured CLI option is currently usable for planning")
     state = {"planning_date": date.today().isoformat(),
@@ -26,18 +26,21 @@ def recommend(goal, config, current_tool=None, current_model=None, asker=route.a
             f" This is a {kind} decision: judge the effort the decision itself needs, not the task's."
     answers, meta = asker(state, qs, key or route.api_key(),
                           config.get("jev_model", route.JEV_MODEL))
-    chosen, escalation = route.combine(options, answers)
-    if chosen not in options:
-        raise route.NoDecision("Jev selected an unavailable planning option")
     option_answer, effort_answer, complexity = (answers["option"], answers.get("effort", {}),
                                                  answers.get("complexity", {}))
     effort = effort_answer.get("choice")
-    model, flag, resolved = route.resolve_option(options[chosen], effort)
-    backup_name, probability = route.backup_option(options, option_answer.get("probabilities", {}), chosen,
-                                                    float(complexity.get("score", 0)),
-                                                    float(complexity.get("confidence", 0)))
+    probabilities = option_answer.get("probabilities", {})
+    required = {"effort": effort, "complexity": complexity.get("score")}
+    candidates = {n: o for n, o in options.items() if route.adequate_reason(o, required) is None}
+    if not candidates:
+        raise route.NoDecision("no usable option can meet the assessed planning requirement")
+    order = route.admission_order(candidates, config, probabilities)
+    chosen = order[0]
+    model, flag, resolved = route.resolve_requirement(options[chosen], effort)
+    backup_name = next((n for n in order[1:] if options[n]["tool"] != options[chosen]["tool"]), None)
     backup = options.get(backup_name) if backup_name else None
-    backup_model, backup_flag, _ = route.resolve_option(backup, effort) if backup else (None, None, None)
+    backup_model, backup_flag, _ = (route.resolve_requirement(backup, effort)
+                                    if backup else (None, None, None))
     confidence = min(float(option_answer.get("confidence", 0)),
                      float(effort_answer.get("confidence", 0)) if route.supported_efforts(options[chosen]) else 1)
     result = {"at": date.today().isoformat(), "goalHash": hashlib.sha256(goal.encode("utf-8")).hexdigest(),
@@ -46,9 +49,9 @@ def recommend(goal, config, current_tool=None, current_model=None, asker=route.a
               "usage": meta.get("usage"), "complexity": complexity.get("score"), "confidence": confidence,
               "band": route.band(confidence), "eligibleOptions": sorted(options), "choice": chosen,
               "tool": options[chosen]["tool"], "model": model, "effort": flag, "resolvedEffort": resolved,
-              "backupChoice": backup_name, "backupProbability": probability,
+              "backupChoice": backup_name, "backupProbability": probabilities.get(backup_name),
               "backupTool": backup["tool"] if backup else None, "backupModel": backup_model,
-              "backupEffort": backup_flag, "escalation": escalation,
+              "backupEffort": backup_flag,
               "currentTool": current_tool, "currentModel": current_model,
               "matchesCurrent": current_tool == options[chosen]["tool"] and current_model == model
               if current_tool and current_model else None}
