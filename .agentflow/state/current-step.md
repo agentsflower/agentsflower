@@ -1,26 +1,24 @@
 # Current Step
 
-2026-10-17: Stage 3/4 closed (pilot at 2.12.0, drift audit clean). Repository-
-only scope since 2026-10-17: no external rollout, no WatermarkRemover/other-
-project work; installer/migration validation via disposable AgentFlow fixtures
-(project-rules.md). Mandatory Jev adequacy routing active (model-options.json +
-recorded route.py assessments in .runtime).
+2026-10-18 urgent recovery: T-072 watchdog repair is in attempt 2, same native
+Devin conversation joyous-number; 11 focused tests passed in attempt 1, whose
+15-minute cap interrupted the full suite. Resume preserves context and code.
+Conductor/background Orchestrator paused; foreground holder codex owns repair.
 
-Stage 5 chain progress: T-028 rejected on independent fail review -> T-050
-done+accepted (2.12.2); T-030 rejected on partial review -> T-052 done, tester
-T-053 running (devin, verifying the quoted-phrase fix on 5b3797b). T-042 mockup
-done and merged - AWAITING HUMAN VARIANT SELECTION (questions.md).
+Next: exact-SHA independent T-073 review -> accept T-072 -> T-080 idle-sleep
+guard and its tester -> T-074 routing core -> T-076 direct launch -> T-078
+scheduler/reports, each independently checked. Human explicitly approved
+swe-2-max routing exceptions for T-072/T-073 and T-080/its tester; preserve the
+low-confidence assessments as such. Latest T-074/T-076/T-078 assessments are
+medium confidence and need the coordinator's recorded confirmation at launch.
 
-NEXT: when T-053 verdict lands, decide T-052 per lifecycle (accept or successor).
-Then T-032 (swe-2-max, assessed) -> its tester -> T-034 -> T-040 (routing
-enforcement, depends T-034) -> T-036 -> T-038, each with a tester. Dashboard
-impl T-044 -> T-046 -> T-048 launches only after T-038 accepted AND the human's
-mockup selection is recorded. Every launch requires the persisted route.py
-assessment (mandatory adequacy policy). Codex is environment-blocked for
-workers on Windows (sandbox denies writes outside the checkout); testers run
-on devin swe-2-max/swe-2-high under the documented same-tool necessity.
+Original T-040 cancelled as superseded, never marked complete. Preserve its
+worktree and tasks/.runtime/T-040-preserved-draft.patch. Windows idle standby
+04:49-07:45 Moscow caused most of its apparent hours-long duration; background
+coordinator explicitly stopped/retried it at 07:48. Do not equate a silent
+text log with inactivity; Devin session tool events provide better evidence.
 
-CI run 39026298541 triaged: windows-latest and macos-latest test jobs fail at
-the unittest step; ubuntu and package jobs pass; logs need authenticated access
-(details in known-issues). No tags, publication, deployment or future stage
-push authorized.
+After routing: T-036 docs -> T-038 final evaluation. T-066 hidden consoles
+remains queued. Dashboard selection/current questions: state/questions.md.
+Stage 4 bounded cycle closed (external rollout deferred); Stage 5 current.
+Only AgentFlow and disposable fixtures; no external rollout/push/publication.

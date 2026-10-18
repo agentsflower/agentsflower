@@ -1,5 +1,48 @@
 # Decision Log
 
+## 2026-10-18: Urgent stalled-work repair and scoped routing exception
+
+Subsequent read-only diagnostics identified the stop actor: Devin session
+maddening-museum (background Orchestrator) invoked T-040 --stop, then relaunched
+at 04:48:42Z. Its public commentary cited post-suspend recovery. Windows System
+events independently confirm Kernel-Power 506 (Idle Timeout) at 04:49:19 Moscow
+and 507 (Lid) at 07:45:24. Thus most of the first attempt's apparent three-hour
+duration was standby, not model execution. Do not diagnose a hung model from
+the attempt text log alone: Devin session metadata showed continued tool calls
+even while that log had no new prose. T-080 adds a process-scoped idle-sleep
+guard; never change global power plans or override deliberate sleep/lid policy.
+The human explicitly extended the swe-2-max exception to T-080 and its
+independent tester in response to the scoped question in this chat. Persisted
+T-080 assessment request req_01a14d6b07c67795ba87831f8ed31bc4 remains low
+confidence (0.41); the exception is not relabeled as Jev evidence.
+
+Human requested diagnosis, urgent correction and forward task progress instead
+of hours-long retries. T-040 attempt 1 was explicitly stopped at 04:48:11Z
+(the old stop record has no actor/reason beyond --stop); attempt 2 was started
+by another coordinator at 04:48:42Z. For coordinated repair, this session
+stopped the conductor and its background Orchestrator, then stopped T-040 via
+the launcher, preserving its worktree and a binary diff in ignored runtime
+storage. No external project is in scope.
+
+T-072 repairs deadline enforcement and observability. Jev request
+req_01a14d63b45d728a92f052c5bcdc3348 selected Devin but effort confidence was
+0.29. The human explicitly approved swe-2-max for T-072 and its independent
+tester in this chat; this is a scoped auditable exception, not Jev certainty
+or permission to bypass provider holds. T-072 launches with a 900-second
+attempt cap. Preserve all earlier task history; never reset it to conceal a
+budget stop. Split remaining T-040 work into independently checked bounded
+deliverables before restarting it. Do not blindly relaunch a user stop.
+
+T-072 attempt 1 reached its 900-second cap while the mandatory full suite was
+still running (11 focused watchdog tests had passed). Attempt 2 resumes the
+same Devin conversation joyous-number via the CLI's --resume flag, with the
+preserved draft; do not pay for another full architecture read. Its configured
+supervisor ceiling is 1200 seconds for finishing checks and recording the
+artifact, not an unlimited extension. This operational adjustment was reported
+to the human. Remaining routing delivery is T-074 core -> T-076 direct launch
+-> T-078 automatic scheduling/reports, after T-072 and T-080 repair. Original
+T-040 is cancelled as superseded, never marked done without its criteria.
+
 ## 2026-10-17: Contract-authoring rules learned from two scope rejections
 
 - Allowed files must declare the whole `git diff main...HEAD` file set,
@@ -500,3 +543,5 @@ copying instead of linking (wasteful per checkout) and documenting manual care (
 
 2026-10-17: Human authorized sequential Stages 3-5 and documentation alignment; designated Devin swe-2-high coordinator/default workers with task assessment and fresh concrete agy Gemini/Claude/GPT resource checks before stronger routing. Task decomposition and execution approved within scope; details in project-rules.md.
 2026-10-17: Human explicitly restricted further work to AgentFlow. WatermarkRemover must remain unchanged: no rollback of prior update and no further rollout. Supersedes prior pilot-update authorization. Validate installation/migration in disposable AgentFlow fixtures; external rollout remains out of scope.
+
+2026-10-18: Human approved all three roadmap mockups: A (cards), B (journey), C (matrix). Implement a view selector to switch between all three. This resolves the single-variant selection gate for T-044/T-046/T-048; preserve implementation dependencies. Other layout details remain as in the mockups unless separately decided.

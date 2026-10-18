@@ -1,43 +1,42 @@
 # Session Handoff
 
-As of 2026-10-17 main is local-ahead (last pushed baseline main@50adf65 v2.12.0;
-local HEAD contains Stage 5 work through 2.13.1 pending acceptance merge).
-Remote CI run 39026298541 FAILED on windows/macos test jobs (logs need auth;
-details in known-issues.md).
+As of 2026-10-18: main baseline 47d2b2c, VERSION 2.15.0; local-only work.
+Human requested urgent stalled-task diagnosis/repair and forward progress.
 
-CURRENT HUMAN SCOPE (2026-10-17, latest wins): foreground Orchestrator, holder
-devin, model swe-2-high. Repository-only: all work in AgentFlow and its own
-task/disposable checkouts. WatermarkRemover must NOT be rolled back and must
-NOT be touched again - no updates, commits or worker launches; no other product
-repository either. Supersedes all earlier pilot rollout authorization.
-Installer/migration validation happens in disposable AgentFlow fixtures;
-external rollout criteria are recorded out of scope, never fabricated done.
-No push, tags, publication or deployment.
+Confirmed cause: Windows Kernel-Power events 506/507 show automatic idle
+standby 04:49:19-07:45:24 Moscow. Devin background session maddening-museum
+issued T-040 --stop at 07:48, then retried; read-only session/tool records
+confirm the actor. Do not claim three hours of active model work. Separately,
+invalid/zero worker timeout falls through to the 4h task budget (reproduced),
+and conductor skips external worker checks while its Orchestrator is alive.
 
-MANDATORY ROUTING: every worker launch needs a persisted route.py Jev
-assessment (.agentflow/tasks/.runtime/T-NNN.route.json) under
-docs/model-options.json. swe-2-high is the floor, never a downgrade of an
-assessed-stronger task; adequate Devin models first, then other CLIs; no
-adequate model = block with reason; codex is environment-blocked for workers
-on Windows (sandbox denies writes outside checkout - Result file and Python
-tempdirs; evidence .runtime/T-029.1.log); agy tool-wide hold until
-2026-10-21T22:09Z covers Claude/GPT families, agy-gemini is a separate quota
-group. Enforcement implementation task: T-040.
+T-072 repairs those deadline/control gaps; attempt 2 resumes native session
+joyous-number after attempt 1's 900-second cap interrupted the full suite.
+Eleven focused watchdog tests passed; full regression and independent review
+are still required before acceptance. T-080 prevents automatic idle sleep only
+while a bounded worker runs, without changing power plans/display/lid policy.
+Human explicitly allowed swe-2-max for both repairs and their independent
+testers despite low Jev effort confidence (decisions.md). No other quota or
+admission exception was granted.
 
-QUEUE: T-053 tester running on T-052 @ 5b3797b (do not duplicate); then T-032
--> tester T-033 -> T-034 -> T-035 -> T-040 -> T-041 -> T-036 -> T-037 -> T-038
--> T-039; dashboard T-044 -> T-045 -> T-046 -> T-047 -> T-048 -> T-049 after
-T-038 and the human's mockup variant selection (questions.md lists the five
-selection questions; mockups live in .agentflow/dashboard/mockups/). Task
-headers carry assessed models (swe-2-max for T-030/32/34/36/40/44/50;
-swe-2-high for T-038/42/46/48/52/53).
+The conductor and its background Orchestrator were deliberately stopped for
+repair; foreground holder codex owns coordination. Restore the conductor after
+the accepted fixes; preserve PID/start identity checks. A maintenance-only
+power request (runtime/urgent-maintenance-power.pid) has a 30-minute maximum
+and must be stopped once the permanent worker guard is active.
 
-A false devin tool-limit may reappear while T-052's detector fix is unmerged:
-worker Result prose about quota limits trips learn_limits; recorded reason is
-a prose fragment, never a provider message. Clear it via the registry and
-.agentflow/tasks/.runtime/tool-limits.json, preserving the agy hold.
+T-040 is cancelled as superseded, not complete. Its four modified tools remain
+in the original worktree; ignored runtime has T-040-preserved-draft.patch.
+Delivery split: T-074 core -> T-076 direct launch -> T-078 scheduler/reports,
+then T-036 -> T-038. Refresh/confirm recorded routing at launch; no silent
+low-confidence fallback. T-066 queued; dashboard questions in questions.md.
 
-Preserve rejected worktrees (t-028-lifecycle-trust @ 2c58157, t-030-recoverable-
-handover @ f6d746b - both are the base of their accepted successors).
-Checkpoint memory on a task branch with the standard checks, merge to main,
-clean up. Russian user updates, English machine evidence.
+Other writers: questions.md changed concurrently with a human roadmap-layout
+selection; preserve it and do not include it in this repair commit.
+Codex CLI worker sandbox was previously unusable on this Windows machine;
+agy Claude/GPT hold remains until 2026-10-21, separate Gemini group not inferred
+held. No unknown quotas are reported as available. External CI failures remain
+unresolved; no push/tags/publication or other-project changes authorized.
+
+Read first: docs/project-rules.md, decisions.md latest urgent entries,
+current-step.md, ledger, T-072/T-080 Task Files and runtime attempts.

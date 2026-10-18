@@ -47,7 +47,12 @@ Exit criteria: one real project updated with the "Update" procedure and a full t
 
 ### Stage 4. Upstream sync
 
-Status: current.
+Status: closed (bounded audit cycle, 2026-10-17; external rollout deferred).
+
+The bounded drift audit and transfer of generalized findings into Stage 5
+were completed (state/decisions.md, 2026-10-17). The latest repository-only
+authorization excludes further external updates. Recurring cross-project
+audits and rollout remain deferred rather than claimed complete.
 
 Exit criteria: `upstream.py` drift reports from every installed project are reviewed periodically;
 changes that flow upstream are generalized, released (CHANGELOG, VERSION, decisions.md) and rolled
@@ -55,12 +60,13 @@ out with `install.py --update`.
 
 ### Stage 5. Reliability and efficient project practices
 
-Status: planned.
+Status: current.
 
 Implementation sequence and acceptance criteria: [improvement-plan.md](improvement-plan.md).
-The human authorized the bounded launcher/end-check repair on 2026-10-10;
-2.11.3 implements that subset. The broader stage remains planned. Cover recovery next,
-then artifact-bound completion checks, bounded automation and concise instructions.
+Implementation was authorized on 2026-10-17. Lifecycle, recovery, completion
+checks and bounded autonomy have accepted implementations. Routing enforcement,
+instruction alignment and final evaluation remain; live task state is in the
+ledger. The 2026-10-18 urgent watchdog repair precedes recovery of routing work.
 
 Exit criteria: the scenarios in that plan pass, migration preserves open tasks,
 and installer/migration behavior is validated in disposable AgentFlow fixtures.

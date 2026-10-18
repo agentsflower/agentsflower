@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-max
 Stage: 5
-Depends on: T-040
+Depends on: T-078
 Branch: t-036-instructions-docs
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-036-instructions-docs
 Independent check: tester
