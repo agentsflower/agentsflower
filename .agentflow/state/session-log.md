@@ -240,3 +240,5 @@ with recorded 1200s deadline and actual sleep-request log. Conductor restarted
 hidden at one-minute rounds, Devin coordinator; temporary helper removed.
 Human's latest Devin preference/unlimited-until-November report persisted with
 provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
+
+2026-10-18 background orchestrator (devin-background): T-074 developer attempt exited completed at 5a6510c (R-01..R-05 all claimed pass; focused 12+19 and full 391 tests green per its Result). Ledger: T-074 -> review. Wrote tester task T-075 (exact-SHA verify of R-01..R-05), added ready, ran mandatory route.py: persisted assessment req_01a14dab3ab875c5b09fa66a87ab71ed is low confidence 0.48 demanding gpt-6-astra xhigh (complexity 1.97/2); per mandatory routing policy launch blocked pending explicit human exception. T-075 -> blocked; question with options (devin gpt-6-astra-xhigh / scoped swe-2-max exception / codex / re-assess) appended to state/questions.md. Worker's proposed decisions.md update left pending - background orchestrator may not write decisions.md. Chain T-076->T-078->T-036->T-038 and T-066 wait on T-074 acceptance.
