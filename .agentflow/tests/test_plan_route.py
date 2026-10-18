@@ -33,6 +33,31 @@ class PlanningRouteTests(unittest.TestCase):
         self.assertEqual(calls[0][0]["planning"]["goal"], "Plan the migration")
         self.assertEqual(sorted(calls[0][1]), ["complexity", "effort", "option"])
 
+    def test_kind_reaches_the_jev_state_and_result(self):
+        """B-07: decision difficulty is expressible: --kind tags the Jev state, the effort question's
+        note, and the recorded recommendation. 'plan' stays the default; nothing forces low effort."""
+        config = {"policy": "best fit", "options": {
+            "codex": {"tool": "codex", "model": "gpt-6.1-sol", "efforts": ["low", "medium", "high"]}}}
+        calls = []
+
+        def fake(state, questions, key, model):
+            calls.append((state, questions))
+            return {"option": {"choice": "codex", "confidence": 0.95,
+                               "probabilities": {"codex": 1.0}},
+                    "effort": {"choice": "low", "confidence": 0.9},
+                    "complexity": {"score": 0.4, "confidence": 0.9}}, {"model": "jev-1.13.0"}
+
+        with patch.object(plan_route.route, "cli_usable", return_value=True):
+            result = plan_route.recommend("Plan the migration", config, asker=fake, kind="dispatch")
+        self.assertEqual(result["kind"], "dispatch")
+        self.assertEqual(calls[0][0]["planning"]["kind"], "dispatch")
+        self.assertIn("dispatch", str(calls[0][1]["effort"]["instructions"]))
+        self.assertEqual(result["effort"], "low")  # Jev chose it; the kind never forces a tier
+        with patch.object(plan_route.route, "cli_usable", return_value=True):
+            result = plan_route.recommend("Plan the migration", config, asker=fake)
+        self.assertEqual(result["kind"], "plan")
+        self.assertNotIn("dispatch", str(calls[1][1]["effort"]["instructions"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ its repositories in `Repo:`, and commits are written `<repo>@<sha>, ...`.
 """
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -428,6 +429,9 @@ def preflight(tid, manual, live, tool=None):
     #   - deny: <regex>                  no Checks command or Setup line may match (local tasks)
     #   - require: <regex> => <regex>    a Checks command matching the first must match the second (local tasks)
     #   - parallel: <tool>=<n>           at most n running attempts of that tool on this machine (any task)
+    #   - delegate: on                   a managed worker session may launch sub-agent attempts (run_task.py
+    #                                    enforces it at launch; the default is zero helpers, and delegation
+    #                                    never bypasses the launch budgets or machine capacity)
     text = Path(t["file"]).read_text(encoding="utf-8-sig")
     run = t["checks"] + bullets(section(text, "Setup"))
     for src in (FLOW_ROOT / "docs" / "engineering-rules.md",
@@ -449,6 +453,8 @@ def preflight(tid, manual, live, tool=None):
                     if t["target"] == "local":
                         bad += [f"'{c}' must match '{m.group(2)}' (project rule for '{m.group(1)}')"
                                 for c in t["checks"] if re.search(m.group(1), c) and not re.search(m.group(2), c)]
+                elif re.match(r"^delegate\s*:\s*`?on`?\s*$", r):
+                    pass  # enforced by run_task.py at launch; nothing here to preflight
                 else:
                     bad.append(f"project Preflight: unknown rule '{r}'")
             except re.error as e:
@@ -702,11 +708,38 @@ def new_record(tid, n, t, att, sha, shas, bad, checks, flagged, outcomes, log, e
     rec = {"n": n, "taskId": tid, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "attempt": att.get("n") if att else None, "role": t["role"], "headerHash": t["headerHash"],
            "sha": sha, "shas": shas, "base": base_heads(t), "criteria": criteria_map(t, outcomes),
+           "checksHash": checks_hash(t),
            "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
            "checksTouchedByTask": flagged, "log": str(log) if checks else None}
     if extra:
         rec.update(extra)
     return rec
+
+
+def delegation_allowed():
+    """Project opt-in for nested launches: a '- delegate: on' bullet under a ## Preflight section of a
+    project rule file. The default is zero helpers; a delegated launch still obeys every launch budget
+    and the machine capacity claim."""
+    for src in (FLOW_ROOT / "docs" / "engineering-rules.md",
+                FLOW_ROOT / "docs" / "project-rules.md", ROOT / "AGENTS.md"):
+        if not src.exists():
+            continue
+        for r in bullets(section(src.read_text(encoding="utf-8-sig"), "Preflight")):
+            if re.match(r"^delegate\s*:\s*`?on`?\s*$", r):
+                return True
+    return False
+
+
+def checks_hash(t):
+    """One hash over every input a `done` PASS depends on beyond artifact and base: the ## Checks
+    commands, the task's env block and the interpreter that runs them. A record whose checksHash
+    differs - or has none (evidence predates the binding) - is not reusable: the same artifact under
+    a changed check definition or a changed runtime is a new measurement."""
+    interp = ([shutil.which("pwsh") or "powershell", "-NoProfile", "-Command"] if os.name == "nt"
+              else ["sh", "-c"])
+    blob = json.dumps({"checks": t.get("checks") or [], "env": t.get("env") or {},
+                       "os": os.name, "shell": interp}, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()
 
 
 # --- verify: acceptance evidence for one task (protocol: Acceptance)
@@ -815,7 +848,8 @@ def bound_record(records, tid, att, t, sha, base):
     return next((r for r in reversed(records)
                  if r.get("ok") is True and r.get("gate") == "done"
                  and r.get("taskId") == tid and att and r.get("attempt") == att.get("n")
-                 and r.get("headerHash") == t["headerHash"] and r.get("sha") == sha and r.get("base") == base),
+                 and r.get("headerHash") == t["headerHash"] and r.get("sha") == sha and r.get("base") == base
+                 and r.get("checksHash") == checks_hash(t)),  # missing on legacy records: never matches
                 None)
 
 

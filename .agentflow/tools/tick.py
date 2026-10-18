@@ -205,9 +205,116 @@ def launch_group(tid, tool):
         return None
 
 
+# --- declared quota policy ------------------------------------------------------------------------------------------
+# An operator's declared expectation of remaining quota - a wish, never a measurement of the provider's
+# counter. Only a fresh reading can fire an action; without one every policy reports 'unknown' and the
+# launch budgets in run_task.py remain the bound. A malformed file fails closed: StateError, not silence.
+POLICY_FILE = FLOW_ROOT / "docs" / "quota-policy.json"
+SAMPLE_MAX_AGE = 1800  # seconds; a reading older than this never justifies a policy action
+_ACTIONS = ("pause", "switch", "report")
+
+
+def _policy_path():
+    raw = os.environ.get("AGENTFLOW_QUOTA_POLICY")
+    if raw == "off":
+        return None
+    return Path(raw) if raw else POLICY_FILE
+
+
+def quota_policy_states(at=None):
+    """One entry per declared policy: [{tool, group, key, action, threshold, state, detail}]. state is
+    'ok' | 'below' | 'unknown'; only 'below' may fire an action. Readings come from quota-samples.json
+    next to the policy file (AGENTFLOW_QUOTA_SAMPLES overrides), keyed '<tool>' or '<tool>:<group>' -
+    the same limit-key shape the observed-limits machinery uses."""
+    p = _policy_path()
+    if p is None or not p.exists():
+        return []
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise StateError(f"cannot read {p.name}: {e}")
+    if not isinstance(doc, dict) or not isinstance(doc.get("policies"), list):
+        raise StateError(f"{p.name}: expected an object with a 'policies' list")
+    sp = Path(os.environ.get("AGENTFLOW_QUOTA_SAMPLES") or p.parent / "quota-samples.json")
+    samples = {}
+    if sp.exists():
+        try:
+            samples = json.loads(sp.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise StateError(f"cannot read {sp.name}: {e}")
+        if not isinstance(samples, dict):
+            raise StateError(f"{sp.name}: expected an object of readings")
+    return [_policy_state(pol, i, samples, at or now(), p.name, sp.name) for i, pol in enumerate(doc["policies"])]
+
+
+def _policy_state(pol, i, samples, at, fname, sfile):
+    if not isinstance(pol, dict) or not isinstance(pol.get("tool"), str) or not pol["tool"].strip():
+        raise StateError(f"{fname}: policy #{i + 1} needs a 'tool'")
+    if pol.get("group") is not None and not isinstance(pol["group"], str):
+        raise StateError(f"{fname}: policy #{i + 1}: 'group' must be a string")
+    rem = pol.get("remaining")
+    if not isinstance(rem, dict) or not isinstance(rem.get("percent_below"), (int, float)) \
+            or isinstance(rem["percent_below"], bool):
+        raise StateError(f"{fname}: policy #{i + 1} needs 'remaining': {{\"percent_below\": <n>}}")
+    action = pol.get("action") or "pause"
+    if action not in _ACTIONS:
+        raise StateError(f"{fname}: policy #{i + 1}: unknown action '{action}' (pause | switch | report)")
+    group = pol.get("group") or None
+    key = machine_capacity._limit_key(pol["tool"], group)
+    st = {"tool": pol["tool"], "group": group, "key": key, "action": action,
+          "threshold": rem["percent_below"], "state": "unknown", "reading": None, "detail": ""}
+    s = samples.get(key)
+    if s is None:
+        st["detail"] = f"no reading for {key} ({sfile})"
+        return st
+    if not isinstance(s, dict) or not isinstance(s.get("remaining_percent"), (int, float)) \
+            or isinstance(s["remaining_percent"], bool) or not isinstance(s.get("at"), str):
+        raise StateError(f"quota-samples.json: the reading for '{key}' needs 'at' and 'remaining_percent'")
+    try:
+        sat = parse_iso(s["at"])
+    except ValueError as e:
+        raise StateError(f"quota-samples.json: bad 'at' for {key}: {e}")
+    if s.get("resets_at") is not None:
+        try:
+            reset = parse_iso(s["resets_at"])
+        except ValueError as e:
+            raise StateError(f"quota-samples.json: bad 'resets_at' for {key}: {e}")
+        if reset <= at:
+            st["detail"] = f"the reading for {key} is past its reset ({s['resets_at']} <= now)"
+            return st
+    max_age = pol.get("sample_max_age_seconds", SAMPLE_MAX_AGE)
+    if not isinstance(max_age, (int, float)) or isinstance(max_age, bool) or max_age <= 0:
+        raise StateError(f"{fname}: policy #{i + 1}: 'sample_max_age_seconds' must be a positive number")
+    if at - sat > timedelta(seconds=max_age):
+        st["detail"] = f"stale reading for {key}: taken {s['at']}, older than {max_age}s"
+        return st
+    if sat - at > timedelta(seconds=max_age):
+        raise StateError(f"quota-samples.json: the reading for '{key}' is dated in the future ({s['at']})")
+    st["reading"] = s["remaining_percent"]
+    if s["remaining_percent"] < rem["percent_below"]:
+        st["state"] = "below"
+        st["detail"] = f"{key} at {s['remaining_percent']}% remaining, below the declared " \
+                       f"{rem['percent_below']}% threshold (read {s['at']})"
+    else:
+        st["state"] = "ok"
+        st["detail"] = f"{key} at {s['remaining_percent']}% remaining (read {s['at']})"
+    return st
+
+
+def policy_hold(tool, group=None, at=None):
+    """The first declared policy holding (tool, group) now: a fresh below-threshold reading under a
+    'pause' or 'switch' action. 'report' only informs, and an 'unknown' or 'ok' state holds nothing."""
+    want = {tool, machine_capacity._limit_key(tool, group)} if group else {tool}
+    for st in quota_policy_states(at):
+        if st["state"] == "below" and st["action"] in ("pause", "switch") and st["key"] in want:
+            return st
+    return None
+
+
 def next_orchestrator(at=None, skip=()):
     return next((t for t in orchestrators() if t not in skip
                  and not limited(t, quota_groups.default_group(t), at)
+                 and not policy_hold(t, quota_groups.default_group(t), at)
                  and machine_capacity.has_capacity(t, FLOW_ROOT.parent, at,
                                                    group=quota_groups.default_group(t))), "")
 
@@ -347,6 +454,13 @@ def decide(rows, at=None):
             elif limited(tool, group := tool_group(tool, t.get("model")), at):
                 scope = f" group {group}" if group else ""
                 out.append((tid, "need", f"its tool {tool}{scope} is limited until {iso(limit_end(tool, group))}: move it to another tool or wait"))
+            elif (hold := policy_hold(tool, tool_group(tool, t.get("model")), at)):
+                if hold["action"] == "switch":
+                    out.append((tid, "need", f"quota policy: {hold['detail']} - the declared action is to "
+                                             "switch this task to another tool"))
+                else:
+                    out.append((tid, "wait", f"quota policy: {hold['detail']} - the declared action pauses "
+                                             "launches on it until a fresh reading shows headroom"))
             else:
                 out.append((tid, "launch", tool))
             continue
@@ -535,7 +649,8 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                   "would": [{"task": t, "action": a, "detail": d} for t, a, d in plan if a in ("accept", "launch")] if report_only else [],
                   "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
-                  "limited": active_limits()}
+                  "limited": active_limits(),
+                  "quotaPolicy": quota_policy_states()}
         if dispatch_mode == "active":
             report["dispatchMode"] = "active"
         if shadow is not None:
@@ -599,6 +714,10 @@ def dispatch_cmd(a):
             print(f"wait    {x['task']}: {x['detail']}")
         for k, v in rep["limited"].items():
             print(f"limited {k} until {v}")
+        for s in rep.get("quotaPolicy") or []:
+            if s["state"] != "ok":
+                scope = f"{s['tool']}:{s['group']}" if s.get("group") else s["tool"]
+                print(f"policy  {scope} {s['state']} ({s['action']}): {s['detail']}")
         if shadow := rep.get("dispatchShadow"):
             print(f"dispatcher shadow: {len(shadow.get('selected', []))} would launch, "
                   f"{len(shadow.get('waits', []))} would wait"
@@ -618,6 +737,8 @@ def dispatch_cmd(a):
         lim = read_limits()
         for k, v in active_limits().items():
             print(f"limited: {k} until {v} - {((lim.get(k) or {}).get('reason') or '')[-80:]}")
+        for s in quota_policy_states():
+            print(f"quota policy: {s['key']} is {s['state']} ({s['action']}): {s['detail']}")
         return 0 if hb else 1
     if a.cmd == "next-orchestrator":
         print(next_orchestrator(skip={x for x in a.skip.split(",") if x}))

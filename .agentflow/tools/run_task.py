@@ -42,6 +42,26 @@ encoded in its model id).
                            values fall back to the default - a probe is never unbounded). On expiry the probe's
                            whole process tree is killed.
 
+Bounded autonomy (protocol: Runtime state). Every attempt record stores the requested `Model:`/effort
+(`requestedModel`/`requestedEffort`, null when the Task File requests none), the resolved launch argv in safe
+form (`launch.argv`: the prompt is `<prompt>` and each machine-args token is `<env arg>`, so a secret in
+AGENTFLOW_<TOOL>_ARGS can never enter runtime state), the tool CLI's `--version` first line when it answers
+within AGENTFLOW_VERSION_TIMEOUT (default 15s), and the model/effort the tool itself reported in the session
+log (`effectiveModel`/`effectiveEffort`). Identity the tool never reported stays "unknown" - never guessed.
+New attempts are bounded by configurable caps, each overridable per machine, each refusing the launch with a
+diagnosable reason and no new attempt (the preserved records and recovery checkpoints stay untouched):
+  AGENTFLOW_MAX_ATTEMPTS            attempts per task (default 8)
+  AGENTFLOW_TASK_TIMEOUT            wall-clock seconds since attempt 1's start (default 14400 = 4h); a running
+                                    worker also stops when the remaining budget is tighter than its own timeout
+  AGENTFLOW_MAX_IDENTICAL_FAILURES  consecutive identical failures - same stop reason, exit code and normalized
+                                    note - before a new attempt is refused (default 3)
+  AGENTFLOW_MAX_TOOL_SWITCHES       distinct worker platforms a task may touch; another one is refused
+                                    (default 3; a manual attempt is the human's own session, not a switch)
+Nested sessions: every managed session carries AGENTFLOW_ATTEMPT=<task>#<attempt> and AGENTFLOW_ATTEMPT_ROOT=
+the worker's checkout root in its environment. A launch whose own project root equals that marker is a nested
+helper of a running worker: refused unless a project Preflight rule says `- delegate: on` (default: zero
+helpers). Delegation never bypasses the budgets above or the machine capacity claim.
+
 Permission and isolation matrix (a missing combination refuses the launch; the launcher never downgrades silently):
 
   tool    role        flags                                        isolation
@@ -95,10 +115,11 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gate  # noqa: E402
 import ledger  # noqa: E402
 import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
@@ -254,10 +275,18 @@ def env_args(tool, model, effort):
     return remove_overridden(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")), model, effort)
 
 
-def tool_argv(tool, role, prompt, model, effort):
-    """Full argv after the executable, in the same order the PowerShell launcher built it."""
+def tool_argv(tool, role, prompt, model, effort, masked=False):
+    """Full argv after the executable, in the same order the PowerShell launcher built it. With
+    masked=True the record-safe shape is produced instead: the prompt becomes '<prompt>' and every
+    AGENTFLOW_<TOOL>_ARGS token becomes '<env arg>' (count and position preserved), so a secret in
+    machine arguments can never be written into runtime state."""
+    def eargs(t):
+        args = env_args(t, model, effort)
+        return ["<env arg>"] * len(args) if masked else args
+    if masked:
+        prompt = "<prompt>"
     if tool == "codex":
-        base = ["exec"] + env_args("codex", model, effort)
+        base = ["exec"] + eargs("codex")
         if role == "developer":
             base += ["--sandbox", "danger-full-access", prompt]
         else:
@@ -273,11 +302,66 @@ def tool_argv(tool, role, prompt, model, effort):
             if role == "developer" else ["-p", prompt, "--output-format", "stream-json"]
     else:  # devin
         base = ["-p", prompt, "--permission-mode", "dangerous", "--respect-workspace-trust", "false"]
-    return base + env_args(tool, model, effort) + model_args(tool, model, effort)
+    return base + eargs(tool) + model_args(tool, model, effort)
 
 
 def tool_exe(tool):
     return resolve_exe(tool, os.environ.get(f"AGENTFLOW_{tool.upper()}"))
+
+
+VERSION_TIMEOUT = 15  # <tool> --version is a fact, not a probe: bounded, output-only, never stored raw
+
+
+def tool_version(exe):
+    """First line of `<exe> --version`, or 'unknown' when the tool does not answer cheaply. A version
+    string is runtime metadata; a CLI that fails or stalls reports 'unknown', never a guess."""
+    try:
+        code, out = run_capture([exe, "--version"],
+                                timeout=env_seconds("AGENTFLOW_VERSION_TIMEOUT", VERSION_TIMEOUT))
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    line = next((ln.strip() for ln in out.splitlines() if ln.strip()), "")
+    return line[:120] if code == 0 and line else "unknown"
+
+
+# What a tool may report about itself: structured stream-json init/config events and plain header lines.
+# Anything else (assistant prose, file content, prompts) is subject matter, not runtime identity.
+_IDENTITY_EVENTS = ("init", "session", "config")
+_MODEL_LINE = re.compile(r"^model\s*:\s*([A-Za-z0-9][\w./-]*)$", re.I)
+_EFFORT_LINE = re.compile(r"^(?:reasoning[ _-]?effort|effort)\s*:\s*([A-Za-z0-9._-]+)$", re.I)
+
+
+def effective_identity(log):
+    """(model, effort) the tool reported itself in this session log, else (None, None): a 'model'/'effort'
+    field of a structured init/session/config event, or a 'model:'/'reasoning effort:' header line. An
+    assistant message's content never counts; absence is reported by the caller as 'unknown'."""
+    try:
+        head = Path(log).read_text(encoding="utf-8", errors="replace")[:65536] if log else ""
+    except OSError:
+        return None, None
+    model = effort = None
+    for s in (ln.strip() for ln in head.splitlines()):
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                ev = json.loads(s)
+            except ValueError:
+                ev = None
+            if isinstance(ev, dict):
+                kind = f"{ev.get('type', '')}:{ev.get('subtype', '')}".lower()
+                if any(k in kind for k in _IDENTITY_EVENTS):
+                    if model is None and isinstance(ev.get("model"), str):
+                        model = ev["model"]
+                    eff = ev.get("effort") or ev.get("reasoning_effort") or ev.get("reasoningEffort")
+                    if effort is None and isinstance(eff, str):
+                        effort = eff
+                continue
+        if model is None and (m := _MODEL_LINE.match(s)):
+            model = m.group(1)
+        if effort is None and (m := _EFFORT_LINE.match(s)):
+            effort = m.group(1)
+        if model and effort:
+            break
+    return model, effort
 
 
 # --- process identity ---------------------------------------------------------------------------------------------
@@ -800,6 +884,91 @@ def worker_env(t):
     return e
 
 
+# --- launch budgets (bounded autonomy): every cap is an AGENTFLOW_* setting with a documented default;
+# --- a refused launch creates no attempt and leaves every earlier record and checkpoint untouched --------
+MAX_ATTEMPTS = 8
+MAX_IDENTICAL_FAILURES = 3
+MAX_TOOL_SWITCHES = 3
+TASK_TIMEOUT = 4 * 3600  # wall-clock budget of the whole task, counted from attempt 1's start
+
+# stopReason classes that count as a repeated identical failure. "stopped" is the human's decision,
+# "limit" is a provider hold handled by the limits machinery, "completed" is not a failure at all.
+_FAILURE_REASONS = {"environment", "verification", "implementation", "timeout", "dead"}
+
+
+def _same_root(path):
+    try:
+        return os.path.normcase(str(Path(path).resolve())) == os.path.normcase(str(ROOT.resolve()))
+    except OSError:
+        return False
+
+
+def nested_check():
+    """A launch inside a managed worker session is a nested helper: detectable by the attempt markers
+    the launcher sets in the worker's environment (its checkout root). Refused unless a project
+    Preflight rule delegates sub-agent launches; delegation never bypasses the budgets or machine caps."""
+    marker = os.environ.get("AGENTFLOW_ATTEMPT_ROOT")
+    if not marker or not _same_root(marker):
+        return
+    if gate.delegation_allowed():
+        return
+    who = os.environ.get("AGENTFLOW_ATTEMPT") or "a worker"
+    raise LaunchError(f"nested launch refused: this session already belongs to {who} of this project, and "
+                      "the project's Preflight rules do not delegate sub-agent launches "
+                      "('- delegate: on' would allow it; the launch budgets and machine capacity still apply). "
+                      "Nothing was started.")
+
+
+def failure_signature(a):
+    """What 'the same failure again' means: stop reason, exit code and the note with volatile numbers
+    normalized out. Attempts that are still running, were stopped by hand or completed carry no signature."""
+    if a.get("status") == "running" or a.get("stopReason") not in _FAILURE_REASONS:
+        return None
+    note = re.sub(r"\s+", " ", re.sub(r"\d+", "#", (a.get("note") or "").lower()))[:160]
+    return a["stopReason"], a.get("exitCode"), note
+
+
+def budget_stop(rt, tool):
+    """The budget a new attempt would exceed, or None. Attempts, overall task duration (from attempt 1's
+    start), a trailing run of identical failures, and distinct worker platforms are all capped."""
+    attempts = rt.get("attempts") or []
+    cap = env_seconds("AGENTFLOW_MAX_ATTEMPTS", MAX_ATTEMPTS)
+    if len(attempts) >= cap:
+        return (f"attempt budget exhausted: {len(attempts)} attempt(s) on this task, cap "
+                f"AGENTFLOW_MAX_ATTEMPTS={cap}")
+    if attempts and attempts[0].get("startedAt"):
+        try:
+            started = datetime.strptime(attempts[0]["startedAt"], "%Y-%m-%dT%H:%M:%SZ") \
+                .replace(tzinfo=timezone.utc)
+        except ValueError:
+            started = None
+        span = env_seconds("AGENTFLOW_TASK_TIMEOUT", TASK_TIMEOUT)
+        if started and datetime.now(timezone.utc) - started > timedelta(seconds=span):
+            return (f"task duration budget exhausted: attempt 1 started {attempts[0]['startedAt']}, cap "
+                    f"AGENTFLOW_TASK_TIMEOUT={span}s")
+    chain, sig0 = 0, None
+    for old in reversed(attempts):
+        sig = failure_signature(old)
+        if sig is None:
+            break
+        if sig0 is None:
+            sig0 = sig
+        elif sig != sig0:
+            break
+        chain += 1
+    cap = env_seconds("AGENTFLOW_MAX_IDENTICAL_FAILURES", MAX_IDENTICAL_FAILURES)
+    if sig0 is not None and chain >= cap:
+        return (f"identical failures budget exhausted: the last {chain} attempt(s) all failed as "
+                f"'{sig0[0]}' (exit {sig0[1]}) the same way, cap AGENTFLOW_MAX_IDENTICAL_FAILURES={cap}")
+    if tool:
+        used = {old.get("tool") for old in attempts} - {"manual", None}
+        cap = env_seconds("AGENTFLOW_MAX_TOOL_SWITCHES", MAX_TOOL_SWITCHES)
+        if tool not in used and len(used) >= cap:
+            return (f"platform switch budget exhausted: this task already ran on {sorted(used)}, cap "
+                    f"AGENTFLOW_MAX_TOOL_SWITCHES={cap}; '{tool}' would be another platform")
+    return None
+
+
 # --- resource and permission checks before a worker start -----------------------------------------------------------
 def limit_until(tool, group=None):
     """Observed quota/access limits applying to <tool> on quota <group>, project file and shared machine
@@ -1040,6 +1209,9 @@ def complete_attempt(tid, rt, state, hint=None):
     if bad:
         state = "error"
         a["note"] = "; ".join(x for x in [a.get("note"), *bad] if x)
+    if a.get("log"):  # what the tool itself reported about its runtime, else the record stays 'unknown'
+        model, effort = effective_identity(a["log"])
+        a["effectiveModel"], a["effectiveEffort"] = model or "unknown", effort or "unknown"
     a["status"], a["finishedAt"] = state, now()
     a["stopReason"] = classify_stop(a, bad, hint)
     if a["stopReason"] != "completed":
@@ -1182,13 +1354,30 @@ def cmd_worker(tid, tool):
         except ValueError:
             timeout = 0
         timeout = timeout if timeout > 0 else None
+        bound = "AGENTFLOW_WORKER_TIMEOUT"
+        # the task's own wall-clock budget (counted from attempt 1's start) bounds this worker too
+        first = (rt.get("attempts") or [att])[0]
+        try:
+            started = datetime.strptime(first.get("startedAt") or "", "%Y-%m-%dT%H:%M:%SZ") \
+                .replace(tzinfo=timezone.utc)
+            remaining = (started
+                         + timedelta(seconds=env_seconds("AGENTFLOW_TASK_TIMEOUT", TASK_TIMEOUT))
+                         - datetime.now(timezone.utc)).total_seconds()
+        except ValueError:
+            remaining = None
+        if remaining is not None:
+            if remaining <= 0:
+                raise LaunchError("task duration budget exhausted before the tool started "
+                                  f"(AGENTFLOW_TASK_TIMEOUT={env_seconds('AGENTFLOW_TASK_TIMEOUT', TASK_TIMEOUT)}s)")
+            if timeout is None or remaining < timeout:
+                timeout, bound = remaining, "AGENTFLOW_TASK_TIMEOUT"
         prompt = t["prompt"] + (f" {att['handover']}" if att.get("handover") else "")
         argv = [tool_exe(tool)] + tool_argv(tool, t["role"], prompt, t["model"], t["effort"])
         code, timed_out = run_logged(argv, log, cwd=t["workdir"], env=env, timeout=timeout,
                                      on_spawn=lambda pid: write_tool_session(tid, pid))
         if timed_out:
-            note = (f"wall-clock timeout after {timeout}s: the managed process tree was killed "
-                    f"(AGENTFLOW_WORKER_TIMEOUT)")
+            note = (f"wall-clock timeout after {int(timeout)}s: the managed process tree was killed "
+                    f"({bound})")
     except Exception as e:
         note = f"launch error: {e}"
         print(note)
@@ -1216,6 +1405,7 @@ def cmd_worker(tid, tool):
 def cmd_launch(tid, tool, manual, grant):
     if not tool and not manual:
         raise LaunchError("tool required: codex | claude | agy | devin (or --manual)")
+    nested_check()
     lock = RT_DIR / "launch.lock"
     if lock.exists() and time.time() - lock.stat().st_mtime > 300:
         lock.unlink()  # left by a crashed launcher
@@ -1259,6 +1449,10 @@ def cmd_launch(tid, tool, manual, grant):
         t = pf["task"]
         if not manual and t["role"] not in ("developer", "tester"):
             raise LaunchError(f"Role '{t['role']}': the launcher starts developer and tester only. Use --manual.")
+        if reason := budget_stop(rt or {}, tool if not manual else None):
+            raise LaunchError(f"{tid}: {reason}. Nothing was started; the attempt records and their "
+                              "recovery checkpoints are preserved - the Orchestrator decides the "
+                              "successor task.")
         check = None
         if not manual:
             if t["role"] not in PERMISSIONS.get(tool, ()):
@@ -1285,6 +1479,9 @@ def cmd_launch(tid, tool, manual, grant):
         a = {"n": n, "taskId": tid, "tool": tool or "manual",
              "toolArgsHash": argv_hash(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")))
              if tool else None,
+             "requestedModel": t["model"], "requestedEffort": t["effort"],
+             "toolVersion": tool_version(check["exe"]) if check else "unknown",
+             "effectiveModel": "unknown", "effectiveEffort": "unknown",
              "role": t["role"], "manual": manual, "status": "running", "pid": None, "pidStart": None,
              "exitCode": None, "startedAt": now(), "finishedAt": None, "limitHit": False,
              "stopReason": None,
@@ -1293,6 +1490,9 @@ def cmd_launch(tid, tool, manual, grant):
              "log": None if manual else str(RT_DIR / f"{tid}.{n}.log"),
              "baseline": invoke_gate("task", tid).get("baseline"),
              "machineLease": lease, "note": None}
+        if not manual:
+            a["launch"] = {"exe": check["exe"],
+                           "argv": tool_argv(tool, t["role"], None, t["model"], t["effort"], masked=True)}
         if check:
             a["resourceCheck"] = check
         if prev and (prev.get("recovery") or prev.get("stopReason")):
@@ -1309,6 +1509,7 @@ def cmd_launch(tid, tool, manual, grant):
 
         if manual:
             e = worker_env(t)
+            e["AGENTFLOW_ATTEMPT"], e["AGENTFLOW_ATTEMPT_ROOT"] = f"{tid}#{n}", str(Path(t["workdir"]).resolve())
             handover = f" {a['handover']}" if a.get("handover") else ""
             print(f"{tid} attempt {n} ready for a manual start.\n  folder: {t['workdir']}\n"
                   f"  env:    {', '.join(f'{k}={v}' for k, v in e.items())}\n"
@@ -1320,6 +1521,9 @@ def cmd_launch(tid, tool, manual, grant):
         env = dict(os.environ)
         env.pop("AGENTFLOW_TARGET", None)
         env.pop("AGENTFLOW_EVIDENCE", None)
+        # the attempt markers: a launch inside this session's checkout is a nested helper (nested_check)
+        env["AGENTFLOW_ATTEMPT"] = f"{tid}#{n}"
+        env["AGENTFLOW_ATTEMPT_ROOT"] = str(Path(t["workdir"]).resolve())
         cmd = worker_python_cmd() + [str(Path(__file__).resolve()), tid, tool, "--worker"]
         kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
               "env": env, "close_fds": True}

@@ -2,6 +2,83 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.0 - 2026-10-18
+
+Bounded autonomy and trustworthy lifecycle records (improvement-plan section
+4): attempts record the model identity they were asked for and the one the
+tool reported; operator quota wishes become a declared policy file instead of
+prompt promises; attempts, duration, identical failures and platform switches
+are capped; an opt-in Codex Stop-hook adapter validates the installed runtime
+before enabling; a `done` PASS is reused only while every check input still
+matches.
+
+- Attempt records (`tasks/.runtime/T-NNN.json`) now carry `requestedModel` /
+  `requestedEffort` from the Task File, `launch.argv` in safe form (the
+  prompt becomes `<prompt>`, every `AGENTFLOW_<TOOL>_ARGS` token becomes
+  `<env arg>` — a machine-arg secret can never enter runtime state),
+  `toolVersion` (first `--version` line, bounded by
+  `AGENTFLOW_VERSION_TIMEOUT`, `unknown` when the binary does not answer) and
+  `effectiveModel` / `effectiveEffort` from what the tool itself reported in
+  the session log. Identity the tool never reported stays `unknown` — never
+  guessed. Attempts written before these fields exist stay valid.
+- New attempts are refused with a diagnosable reason — nothing started,
+  earlier records and recovery checkpoints preserved — when they would
+  exceed `AGENTFLOW_MAX_ATTEMPTS` (8), `AGENTFLOW_TASK_TIMEOUT` (4h from
+  attempt 1's start; its remainder also bounds a running worker),
+  `AGENTFLOW_MAX_IDENTICAL_FAILURES` (3 consecutive failures with the same
+  stop reason, exit code and normalized note) or `AGENTFLOW_MAX_TOOL_SWITCHES`
+  (3 distinct platforms; a manual attempt is not a switch).
+- Managed sessions carry `AGENTFLOW_ATTEMPT=<task>#<n>` and
+  `AGENTFLOW_ATTEMPT_ROOT=<checkout root>`: a launch inside that root is a
+  nested helper and is refused unless a project Preflight rule declares
+  `- delegate: on` (default: zero helpers; delegation never bypasses the
+  budgets or machine capacity).
+- Declared quota policy: `.agentflow/docs/quota-policy.json`
+  (`AGENTFLOW_QUOTA_POLICY` overrides, `off` disables) declares expectations —
+  `{"policies": [{"tool", "group"?, "remaining": {"percent_below": n},
+  "action": "pause|switch|report", "sample_max_age_seconds"?}]}` — and
+  `quota-samples.json` next to it (`AGENTFLOW_QUOTA_SAMPLES` overrides) holds
+  the readings keyed `<tool>` or `<tool>:<group>` with `at`,
+  `remaining_percent` and optional `resets_at` (the quota window's end). A
+  fresh below-threshold reading under `pause` waits launches; under `switch`
+  they become needs and `next-orchestrator` skips the tool. With no fresh
+  reading the state is `unknown` — nothing blocks on a wish, and the launch
+  budgets remain the bound; malformed files fail closed (`StateError`). The
+  policy file is never a claim that a percentage is enforced.
+- `gate.py` verify/done records carry `checksHash` over the `## Checks`
+  commands, the task's `Env:` block and the interpreter that runs them; a
+  `done` PASS is reused only while it still matches. A changed check
+  definition or runtime — or a legacy record without the field — is a new
+  measurement.
+- `plan_route.py recommend(..., kind="plan")` / `--kind` names the decision a
+  recommendation feeds (recorded in the Jev state and the result); it frames
+  the effort question without forcing a tier.
+- New `hooks.py`: `python .agentflow/tools/hooks.py enable codex` validates
+  the installed Codex version (`>= 0.114.0`) and hook feature surface at
+  runtime, refuses unsupported runtimes without writing, prints the manual
+  steps, and with `--write` adds one project-local `.codex/hooks.json` Stop
+  entry (existing hooks kept; global config untouched — the `[features]`
+  flag stays the operator's line). The `codex-stop` hook maps the session's
+  cwd to its AgentFlow attempt, completes a finished manual session the same
+  way `--mark-finished` does, runs `gate.py done`, and reports bounded
+  actionable text; it is inert inside a managed worker session
+  (`AGENTFLOW_ATTEMPT` set) and never accepts, spawns or treats a limit or
+  `blocked` outcome as a reason to continue. `cli.py` gains a `hooks`
+  passthrough.
+- Migration for installed projects: `install.py --update` ships the new
+  `run_task.py`, `tick.py`, `gate.py`, `plan_route.py`, `cli.py`,
+  `conductor.ps1`, `hooks.py` and the updated protocol. No configuration
+  changes are required; the new launch budgets apply at their documented
+  defaults — widen or tighten them per machine with the `AGENTFLOW_*`
+  settings. To opt into the Codex
+  Stop hook, run `hooks.py enable codex` in a project and, if it validates,
+  re-run with `--write`, then add the printed `[features]` line to the codex
+  `config.toml`. Declare `.agentflow/docs/quota-policy.json` only if the
+  project wants declared quota expectations enforced on fresh readings. Old
+  verify records without `checksHash` stay valid evidence of what they
+  measured but are never reused as a current `done` PASS. The shipped
+  `gate.py` also carries the 2.14.1 evidence-scope fix below.
+
 ## 2.14.1 - 2026-10-18
 
 Evidence-scope check fix: Result prose that merely looks path-like
