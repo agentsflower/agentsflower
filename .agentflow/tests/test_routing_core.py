@@ -334,6 +334,32 @@ class RoutingCoreTests(unittest.TestCase):
                 with patch.dict(os.environ, {var: args}, clear=True):
                     self.assertEqual(route.env_selected(tool), want, f"{var}={args}")
 
+    def test_env_selected_last_wins_for_codex_config_keys(self):
+        """T-089/G-02: a repeated Codex config key resolves to the value Codex actually applies -
+        its ordered override layer replaces the scalar, so the LAST -c/--config occurrence wins;
+        the dedicated -m flag layer outranks -c keys regardless of position."""
+        cases = [("--config model_reasoning_effort=high --config=model_reasoning_effort=low",
+                  (None, "low")),
+                 ("-c model_reasoning_effort=high -c model_reasoning_effort=low", (None, "low")),
+                 ("-c model_reasoning_effort=low --config model_reasoning_effort=high", (None, "high")),
+                 ("-c model=gpt-a --config model=gpt-b", ("gpt-b", None)),
+                 ("-c model=gpt-b -m gpt-a", ("gpt-a", None)),
+                 ("-m gpt-a -c model=gpt-b", ("gpt-a", None))]
+        for args, want in cases:
+            with self.subTest(args=args), \
+                    patch.dict(os.environ, {"AGENTFLOW_CODEX_ARGS": args}, clear=True):
+                self.assertEqual(route.env_selected("codex"), want)
+
+    def test_env_selected_ignores_config_keys_for_other_tools(self):
+        """T-089/G-03: -c/--config are Codex spellings; inside another tool's args they are ordinary
+        tokens the resolved identity must not read as a model or effort override."""
+        for tool in ("devin", "claude", "agy"):
+            for args in ("--config model=gpt-6.1-mini", "--config model_reasoning_effort=low",
+                         "-c model=gpt-6.1-mini", "--config=model=gpt-6.1-mini"):
+                with self.subTest(tool=tool, args=args), \
+                        patch.dict(os.environ, {f"AGENTFLOW_{tool.upper()}_ARGS": args}, clear=True):
+                    self.assertEqual(route.env_selected(tool), (None, None))
+
 
 class RoutingRecordTests(unittest.TestCase):
     """End-to-end: route.py in a disposable project persists the schemaVersioned record."""

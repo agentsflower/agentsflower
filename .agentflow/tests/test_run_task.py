@@ -1408,6 +1408,48 @@ class RoutingAdmissionTests(unittest.TestCase):
         last = self.route_events()[-1]
         self.assertEqual(last["admitted"]["model"], "gpt-6.1-sol")
 
+    def test_codex_repeated_config_last_wins_refusal_and_admission(self):
+        """T-089/G-02 (the T-088 F-01 probe): repeated supported config overrides resolve to the LAST
+        value - the one Codex's ordered override layer applies - so high-then-low is refused at >=high
+        before CLI/lease/spawn, and the same final low is what a >=low requirement admits and records."""
+        self.codex_assessment()  # requirement effort >= high, header names Model but no effort
+        for flags in ("--config model_reasoning_effort=high --config=model_reasoning_effort=low",
+                      "-c model_reasoning_effort=high -c model_reasoning_effort=low"):
+            with self.subTest(flags=flags):
+                r = self.launch("T-001", "codex", env={"AGENTFLOW_CODEX_ARGS": flags})
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("below the recorded requirement", r.stdout + r.stderr)
+                self.assertFalse(self.rt_file.exists())   # refused before CLI, lease or spawn
+        self.record(required={"effort": "low", "complexity": 0.4})
+        r = self.launch("T-001", "codex",
+                        env={"AGENTFLOW_CODEX_ARGS":
+                             "--config model_reasoning_effort=high --config=model_reasoning_effort=low"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.wait_state("exited")
+        admitted = [e for e in self.route_events() if e.get("event") == "admission"]
+        self.assertEqual(len(admitted), 1)
+        self.assertEqual((admitted[0]["admitted"]["effort"], admitted[0]["admitted"]["tier"]),
+                         ("low", "low"), "the admitted identity equals the effective outgoing argv")
+
+    def test_config_keys_are_not_interpreted_for_other_tools(self):
+        """T-089/G-03: --config/-c are Codex spellings - in AGENTFLOW_DEVIN_ARGS they are ordinary
+        argv tokens: not read as a downgrade, passed to the worker verbatim, never dropped."""
+        self.strip_exception()
+        self.task_file.write_text(self.task_file.read_text(encoding="utf-8")
+                                  .replace("Tool: devin", "Tool: devin\nModel: swe-2-high"),
+                                  encoding="utf-8")
+        self.record()
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\nexit /b 0',
+                        'if [ "$1" = "auth" ]; then exit 0; fi\nexit 0')
+        r = self.launch("T-001", "devin", env={"AGENTFLOW_DEVIN_ARGS":
+                                             "--config model=swe-2-medium "
+                                             "--config model_reasoning_effort=low"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # the tokens admit nothing
+        a = self.wait_state("exited")
+        last = self.route_events()[-1]
+        self.assertEqual(last["admitted"]["model"], "swe-2-high")   # the header, not a token value
+        self.assertEqual(a["launch"]["argv"].count("<env arg>"), 4)  # all four tokens reached argv
+
     def test_human_exception_admits_and_is_recorded_as_a_human_decision(self):
         # The fixture task carries 'Routing exception: disposable test fixture' and no assessment exists.
         r = self.launch("T-001", "--manual")
@@ -1472,6 +1514,27 @@ class ArgvParityTests(unittest.TestCase):
                      '--config=model="gpt-6.1-sol"'):   # the value parses as TOML - quotes are syntax
             with self.subTest(args=args), clean_tool_args(AGENTFLOW_CODEX_ARGS=args):
                 self.assertEqual(run_task.selected_model("codex", None), "gpt-6.1-sol")
+
+    def test_selected_model_codex_repeated_config_last_wins(self):
+        """T-089/G-02: the last `model=` config key is the model Codex runs; the dedicated
+        -m flag layer outranks -c keys regardless of argv position."""
+        with clean_tool_args(AGENTFLOW_CODEX_ARGS="--config model=gpt-6.1-mini "
+                                                  "--config model=gpt-6.1-sol"):
+            self.assertEqual(run_task.selected_model("codex", None), "gpt-6.1-sol")
+        with clean_tool_args(AGENTFLOW_CODEX_ARGS="-m gpt-6.1-sol -c model=gpt-6.1-mini"):
+            self.assertEqual(run_task.selected_model("codex", None), "gpt-6.1-sol")
+
+    def test_config_alias_preserved_for_non_codex_tools(self):
+        """T-089/G-03: for other tools --config tokens are never read as overrides and never
+        silently dropped - they reach the worker argv verbatim even when the task's Model wins."""
+        for tool in ("devin", "claude", "agy"):
+            with self.subTest(tool=tool), \
+                    clean_tool_args(**{f"AGENTFLOW_{tool.upper()}_ARGS":
+                                       "--config model=gpt-6.1-mini"}):
+                self.assertIsNone(run_task.selected_model(tool, None))
+                a = run_task.tool_argv(tool, "developer", "<p>", "header-model", None)
+            self.assertEqual(a[-4:], ["--config", "model=gpt-6.1-mini",
+                                      "--model", "header-model"])
 
     def test_claude_and_agy_model_effort(self):
         with clean_tool_args(AGENTFLOW_CLAUDE_ARGS="--effort medium"):

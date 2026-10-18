@@ -205,21 +205,25 @@ def config_value(v):
 
 
 def selected_model(tool, model):
-    """The concrete model the worker would use: the task's Model line, else the one inside AGENTFLOW_<TOOL>_ARGS."""
+    """The concrete model the worker would use: the task's Model line, else the one inside AGENTFLOW_<TOOL>_ARGS.
+    `-c`/`--config` k=v is a Codex spelling only (parsed for codex); a repeated key resolves to the last
+    occurrence - Codex applies its overrides in order - and the dedicated -m/--model flag outranks it."""
     if model:
         return model
     args = split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS"))
+    flag = cfg = None
     for i, a in enumerate(args):
         nxt = args[i + 1] if i + 1 < len(args) else ""
-        if a in ("-m", "--model") and nxt:
-            return nxt
-        m = re.match(r"^(?:-m|--model)=(.+)$", a)
-        if m:
-            return m.group(1)
-        kv = config_kv(a, nxt)
-        if kv is not None and kv.split("=", 1)[0] == "model":
-            return config_value(kv.split("=", 1)[1])
-    return None
+        if flag is None and a in ("-m", "--model") and nxt:
+            flag = nxt
+            continue
+        if flag is None and (m := re.match(r"^(?:-m|--model)=(.+)$", a)):
+            flag = m.group(1)
+            continue
+        if tool == "codex" and (kv := config_kv(a, nxt)) is not None \
+                and kv.split("=", 1)[0] == "model":
+            cfg = config_value(kv.split("=", 1)[1])
+    return flag or cfg
 
 # Wall-clock limit for one worker, enforced by the launcher itself (see the docstring): the tool process tree is
 # killed, the attempt recorded as a timeout error and the lease released. AGENTFLOW_WORKER_TIMEOUT overrides it
@@ -272,15 +276,16 @@ def split_args(value):
     return [a for a in (value or "").strip().split() if a]
 
 
-def remove_overridden(args, model, effort):
-    """The task's Model line wins over machine defaults (kept in step with the former PowerShell loop)."""
+def remove_overridden(args, model, effort, tool):
+    """The task's Model line wins over machine defaults (kept in step with the former PowerShell loop).
+    `-c`/`--config` pairs are filtered only for codex - another tool's same-spelled tokens pass through."""
     out, skip = [], False
     for i, a in enumerate(args):
         if skip:
             skip = False
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
-        kv = config_kv(a, nxt)
+        kv = config_kv(a, nxt) if tool == "codex" else None
         key = kv.split("=", 1)[0] if kv is not None else None
         if model and a in ("-m", "--model"):
             skip = True
@@ -317,7 +322,8 @@ def model_args(tool, model, effort):
 
 def env_args(tool, model, effort):
     """AGENTFLOW_<TOOL>_ARGS, filtered so the task's Model line wins."""
-    return remove_overridden(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")), model, effort)
+    return remove_overridden(split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS")),
+                             model, effort, tool)
 
 
 def tool_argv(tool, role, prompt, model, effort, masked=False):

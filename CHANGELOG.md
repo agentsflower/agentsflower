@@ -19,7 +19,8 @@ integration remain with T-078.
   downgrade through environment flags or a weaker relaunched tool. The
   resolved-env identity covers every documented Codex override spelling -
   `-c k=v`, `--config k=v` and `--config=k=v`, including the `model` key
-  (T-087). Each
+  (T-087; repeated keys resolve last-wins - the value Codex applies - and
+  the spellings are parsed for codex only, T-089). Each
   admitted launch appends an `admission` event to `T-NNN.route.json` (safe
   metadata only); a `Routing exception:` header line is the auditable human
   override and is recorded as a `human-exception` event, never as Jev
