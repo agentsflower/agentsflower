@@ -16,7 +16,10 @@ integration remain with T-078.
   the resolved tool/model/effort after `AGENTFLOW_<TOOL>_ARGS` overrides must
   still meet the recorded requirement. Missing, stale, `blocked`,
   `low-confidence` or `failed` records refuse the launch; a retry cannot
-  downgrade through environment flags or a weaker relaunched tool. Each
+  downgrade through environment flags or a weaker relaunched tool. The
+  resolved-env identity covers every documented Codex override spelling -
+  `-c k=v`, `--config k=v` and `--config=k=v`, including the `model` key
+  (T-087). Each
   admitted launch appends an `admission` event to `T-NNN.route.json` (safe
   metadata only); a `Routing exception:` header line is the auditable human
   override and is recorded as a `human-exception` event, never as Jev

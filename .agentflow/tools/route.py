@@ -566,6 +566,19 @@ def latest_assessment(tid, rt_dir=None):
     return None
 
 
+def _config_kv(a, nxt):
+    """The `key=value` a Codex `-c`/`--config` token carries (the `--config=k=v` spelling too), else None."""
+    if a in ("-c", "--config"):
+        return nxt if "=" in nxt else None
+    m = re.match(r"^(?:-c|--config)=(.+)$", a)
+    return m.group(1) if m and "=" in m.group(1) else None
+
+
+def _config_value(v):
+    """A `-c k=v` value parses as TOML: one pair of matching quotes is syntax, not part of the string."""
+    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'" else v
+
+
 def env_selected(tool):
     """(model, effort) AGENTFLOW_<TOOL>_ARGS would set when the Task File names none - the same tokens
     run_task.remove_overridden guards, duplicated here because this standalone tool cannot import the
@@ -582,8 +595,12 @@ def env_selected(tool):
             effort = nxt
         elif effort is None and a.startswith("--effort="):
             effort = a.split("=", 1)[1]
-        elif effort is None and a == "-c" and nxt.startswith("model_reasoning_effort="):
-            effort = nxt.split("=", 1)[1]
+        elif (kv := _config_kv(a, nxt)) is not None:
+            key, val = kv.split("=", 1)
+            if model is None and key == "model":
+                model = _config_value(val)
+            elif effort is None and key == "model_reasoning_effort":
+                effort = _config_value(val)
     return model, effort
 
 

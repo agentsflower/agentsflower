@@ -1341,6 +1341,73 @@ class RoutingAdmissionTests(unittest.TestCase):
         self.assertFalse(last["deviation"], "the launch matches the recorded selection")
         self.assertNotIn("reason", last)  # jev evidence, not a human override
 
+    def codex_assessment(self, model_header=True):
+        """Repurpose the disposable task as a codex launch with a matching ok effort>=high assessment."""
+        self.strip_exception()
+        header = "Tool: codex\nModel: gpt-6.1-sol" if model_header else "Tool: codex"
+        self.task_file.write_text(self.task_file.read_text(encoding="utf-8")
+                                  .replace("Tool: devin", header), encoding="utf-8")
+        self.tool("ledger.py", "set", "T-001", "--tool", "codex")
+        (self.flow / "docs" / "model-options.json").write_text(json.dumps({"options": {
+            "codex-sol": {"tool": "codex", "model": "gpt-6.1-sol",
+                          "efforts": ["low", "medium", "high", "xhigh"],
+                          "default_effort": "high", "quota_group": "codex"},
+            "codex-mini": {"tool": "codex", "model": "gpt-6.1-mini",
+                           "efforts": ["low", "medium"], "default_effort": "medium",
+                           "quota_group": "codex"}}}), encoding="utf-8")
+        self.record(selected={"option": "codex-sol", "tool": "codex",
+                              "model": "gpt-6.1-sol", "effort": "high"})
+        self.env["AGENTFLOW_CODEX"] = str(fake_tool(self.tmp.name, "fake-codex",
+                                                  "exit /b 0", "exit 0"))
+        self.env["AGENTFLOW_CODEX_MODEL_PROBE"] = "on"
+
+    def test_codex_config_alias_effort_downgrade_is_refused(self):
+        """T-087/D-01: every documented Codex effort override spelling feeds admission, not only `-c`
+        (the T-086 probe: `--config model_reasoning_effort=low` started a worker the `-c` form refused)."""
+        self.codex_assessment()
+        for flags in ("-c model_reasoning_effort=low",
+                      "--config model_reasoning_effort=low",
+                      "--config=model_reasoning_effort=low",
+                      "--config x=1 -c model_reasoning_effort=low"):  # other keys do not corrupt parsing
+            with self.subTest(flags=flags):
+                r = self.launch("T-001", "codex", env={"AGENTFLOW_CODEX_ARGS": flags})
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("below the recorded requirement", r.stdout + r.stderr)
+                self.assertFalse(self.rt_file.exists())   # refused before CLI, lease or spawn
+
+    def test_codex_config_alias_adequate_is_admitted_and_recorded(self):
+        """An adequate `--config` effort is admitted and the event records the resolved env identity
+        (xhigh proves the value came from the alias, not the option's default_effort high)."""
+        self.codex_assessment()
+        r = self.launch("T-001", "codex",
+                        env={"AGENTFLOW_CODEX_ARGS": "--config x=1 --config model_reasoning_effort=xhigh"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.wait_state("exited")
+        admitted = [e for e in self.route_events() if e.get("event") == "admission"]
+        self.assertEqual(len(admitted), 1)
+        self.assertEqual((admitted[0]["admitted"]["model"], admitted[0]["admitted"]["effort"],
+                          admitted[0]["admitted"]["tier"]), ("gpt-6.1-sol", "xhigh", "xhigh"))
+
+    def test_codex_config_alias_model_downgrade_is_refused(self):
+        """The `model` config key feeds the same admission: each spelling that resolves to the weaker
+        option is refused; an adequate `--config model=` is admitted and is the probed identity."""
+        self.codex_assessment(model_header=False)
+        for flags in ("-c model=gpt-6.1-mini",
+                      "--config model=gpt-6.1-mini",
+                      "--config=model=gpt-6.1-mini"):
+            with self.subTest(flags=flags):
+                r = self.launch("T-001", "codex", env={"AGENTFLOW_CODEX_ARGS": flags})
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("below the recorded requirement", r.stdout + r.stderr)
+                self.assertFalse(self.rt_file.exists())
+        r = self.launch("T-001", "codex",
+                        env={"AGENTFLOW_CODEX_ARGS": "--config model=gpt-6.1-sol -c model_reasoning_effort=high"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.wait_state("exited")
+        self.assertEqual(a["resourceCheck"]["model"], "gpt-6.1-sol")  # selected_model saw the alias
+        last = self.route_events()[-1]
+        self.assertEqual(last["admitted"]["model"], "gpt-6.1-sol")
+
     def test_human_exception_admits_and_is_recorded_as_a_human_decision(self):
         # The fixture task carries 'Routing exception: disposable test fixture' and no assessment exists.
         r = self.launch("T-001", "--manual")
@@ -1389,6 +1456,22 @@ class ArgvParityTests(unittest.TestCase):
         with clean_tool_args(AGENTFLOW_CODEX_ARGS="-c model_reasoning_effort=xhigh"):
             a = run_task.tool_argv("codex", "developer", "<p>", None, None)
         self.assertIn("model_reasoning_effort=xhigh", a)
+
+    def test_codex_config_alias_forms_are_filtered_when_task_wins(self):
+        """T-087: the task's Model/effort wins over every documented Codex override spelling in the
+        real argv - the same forms route.env_selected feeds to admission."""
+        with clean_tool_args(AGENTFLOW_CODEX_ARGS="--config model_reasoning_effort=low "
+                                                  "--config=model=gpt-6.1-mini -c model=gpt-6.1-mini -c x=1"):
+            a = run_task.tool_argv("codex", "developer", "<p>", "gpt-6.1-sol", "high")
+        self.assertEqual(a, ["exec", "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high",
+                             "-c", "x=1", "--sandbox", "danger-full-access", "<p>"])
+
+    def test_selected_model_reads_codex_config_alias(self):
+        """selected_model resolves the env `model` config key in every spelling (the probed identity)."""
+        for args in ("-c model=gpt-6.1-sol", "--config model=gpt-6.1-sol",
+                     '--config=model="gpt-6.1-sol"'):   # the value parses as TOML - quotes are syntax
+            with self.subTest(args=args), clean_tool_args(AGENTFLOW_CODEX_ARGS=args):
+                self.assertEqual(run_task.selected_model("codex", None), "gpt-6.1-sol")
 
     def test_claude_and_agy_model_effort(self):
         with clean_tool_args(AGENTFLOW_CLAUDE_ARGS="--effort medium"):

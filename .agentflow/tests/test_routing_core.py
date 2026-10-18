@@ -316,7 +316,17 @@ class RoutingCoreTests(unittest.TestCase):
     def test_env_selected_parses_documented_flag_forms(self):
         cases = {"AGENTFLOW_CODEX_ARGS": [("-m gpt-x --effort high", ("gpt-x", "high")),
                                         ("--model=gpt-x --effort=low", ("gpt-x", "low")),
-                                        ("-c model_reasoning_effort=xhigh", (None, "xhigh"))],
+                                        ("-c model_reasoning_effort=xhigh", (None, "xhigh")),
+                                        # T-087/D-01: the `--config` alias spellings and the `model`
+                                        # key feed the same identity (the T-086 admission bypass)
+                                        ("--config model_reasoning_effort=low", (None, "low")),
+                                        ("--config=model_reasoning_effort=low", (None, "low")),
+                                        ("-c model=gpt-y", ("gpt-y", None)),
+                                        ("--config model=gpt-y", ("gpt-y", None)),
+                                        ("--config=model=gpt-y", ("gpt-y", None)),
+                                        ('--config model="gpt-y" -c other=1', ("gpt-y", None)),
+                                        ("--config other=1 --config model_reasoning_effort=xhigh",
+                                         (None, "xhigh"))],
                  "AGENTFLOW_DEVIN_ARGS": [("--model swe-2-max", ("swe-2-max", None))]}
         for var, pairs in cases.items():
             tool = var.split("_")[1].lower()

@@ -191,17 +191,34 @@ def env_seconds(name, default):
     return v if v > 0 else default
 
 
+def config_kv(a, nxt):
+    """The `key=value` a Codex `-c`/`--config` token carries (the `--config=k=v` spelling too), else None."""
+    if a in ("-c", "--config"):
+        return nxt if "=" in nxt else None
+    m = re.match(r"^(?:-c|--config)=(.+)$", a)
+    return m.group(1) if m and "=" in m.group(1) else None
+
+
+def config_value(v):
+    """A `-c k=v` value parses as TOML: one pair of matching quotes is syntax, not part of the string."""
+    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'" else v
+
+
 def selected_model(tool, model):
     """The concrete model the worker would use: the task's Model line, else the one inside AGENTFLOW_<TOOL>_ARGS."""
     if model:
         return model
     args = split_args(os.environ.get(f"AGENTFLOW_{tool.upper()}_ARGS"))
     for i, a in enumerate(args):
-        if a in ("-m", "--model") and i + 1 < len(args):
-            return args[i + 1]
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if a in ("-m", "--model") and nxt:
+            return nxt
         m = re.match(r"^(?:-m|--model)=(.+)$", a)
         if m:
             return m.group(1)
+        kv = config_kv(a, nxt)
+        if kv is not None and kv.split("=", 1)[0] == "model":
+            return config_value(kv.split("=", 1)[1])
     return None
 
 # Wall-clock limit for one worker, enforced by the launcher itself (see the docstring): the tool process tree is
@@ -263,6 +280,8 @@ def remove_overridden(args, model, effort):
             skip = False
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
+        kv = config_kv(a, nxt)
+        key = kv.split("=", 1)[0] if kv is not None else None
         if model and a in ("-m", "--model"):
             skip = True
             continue
@@ -273,8 +292,8 @@ def remove_overridden(args, model, effort):
             continue
         if effort and re.match(r"^--effort=", a):
             continue
-        if effort and a == "-c" and re.match(r"^model_reasoning_effort=", nxt):
-            skip = True
+        if (model and key == "model") or (effort and key == "model_reasoning_effort"):
+            skip = a in ("-c", "--config")  # the space-separated spelling's value is the next token
             continue
         out.append(a)
     return out
