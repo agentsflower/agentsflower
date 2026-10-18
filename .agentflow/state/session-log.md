@@ -203,3 +203,40 @@ T-036 re-pointed to T-040) and T-042 (mockup, independent), T-044/T-046/T-048
 Launched T-042 attempt 1 on devin (pid 68712). AGENTFLOW_DEVIN_ARGS verified
 non-downgrading for declared task models; no process override clearing needed.
 2026-10-17: Recorded AgentFlow-only scope and no WatermarkRemover rollback. Restarted only foreground Devin coordinator to deliver the boundary; preserved active Tester T-053 and worker artifacts.
+
+## 2026-10-18: Urgent standby/worker-control diagnosis and bounded recovery
+
+Human requested diagnosis and correction of stalled T-040, then forward queue
+progress. Windows System events confirm idle standby 04:49:19-07:45:24 Moscow;
+read-only Devin session records identify the background coordinator as the
+07:48 --stop caller. Separately reproduced invalid/zero worker-timeout values
+falling through to a 4h task budget. Conductor had no external deadline check
+while a background coordinator was alive. Conductor/coordinator stopped for
+controlled repair, drafts preserved, scoped temporary system-execution request
+held without power-plan/display changes.
+
+T-072 draft passed 11 focused tests and a 361-test full suite (3 skipped).
+Its first 15m attempt cap interrupted a full suite; same native session was
+resumed. A redundant third whole-suite run after green was stopped, and the
+draft consolidated into T-080 rather than repeating acceptance/release loops.
+Exact patch, new test file, green actual tool output and hashes are in ignored
+runtime storage. Baseline main passed 350 tests / 0 failures / 3 skipped.
+
+T-080 adds process-scoped idle-sleep guard, deadline watchdog, locked external
+stops, bounded kill waits, honest CLI stop attribution and fixes a test fixture
+that mistook its parent worker markers for a nested launch. It is now running
+the final full suite. Human explicitly approved conservative swe-2-max for
+repairs and their independent testers despite low effort confidence; original
+Jev records remain unchanged. T-040 is cancelled with all drafts preserved;
+bounded successors T-074 -> T-076 -> T-078 precede T-036 -> T-038. Stage plan
+labels reconciled: Stage 4 bounded cycle closed with external rollout deferred,
+Stage 5 current. Concurrent questions.md changes preserved and excluded.
+
+Completion: T-080 accepted/merged as b40c934 (2.15.1), T-081 done/pass; 372
+full tests (3 skipped), 71 scoped independent tests/live Windows probe and
+standard verify/integration passed. Main regression repeated before the memory
+checkpoint: 372/0/3-skipped. T-074 launched at 06:02:30Z on Devin swe-2-high
+with recorded 1200s deadline and actual sleep-request log. Conductor restarted
+hidden at one-minute rounds, Devin coordinator; temporary helper removed.
+Human's latest Devin preference/unlimited-until-November report persisted with
+provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.

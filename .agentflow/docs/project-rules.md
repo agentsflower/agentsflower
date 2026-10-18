@@ -61,6 +61,41 @@ durable rules below; the runtime file stays the handover record).
   tool is blocked (quota groups), and exhausted models are never bypassed.
   No numeric quota balances are persisted; catalog presence is not quota
   evidence; unknown stays unknown.
-- The enforcement code is its own scoped Developer task (T-040) with an
-  exact-SHA independent Tester; until it lands, admission is the Orchestrator's
+- The enforcement code is delivered by T-074/T-076/T-078 (the bounded
+  replacement of T-040), each with an exact-SHA independent Tester; until it lands, admission is the Orchestrator's
   recorded route.py assessment plus this file.
+
+## Urgent execution discipline (2026-10-18)
+
+Implements the human's request to diagnose stalled work and restore bounded
+progress; rationale and scoped routing exceptions are in state/decisions.md.
+
+- Use the gate's actual Result syntax for every criterion:
+  `- A-01: pass - <evidence>` (or partial/unverified/fail with the task's ID).
+  Older role examples without the colon and explicit verdict are obsolete;
+  T-036 must align those examples. Never invent evidence to satisfy the parser.
+- Run the mandatory whole suite before a code commit, once after a coherent
+  change. Do not repeat a green whole suite merely to change redirection,
+  display format or confidence wording. Changed inputs or a diagnosed failure
+  justify new checks; acceptance contracts use relevant scoped commands.
+- A timeout requires inspection of preserved progress and the actual cause,
+  not a blind fresh context or an unchanged retry. A same-task Devin native
+  conversation may be resumed through the launcher after verified stop; never
+  share it across tasks, and never leave its resume flag in global settings.
+- Keep attempt/verification history and drafts. A successor changes a real
+  scope or fixes a diagnosed defect; it is not a way to hide failed attempts or
+  silently reset a budget. Preserve required routing and independent review.
+
+## Devin preference and reported availability (human, 2026-10-18)
+
+- Prefer Devin for development, independent testing and orchestration. The
+  human reports no Devin usage limits until 2026-11-01 (exact cutoff time not
+  supplied). This is human-reported qualitative availability, not a measured
+  numeric account balance.
+- Independent testing still uses a fresh session and an isolated checkout of
+  the exact artifact. The human's Devin preference supersedes the generic
+  preference for a different CLI; independence and evidence are not waived.
+- Preserve mandatory assessed adequacy, concrete model access probes, task
+  duration/attempt caps and any actual observed provider hold. Use another
+  tool only when no adequate Devin option is usable; never lower requirements
+  or bypass an observed quota failure because of the availability report.

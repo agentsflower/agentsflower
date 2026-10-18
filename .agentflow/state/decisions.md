@@ -545,3 +545,37 @@ copying instead of linking (wasteful per checkout) and documenting manual care (
 2026-10-17: Human explicitly restricted further work to AgentFlow. WatermarkRemover must remain unchanged: no rollback of prior update and no further rollout. Supersedes prior pilot-update authorization. Validate installation/migration in disposable AgentFlow fixtures; external rollout remains out of scope.
 
 2026-10-18: Human approved all three roadmap mockups: A (cards), B (journey), C (matrix). Implement a view selector to switch between all three. This resolves the single-variant selection gate for T-044/T-046/T-048; preserve implementation dependencies. Other layout details remain as in the mockups unless separately decided.
+
+## 2026-10-18: Human prefers Devin through the reported unlimited window
+
+Human explicitly prefers Devin for development, testing and orchestration and
+reports no usage limits until 2026-11-01 (exact cutoff not supplied). Record
+this as qualitative human-provided availability, never a fabricated measured
+balance. Independent tests use fresh Devin sessions and exact-SHA checkouts;
+this supersedes the generic other-CLI preference, not independence. Mandatory
+Jev adequacy, model probes, wall-clock caps and actual provider holds remain.
+T-074 is already running on Devin swe-2-high; conductor uses Devin swe-2-high.
+
+## 2026-10-18: Combined urgent recovery accepted and queue resumed
+
+T-080 c7cc37b was independently passed by T-081, then verified, checked on the
+trial-merge result and merged as b40c934 (2.15.1). Full suite 372/0/3-skipped;
+independent checks 8+14+49 and a real Windows execution-state acquire/release
+probe. A new-main 372-test suite passed as well. T-072 was consolidated after
+its actual 361-test green output; its gratuitous third full run was stopped,
+not allowed to spend another budget. Exact source patches/evidence retained.
+
+The developer used the old Result example; coordinator appended explicit
+criterion prefixes before T-081 launch, copying the stated outcomes without
+changing code/evidence or manufacturing acceptance. Gate evaluate then had
+only the independent-review condition outstanding; independent review and both
+acceptance stages subsequently passed. Temporary project rules and unstarted
+contracts now use explicit colon/verdict lines; T-036 aligns the old examples.
+
+T-074 final assessment req_01a14d94e7eb7c6db849d72843d5e45a selected swe-2-high
+with medium confidence 0.66. Coordinator confirmed the bounded inherited-core
+fit/floor match; selected-model probe passed at launch. T-074 now runs with
+a recorded 1200s deadline and its own sleep request. Conductor restarted hidden
+with one-minute rounds and Devin coordinator; no scheduled-task registration
+or global power configuration was changed. Temporary maintenance helper
+removed only after confirming the managed worker's own request was active.

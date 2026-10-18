@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-max
+Model: swe-2-high
 Stage: 5
 Depends on: T-076
 Branch: t-078-routing-scheduler-integration
@@ -63,6 +63,7 @@ urgent bounded decomposition on 2026-10-18.
 ## Acceptance criteria
 
 - [ ] S-01: Tick automatic launch and backup use the accepted admission APIs; inadequate backup never replaces a primary, group holds remain scoped and no eligible option yields an actionable block. Retain direct-launch validation as final authority.
+- [ ] S-05: Automatic tester routing honors the human's Devin preference (2026-10-18) using fresh independent sessions; an adequate available Devin option is not removed solely because the developer used Devin. Availability reports do not override actual holds or adequacy.
 - [ ] S-02: Reports and template expose safe assessment/admission identity, exclusion and human-exception metadata. Missing telemetry remains unknown, never fabricated.
 - [ ] S-03: Map original T-040 Q-01 through Q-08 to accepted core/direct integration evidence and scheduler tests; identify any unmet item explicitly. Focused and full suites pass with no live TypeSafe calls.
 - [ ] S-04: Patch release and migration explain legacy refresh and all automatic/manual paths accurately. Propose T-036 dependency update to this task only after independent acceptance.
@@ -72,11 +73,18 @@ urgent bounded decomposition on 2026-10-18.
 - `python -m unittest discover -s .agentflow/tests -p test_tick.py`
 - `python -m unittest discover -s .agentflow/tests -p test_route_report.py`
 - `python -m unittest discover -s .agentflow/tests -p test_routing_scheduler.py`
-- `python -m unittest discover -s .agentflow/tests`
+
+## Required pre-commit check
+
+Run `python -m unittest discover -s .agentflow/tests` once after the coherent
+change (root AGENTS.md) and record it for S-03. Checks above are the scoped
+acceptance/integration commands; avoid redundant whole-suite repeats.
 
 ## Execution bounds
 
-15-minute attempt cap. Begin with existing admission APIs and focused tests;
+20-minute attempt cap (includes the measured six-minute full suite). Begin with existing admission APIs and focused tests;
 avoid another architecture survey. Checkpoint and report exact blockers promptly.
+Result must include explicit `- S-01: pass - <evidence>` outcome lines for
+S-01..S-05; the older role example without colon/verdict is obsolete.
 
 ## Result

@@ -17,6 +17,12 @@ requirement: after the Stage 5 behavior changes every user-facing and
 machine-facing document matches what the tools actually do, with no duplicated
 mandatory reads and no stale tool notes.
 
+Known urgent alignment defect (2026-10-18): Developer/Tester Result examples
+still omit the colon/verdict required by the completion gate. Align every
+example with `- <criterion ID>: pass | partial | unverified | fail - <evidence>`;
+retain honest evidence and negative-review semantics. Reconcile the temporary
+instance guidance in project-rules.md with the corrected template rules.
+
 ## Read first
 
 - .agentflow/docs/improvement-plan.md (section 5)

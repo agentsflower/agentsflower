@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-max
+Model: swe-2-high
 Stage: 5
 Depends on: T-074
 Branch: t-076-routing-launch-integration
@@ -35,6 +35,7 @@ authorized urgent bounded decomposition on 2026-10-18.
 - .agentflow/tests/
 - .agentflow/docs/ai-handoff-protocol.md
 - .agentflow/docs/typesafe.md
+- .agentflow/docs/model-options.json (policy text/preference only; preserve model catalog and actual holds)
 - .agentflow/VERSION
 - AGENTS.md (version block only)
 - CHANGELOG.md
@@ -64,18 +65,26 @@ authorized urgent bounded decomposition on 2026-10-18.
 - [ ] I-02: Retry uses the same admission check, cannot downgrade via environment flags, and retains process/lease/hold safety. Persist safe admission metadata, never secrets.
 - [ ] I-03: Live disposable probes cover a refused missing assessment, refused override downgrade, accepted adequate selection and explicit human exception. Preserve T-072 watchdog regressions.
 - [ ] I-04: Focused/full regressions pass; patch release, protocol and migration accurately describe direct launch enforcement. Automatic backup/report integration remains pending T-078. No live TypeSafe calls in tests.
+- [ ] I-05: Align the instance routing policy with the human's 2026-10-18 Devin preference for development, fresh independent testing and orchestration. Remove any generic other-CLI preference that contradicts it, without lowering adequacy, fabricating measured quota or bypassing actual holds; the reported unlimited window ends 2026-11-01 with no exact cutoff supplied. Test tester-role selection as well as developer-role selection.
 
 ## Checks
 
 - `python -m unittest discover -s .agentflow/tests -p test_route.py`
 - `python -m unittest discover -s .agentflow/tests -p test_run_task.py`
 - `python -m unittest discover -s .agentflow/tests -p test_worker_watchdog.py`
-- `python -m unittest discover -s .agentflow/tests`
+
+## Required pre-commit check
+
+Run `python -m unittest discover -s .agentflow/tests` once after the coherent
+change (root AGENTS.md) and record it for I-04. Checks above are the scoped
+acceptance/integration commands; avoid redundant whole-suite repeats.
 
 ## Execution bounds
 
-15-minute attempt cap. Reuse the accepted API instead of redesigning it. Run
+20-minute attempt cap (includes the measured six-minute full suite). Reuse the accepted API instead of redesigning it. Run
 focused checks after coherent changes, then one required full suite. If blocked,
 checkpoint and report the exact failing criterion without an hours-long retry.
+Result must include explicit `- I-01: pass - <evidence>` outcome lines for
+I-01..I-05; the older role example without colon/verdict is obsolete.
 
 ## Result

@@ -2,7 +2,7 @@
 
 Role: developer
 Tool: devin
-Model: swe-2-max
+Model: swe-2-high
 Stage: 5
 Depends on: T-080
 Branch: t-074-routing-core-recovery
@@ -74,13 +74,20 @@ Human authorized urgent decomposition and forward progress on 2026-10-18.
 
 - `python -m unittest discover -s .agentflow/tests -p test_route.py`
 - `python -m unittest discover -s .agentflow/tests -p test_routing_core.py`
-- `python -m unittest discover -s .agentflow/tests`
+
+## Required pre-commit check
+
+Run `python -m unittest discover -s .agentflow/tests` once after the coherent
+change (root AGENTS.md) and record it for R-05. Scoped Checks above are rerun
+at acceptance/integration; do not multiply whole-suite runs without cause.
 
 ## Execution bounds
 
-15-minute attempt cap. Begin with the preserved patch and focused checks, not
+20-minute attempt cap (includes the measured six-minute full suite). Begin with the preserved patch and focused checks, not
 another architecture survey. Checkpoint a concrete tested delta; if a check
 blocks you, report its exact failure promptly. Do not repeat full suites without
 a changed input or a diagnosed failure.
+Result must include explicit `- R-01: pass - <evidence>` outcome lines for
+R-01..R-05; the older role example without colon/verdict is obsolete.
 
 ## Result
