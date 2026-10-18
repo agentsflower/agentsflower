@@ -95,3 +95,11 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   git diff main...HEAD file set in Allowed files, not only the delta commit -
   scope verification diffs the branch. Orchestrator checklist item until the
   rule lives in a template or gate.
+- 2026-10-18 - test_routing_scheduler.py wrote its "live" holds at the fixed
+  module constant AT (2026-10-18T12:00Z) + 1h; after 13:00Z the hold is
+  permanently expired and test_a_held_backup_group_stays_scoped_and_refused
+  fails deterministically (T-092 V-03). Lesson: "future" test data must derive
+  from the run time, never a fixed wall-clock constant. Repair: T-093.
+- 2026-10-18 - devin CLI authentication is restored (`devin auth status`:
+  logged in, Vladimir Chernetsov); the 21:27 launch block is resolved and
+  managed devin launches are usable again.

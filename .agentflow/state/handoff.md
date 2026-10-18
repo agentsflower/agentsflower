@@ -1,60 +1,39 @@
 # Session Handoff
 
-Background session devin, 2026-10-18 ~06:22Z: claimed heartbeat as
-devin-background; T-074 developer attempt exited completed at
-5a6510c9b76201ccce35d1a10ce685be0d76a6e2 (all R-01..R-05 pass claimed;
-focused 12+19 tests and full 391-test suite green per its Result, logged
-in .agentflow/tasks/.runtime/T-074.1.log). Set T-074 to `review`. Wrote
-independent exact-SHA tester T-075 (verifies T-074 @ 5a6510c), added it
-`ready`, ran the mandatory route.py assessment: persisted record
-req_01a14dab3ab875c5b09fa66a87ab71ed is LOW confidence 0.48 and demands
-gpt-6-astra class at xhigh (complexity 1.97/2). Mandatory routing policy
-blocks launch without an explicit human exception, so T-075 is `blocked`
-and a decision question with options is appended to state/questions.md.
-What waits: T-075 launch -> T-074 accept -> T-076 -> T-078 -> T-036 ->
-T-038; T-066 on T-078. Worker's proposed decisions.md entry deferred
-(background orchestrator may not write decisions.md).
+Background session devin, 2026-10-18 ~21:37Z (devin-background): claimed
+heartbeat; the manual T-092 tester attempt (run in the human's session
+while the devin CLI was unauthenticated) completed verdict FAIL on T-091 @
+0bf4ac0 - verified, accepted (verdict=worst criterion). Defect isolated to
+test_routing_scheduler.py's fixed AT constant: its recorded "live" hold
+expired at 13:00Z, breaking the suite deterministically. T-091 rejected;
+T-093 successor (carry 0bf4ac0 + now-relative holds) was authored, assessed
+(req_01a150e, devin swe-2-high, medium band) and launched -Manual by a
+concurrent human-side burst at 21:31Z; attempt running. T-036/T-066 Depends
+on repointed T-091 -> T-093. devin CLI authenticated again - managed
+launches usable. Removed a duplicate T-093 file I had authored in parallel.
+What waits: T-093 manual Result -> verify -> accept (Independent check:
+none) -> T-036 (refresh assessment) -> T-038 -> T-044 -> T-046 -> T-048,
+T-066.
 
-Runtime main@70bb8c9, AgentFlow 2.15.1. Urgent T-080 combined
-watchdog/idle-sleep repair accepted and merged after T-081 independent pass.
-372 full tests (3 skipped), 71 independent scoped tests + real Windows API
-probe, scoped verify/integrated checks, then 372 tests on new main all pass.
-
-Confirmed prior stall cause: Windows idle standby 04:49:19-07:45:24 Moscow;
-background coordinator invoked T-040 --stop at 07:48 and retried. Separately
-reproduced invalid timeout values falling through to a 4h budget; conductor
-had skipped external controls while its coordinator was alive. All addressed
-by accepted 2.15.1. Manual sleep/lid remains a user action, not defeated.
-
-Human explicitly prefers Devin for all three roles and reports no usage limits
-until 2026-11-01 (exact cutoff unspecified). Source is human, not measured
-balance. Prefer fresh independent Devin testers over generic other-CLI advice;
-keep adequacy, model probes and actual holds. Human exceptions for urgent
-T-080 and its tester are recorded; low confidence was never relabeled high.
-
-Conductor is running hidden (PID 10656), 1-minute rounds, 1200s worker cap,
-Devin coordinator. Existing scheduled autostart is off; verified
-current-session restart is documented in runbook/worker-recovery.md.
-No global power plan/display/lid changes.
-
-T-040/T-072 cancelled as superseded, drafts/worktrees retained. Runtime has
-exact preserved patches/test companion/manifests and actual green test output.
-No evidence/history reset. Result criteria need `- ID: pass - evidence`;
-temporary project rule fixes role-example drift until T-036 aligns the
-template. T-080 report prefixes were mechanically normalized before T-081
-launch, preserving all developer evidence and claims.
-
-Only AgentFlow and disposable fixtures; no external rollout/push/tags/releases.
-questions.md now also carries the human's RESOLVED roadmap-layout answer and
-the new T-075 routing question.
-Read: project-rules.md, current-step.md, questions.md, ledger, T-074 Result +
-T-075 task file. Source authority remains origin vcherstar/AgentFlow.
-
-2026-10-18 (background devin session): the T-040 routing line is merged
-through 2.15.4-dev (T-082/T-084 core+holds at 2.15.2, T-076/T-089 launch
-admission at 2.15.3). T-078 artifact 0ba5d37 rejected on self-reported
-partials; T-091 repaired at 0bf4ac0 and sits in review (worktree
-preserved). Its tester T-092 is blocked: the new admission gate refuses
-the low-confidence (0.34) assessment - a human Routing exception: (or
-fast-path re-scope, option D) is the pending question in questions.md.
+State: T-040 routing line merged through 2.15.4-dev (T-082/T-084 holds at
+2.15.2, T-076/T-089 launch admission at 2.15.3). T-091 worktree/branch
+t-091-tester-independence-preference @ 0bf4ac0 is T-093's base - keep it.
 Rejected draft branches kept for the human: t-076, t-082, t-087.
+
+Confirmed prior stall cause: Windows idle standby 04:49-07:45 Moscow 2026-10-18;
+fixed by accepted 2.15.1 (T-080/T-081). Manual sleep/lid stays a user action.
+
+Human prefers Devin for all roles, reports no usage limits until 2026-11-01
+(qualitative, not measured). Codex and Claude CLIs statically excluded in
+docs/model-options.json ("until" fields) until the human restores them;
+Devin-hosted families unaffected. agy limited until 2026-10-21T22:09Z.
+
+Conductor is running hidden (PID 10656), 1-minute rounds, 1200s worker cap.
+Autostart at logon off; current-session restart in runbook/worker-recovery.md.
+
+Result criteria need `- ID: pass - evidence`; T-036 aligns the stale role
+examples. Only AgentFlow and disposable fixtures; no external rollout/push/
+tags/releases. Source authority remains origin vcherstar/AgentFlow.
+
+Read: project-rules.md, current-step.md, questions.md (all resolved or
+waiting on the human), ledger, T-092 Result, T-093 task file.

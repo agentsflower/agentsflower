@@ -303,3 +303,15 @@ provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
   inference probe caught it). Recovery: human runs `devin auth login`, then
   re-run run-task.ps1 T-092 devin; assessment stays valid while the contract
   is unchanged. This also blocks every future devin launch until fixed.
+
+- 2026-10-18 background devin (devin-background): T-092 manual tester attempt
+  (human-facing session) exited completed; verify PASS, accepted - verdict
+  FAIL is a correct tester result (V-03). T-091 rejected -> T-093: the
+  artifact at 0bf4ac0 carries a deterministic time bomb -
+  test_routing_scheduler.py AT constant leaves the recorded "live" hold
+  expired after 13:00Z. T-093 successor (fixed-clock repair on the 0bf4ac0
+  base) created, assessed ok (req_01a150e, swe-2-high floor) and launched
+  -Manual by the human's session; attempt running. T-036/T-066 Depends on
+  repointed T-091 -> T-093 so the approved chain survives the rejection.
+  devin CLI is authenticated again (`devin auth status`: logged in) - the
+  earlier launch block is resolved.
