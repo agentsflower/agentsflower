@@ -76,3 +76,22 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
 - 2026-10-03 - Runtime state is not committed: on a fresh clone `ledger.py set --status done` needs `gate.py verify` to run again.
 - 2026-10-03 - `## Checks` commands run in PowerShell on Windows and `sh` elsewhere; a command written for another shell fails verify.
 - 2026-10-03 - Antigravity IDE cannot be automated: its attempts are `-Manual` and end with `-MarkFinished`.
+
+- 2026-10-18 - Resolved at fc2c37c (T-082, independently verified by T-083): backup_ok
+  did not consult quota-group holds - an adequate backup held after assessment was
+  admitted by the artifact API (T-075 P3 probe). backup_ok now consults
+  machine_capacity.limit_until for the backup tool+quota_group at call time.
+- 2026-10-18 - test_plan_route.py still reads the real machine registry through
+  eligibility->limit_until (T-075 V-06 disclosure; T-083 confirmed it a real
+  test-isolation defect: a disposable codex hold reproduces an assertion failure
+  and a NoDecision error). Passes today against agy holds; fix in a separate
+  scoped task - recheck when a codex/devin hold exists.
+- 2026-10-18 - ledger.py _write_atomic can hit transient WinError 5 on os.replace
+  (seen once in test_approval during the T-082 full suite; isolated rerun 5/5,
+  T-083 did not reproduce). machine_capacity._replace_retry guards the same
+  pattern elsewhere; a bounded hardening task may apply it to ledger writes.
+- 2026-10-18 - REPEATED authoring defect (T-052->T-056, now T-082->T-084): a
+  successor contract that inherits an unmerged base must declare the whole
+  git diff main...HEAD file set in Allowed files, not only the delta commit -
+  scope verification diffs the branch. Orchestrator checklist item until the
+  rule lives in a template or gate.

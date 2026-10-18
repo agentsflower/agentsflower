@@ -1,24 +1,28 @@
 # Current Step
 
-2026-10-18 (2nd update): T-074 developer completed and is in `review`
-(Change: 5a6510c9b76201ccce35d1a10ce685be0d76a6e2 on
-t-074-routing-core-recovery, attempt 1 exited clean at 06:17:59Z).
-Independent tester T-075 written and added `ready`, then moved to `blocked`:
-its persisted Jev assessment (req_01a14dab3ab875c5b09fa66a87ab71ed) is low
-confidence 0.48 and demands gpt-6-astra class at xhigh (complexity 1.97/2),
-so the mandatory routing policy requires an explicit human decision before
-launch. Question with options is in state/questions.md.
+2026-10-18 (5th update, background devin): the whole T-040 routing line is on
+main. T-076 rejected on T-086 D-01 (codex --config alias bypass) -> T-087
+rejected on T-088 F-01 (repeated-key precedence + cross-tool hazard) ->
+T-089 repaired+verified (T-090 pass) and merged at 52b06aa (2.15.3).
+T-078 scheduler/reports artifact completed at 0ba5d37 but rejected on two
+self-reported residuals (S-05 route.py preferred-CLI exclusion, S-03
+unrecorded full suite) -> T-091 repaired at 0bf4ac0 (prefer-scoped
+exemption + 424-test suite green + inherited fixture repairs) -> its
+tester T-092 assessed astra/xhigh at LOW confidence 0.34 - the new
+admission gate now refuses low-confidence launches, so T-092 is locked
+on a human Routing exception: decision (questions.md, options A-D incl.
+a fast-path re-scope).
 
-Next once answered: set Model per the human's choice, launch T-075, then
-`accept.py T-074` on a pass -> launch T-076 (assessment medium 0.70,
-devin-swe-2 high) -> T-078 -> T-036 -> T-038; T-066 waits on T-078.
-
+Next once the human answers: apply the chosen header/scope, launch T-092 ->
+accept T-091 -> T-036 (refresh assessment) -> T-038 -> T-044 -> T-046 ->
+T-048; T-066 waits on T-091 too. Rejected draft branches kept for the
+human's cleanup: t-076, t-082, t-087 (+ worktrees).
 Human (2026-10-18) prefers Devin for development, testing and orchestration,
 reports no Devin usage limits until 2026-11-01 (no exact cutoff time). This is
 qualitative human availability, not measured balance; preserve actual holds,
 adequacy and wall-clock caps. Independent tests use fresh exact-SHA sessions;
-other-CLI preference must not override this human instruction. T-076/T-078
-include tester-routing alignment; T-036 must fix obsolete Result examples.
+other-CLI preference must not override this human instruction. T-036 must fix
+obsolete Result examples.
 
 Conductor PID 10656, 1-minute rounds, hidden Start-Process defaults, positive
 1200s worker bound, Devin coordinator. Autostart at logon remains off;

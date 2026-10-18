@@ -15,6 +15,15 @@ The human explicitly extended the swe-2-max exception to T-080 and its
 independent tester in response to the scoped question in this chat. Persisted
 T-080 assessment request req_01a14d6b07c67795ba87831f8ed31bc4 remains low
 confidence (0.41); the exception is not relabeled as Jev evidence.
+On 2026-10-18, the human similarly approved Option B for T-075 (independent
+tester for T-074 @ 5a6510c): a scoped auditable exception for Devin swe-2-max.
+Persisted assessment request req_01a14dab3ab875c5b09fa66a87ab71ed remains low
+confidence (0.48); the exception is auditable and distinct from Jev evidence.
+The human also instructed on 2026-10-18 to include Devin's Gemini 4 Argon
+(`gemini-4-argon`, variants low/medium/high, 1M context) into the pool of
+top-tier models in `.agentflow/docs/model-options.json` (`devin-gemini-4-argon`)
+for very complex, high-reasoning tasks; update model options and remove the
+legacy negative assertion in test_quota_groups.py during routing integration.
 
 Human requested diagnosis, urgent correction and forward task progress instead
 of hours-long retries. T-040 attempt 1 was explicitly stopped at 04:48:11Z

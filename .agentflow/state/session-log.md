@@ -242,3 +242,39 @@ Human's latest Devin preference/unlimited-until-November report persisted with
 provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
 
 2026-10-18 background orchestrator (devin-background): T-074 developer attempt exited completed at 5a6510c (R-01..R-05 all claimed pass; focused 12+19 and full 391 tests green per its Result). Ledger: T-074 -> review. Wrote tester task T-075 (exact-SHA verify of R-01..R-05), added ready, ran mandatory route.py: persisted assessment req_01a14dab3ab875c5b09fa66a87ab71ed is low confidence 0.48 demanding gpt-6-astra xhigh (complexity 1.97/2); per mandatory routing policy launch blocked pending explicit human exception. T-075 -> blocked; question with options (devin gpt-6-astra-xhigh / scoped swe-2-max exception / codex / re-assess) appended to state/questions.md. Worker's proposed decisions.md update left pending - background orchestrator may not write decisions.md. Chain T-076->T-078->T-036->T-038 and T-066 wait on T-074 acceptance.
+
+## 2026-10-18 - Background devin orchestration: routing chain landed on main
+
+- T-075 (tester, devin swe-2-max per human Option B) verified T-074 @ 5a6510c:
+  Verdict partial - backup_ok ignored live quota-group holds at call time.
+  Mechanical Result normalization first (evidence-marker placement + T-075.*
+  basename prefixes; T-080-prefix precedent), then verify+accepted.
+- T-074 rejected -> T-082 repaired backup_ok at fc2c37c (live
+  machine_capacity.limit_until consult for tool+quota_group) -> T-083
+  deep-verified PASS -> T-082 rejected for an Orchestrator scope-authoring
+  defect (inherited base missing from Allowed files) -> T-084 carrier under
+  corrected contract -> T-085 fast-path PASS -> T-084 merged at fc2c37c.
+- T-076 launch-admission integration: attempt 1 timed out after a heavy
+  survey (10-file draft preserved); attempt 2 resumed and completed
+  07fbeed (398/0/3). T-086 tester verdict FAIL (D-01: codex
+  --config effort alias bypassed env_selected). T-087 repaired at f6bc519
+  (alias spellings parsed) -> T-088 verdict FAIL (F-01: repeated config
+  keys first-vs-last wins; new cross-tool --config parsing hazard).
+  T-089 repaired at 52b06aa (last-wins + codex-only scoping) -> T-090
+  PASS (19 probes, negative control, argv parity; one disclosed flake).
+  T-089 merged into main at 52b06aa = the combined T-076 line (2.15.3).
+- T-076/T-087 rejected branches/worktrees kept as preserved drafts for the
+  human's cleanup decision. test_plan_route.py env-dependence and
+  ledger.py WinError 5 recorded in known-issues as latent follow-ups.
+- T-078 (scheduler/report integration) ready and assessed (swe-2-high):
+  first launch refused on machine capacity - sibling project
+  E:/Projects/AgentFlow/site holds the 2nd devin slot (its own T-001
+  worker, cap 2). Launch waits for a free slot; retry on later ticks.
+
+- T-078 launched on the freed slot: decide()/use_backup() admission gates +
+  route_report metadata landed at 0ba5d37 (2.15.4) but rejected on its own
+  honest partials (S-05 route.py preferred-CLI exclusion, S-03 suite never
+  recorded). T-091 closed both at 0bf4ac0 (prefer-scoped exemption, fixture
+  repairs the base owed the suite, 424 tests green) - tester T-092 blocked:
+  the new admission gate itself refuses the low-confidence (0.34)
+  assessment; human Routing exception decision pending in questions.md.

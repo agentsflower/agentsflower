@@ -18,19 +18,34 @@
 
 No additional plan approval is needed for the completed local task pool.
 
-## 2026-10-18 - T-075 tester launch needs a routing decision
+## 2026-10-18 - T-075 tester launch needs a routing decision (RESOLVED: human approved Option B, Devin swe-2-max; T-075 done 2026-10-18) (RESOLVED)
 
 - Task: T-075 (independent tester for completed T-074 @ 5a6510c).
-- Question: the persisted Jev assessment (req_01a14dab3ab875c5b09fa66a87ab71ed)
-  is low confidence (0.48): it demands gpt-6-astra class at xhigh effort
-  (complexity 1.97/2). Mandatory routing policy blocks the launch without an
-  explicit auditable human exception; there is no exception for this tester.
-  Which do you approve?
-  - A: Devin gpt-6-astra-xhigh - adequate Devin option meeting the assessed
+- Resolution: Human approved Option B on 2026-10-18 - scoped auditable exception
+  for Devin swe-2-max (same precedent as T-081).
+- What was unblocked: T-075 launch; behind it T-074 acceptance, then the
+  T-076 -> T-078 -> T-036 -> T-038 chain and T-066.
+
+## 2026-10-18 - T-092 tester launch needs a routing exception decision
+
+- Task: T-092 (independent tester for T-091 @ 0bf4ac0 - closes the last T-078
+  residuals: preferred-CLI independence exemption + full-suite evidence).
+- Question: the persisted Jev assessment (req_01a14ea7e1837102b871a4fae80b1749)
+  is low confidence (0.34): it demands gpt-6-astra class at xhigh effort
+  (complexity 1.96/2). The new admission gate (T-076/T-089, now on main)
+  refuses the launch without an explicit auditable human exception - the
+  machinery you mandated is working. Which do you approve?
+  - A: write Routing exception: <reason> in the T-092 header, launch Devin
+    gpt-6-astra-xhigh - adequate Devin option meeting the assessed
     requirement, consistent with your Devin preference.
-  - B: scoped exception for Devin swe-2-max (same precedent as T-081).
+  - B: write Routing exception: <reason> in the T-092 header, launch Devin
+    swe-2-max - the scoped exception you chose for T-075 (precedent T-081).
   - C: Codex gpt-6-astra xhigh (Jev's pick) - but Codex tester writes were
     environment-blocked on this machine, so a fresh attempt may fail again.
-  - D: re-assess or rewrite the task contract first.
-- What waits on it: T-075 launch; behind it T-074 acceptance, then the
-  T-076 -> T-078 -> T-036 -> T-038 chain and T-066.
+  - D: re-scope T-092 to a fast-path re-check (T-085 precedent): the bulk of
+    the artifact was already independently verified by T-083/T-086/T-088/
+    T-090; a narrower contract lowers the assessed complexity and may pass
+    the admission gate without an exception. The Orchestrator rewrites and
+    re-assesses; no header needed.
+- What waits on it: T-092 launch -> T-091 acceptance -> T-036 -> T-038 ->
+  T-044 -> T-046 -> T-048 and T-066.

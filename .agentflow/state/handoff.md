@@ -49,3 +49,12 @@ questions.md now also carries the human's RESOLVED roadmap-layout answer and
 the new T-075 routing question.
 Read: project-rules.md, current-step.md, questions.md, ledger, T-074 Result +
 T-075 task file. Source authority remains origin vcherstar/AgentFlow.
+
+2026-10-18 (background devin session): the T-040 routing line is merged
+through 2.15.4-dev (T-082/T-084 core+holds at 2.15.2, T-076/T-089 launch
+admission at 2.15.3). T-078 artifact 0ba5d37 rejected on self-reported
+partials; T-091 repaired at 0bf4ac0 and sits in review (worktree
+preserved). Its tester T-092 is blocked: the new admission gate refuses
+the low-confidence (0.34) assessment - a human Routing exception: (or
+fast-path re-scope, option D) is the pending question in questions.md.
+Rejected draft branches kept for the human: t-076, t-082, t-087.
