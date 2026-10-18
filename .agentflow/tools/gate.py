@@ -549,21 +549,47 @@ def verdict_problems(result):
     return [], v
 
 
-def evidence_tokens(text):
-    """Path-looking tokens in an outcome line's evidence text; prose words are skipped."""
-    out = []
-    for m in re.finditer(r"`([^`]+)`|'([^']+)'|\"([^\"]+)\"|([^\s`'\"),;]+)", text):
-        tok = next(g for g in m.groups() if g is not None).strip().rstrip(".,;:")
-        if not tok:
-            continue
-        if "/" in tok or "\\" in tok or (re.match(r"^\.?[\w-]+(\.[\w-]+)+$", tok)
-                                        and not re.match(r"^\d+(\.\d+)+$", tok)):
-            out.append(tok)
-    return out
+def path_looking(tok):
+    """A bare token that reads like a path: `a/b`, `a\\b` or a dotted name (not a version number)."""
+    return ("/" in tok or "\\" in tok
+            or (re.match(r"^\.?[\w-]+(\.[\w-]+)+$", tok) and not re.match(r"^\d+(\.\d+)+$", tok)))
+
+
+def repo_relative(tok, bases):
+    """A token plausibly names a repository path: explicit path syntax (`./`, `../`, a root or a
+    drive), a first segment that is a top-level folder, or a path that exists on disk."""
+    rel = re.sub(r"^\./", "", tok.replace("\\", "/")).rstrip("/")
+    if not rel:
+        return False
+    if re.match(r"^([a-zA-Z]:[\\/]|/|~)", tok) or rel == ".." or rel.startswith("../"):
+        return True
+    return any((b / rel.split("/", 1)[0]).is_dir() or (b / rel).exists() for b in bases)
+
+
+# an evidence claim: `evidence:`/`evidence=` (optionally "evidence file(s)") before the path(s)
+EVIDENCE = re.compile(r"(?i)\bevidence(?:\s+files?)?\s*[:=]")
+
+
+def evidence_tokens(text, bases):
+    """Tokens the line claims as evidence: path-looking words after an `evidence:`/`evidence=`
+    marker, or a bare list of repository paths (only `and`/`or` between them). Path-looking prose
+    elsewhere - `verify/done`, `launch.argv`, where a schema lives - is a mention, not a claim."""
+    m = EVIDENCE.search(text)
+    toks = []
+    for mm in re.finditer(r"`([^`]+)`|'([^']+)'|\"([^\"]+)\"|([^\s`'\"),;]+)",
+                          text[m.end():] if m else text):
+        tok = next(g for g in mm.groups() if g is not None).strip().rstrip(".,;:")
+        if tok:
+            toks.append(tok)
+    if m:
+        return [t for t in toks if path_looking(t)]
+    if all(repo_relative(t, bases) or t.lower() in ("and", "or") for t in toks):
+        return [t for t in toks if repo_relative(t, bases)]
+    return []
 
 
 def evidence_problems(t, outcomes):
-    """Every path declared as evidence stays inside the task's scope and exists. Scope = the task's
+    """Every path claimed as evidence stays inside the task's scope and exists. Scope = the task's
     Allowed files (a tester: the checked task's) plus this task's own files under tasks/.runtime/."""
     if t["role"] == "developer":
         scope, where = t["allowed"], Path(t["worktree"] or "")
@@ -571,9 +597,10 @@ def evidence_problems(t, outcomes):
         scope, where = t["checked"]["allowed"], Path(t["checked"]["worktree"])
     else:
         scope, where = t["allowed"], None
+    bases = [where, ROOT] if where else [ROOT]
     bad = []
     for cid, (verdict, ev) in outcomes.items():
-        for tok in evidence_tokens(ev):
+        for tok in evidence_tokens(ev, bases):
             rel = re.sub(r"^\./", "", tok.replace("\\", "/"))
             if re.match(r"^([a-zA-Z]:[\\/]|/|~)", tok) or rel == ".." or rel.startswith("../"):
                 bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope")

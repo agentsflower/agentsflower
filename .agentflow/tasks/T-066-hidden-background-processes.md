@@ -2,6 +2,7 @@
 
 Role: developer
 Tool: devin
+Model: swe-2-max
 Stage: 5
 Depends on: none
 Branch: t-066-hidden-background-processes
