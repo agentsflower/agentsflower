@@ -1,19 +1,20 @@
 # Current Step
 
-2026-10-18 (5th update, background devin): the whole T-040 routing line is on
-main. T-076 rejected on T-086 D-01 (codex --config alias bypass) -> T-087
-rejected on T-088 F-01 (repeated-key precedence + cross-tool hazard) ->
-T-089 repaired+verified (T-090 pass) and merged at 52b06aa (2.15.3).
-T-078 scheduler/reports artifact completed at 0ba5d37 but rejected on two
-self-reported residuals (S-05 route.py preferred-CLI exclusion, S-03
-unrecorded full suite) -> T-091 repaired at 0bf4ac0 (prefer-scoped
-exemption + 424-test suite green + inherited fixture repairs) -> its
-tester T-092 assessed astra/xhigh at LOW confidence 0.34 - the new
-admission gate now refuses low-confidence launches, so T-092 is locked
-on a human Routing exception: decision (questions.md, options A-D incl.
-a fast-path re-scope).
+2026-10-18 (6th update, foreground devin): the human answered the T-092
+question - Option D: re-scope T-092 to a fast-path re-check (T-085
+precedent; the bulk of 0bf4ac0 was already independently verified by
+T-083/T-086/T-088/T-090), no Routing exception header. The Orchestrator
+rewrites the contract and re-assesses; the narrower scope should clear
+the admission gate. The human also clarified that the Codex and Claude
+CLIs have no usable resources and do not work - both are now statically
+excluded in docs/model-options.json ("until" 2026-10-17 on all
+codex-*/claude-* options + policy text) until the human restores them;
+Devin-hosted families incl. devin-claude-opus-5.5 are unaffected. Prior
+state: the whole T-040 routing line is on main. T-089 repaired+verified
+(T-090 pass) and merged at 52b06aa (2.15.3); T-091 repaired T-078's
+residuals at 0bf4ac0 and waits in review on its tester.
 
-Next once the human answers: apply the chosen header/scope, launch T-092 ->
+Next: rewrite+re-assess T-092 as a fast-path re-check, launch it ->
 accept T-091 -> T-036 (refresh assessment) -> T-038 -> T-044 -> T-046 ->
 T-048; T-066 waits on T-091 too. Rejected draft branches kept for the
 human's cleanup: t-076, t-082, t-087 (+ worktrees).

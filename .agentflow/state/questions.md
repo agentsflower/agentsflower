@@ -26,7 +26,7 @@ No additional plan approval is needed for the completed local task pool.
 - What was unblocked: T-075 launch; behind it T-074 acceptance, then the
   T-076 -> T-078 -> T-036 -> T-038 chain and T-066.
 
-## 2026-10-18 - T-092 tester launch needs a routing exception decision
+## 2026-10-18 - T-092 tester launch needs a routing exception decision (RESOLVED: human chose Option D; codex+claude CLIs excluded) (RESOLVED)
 
 - Task: T-092 (independent tester for T-091 @ 0bf4ac0 - closes the last T-078
   residuals: preferred-CLI independence exemption + full-suite evidence).
@@ -47,5 +47,12 @@ No additional plan approval is needed for the completed local task pool.
     T-090; a narrower contract lowers the assessed complexity and may pass
     the admission gate without an exception. The Orchestrator rewrites and
     re-assesses; no header needed.
-- What waits on it: T-092 launch -> T-091 acceptance -> T-036 -> T-038 ->
+- Resolution: the human chose Option D on 2026-10-18 - re-scope T-092 to a
+  fast-path re-check (T-085 precedent), Orchestrator rewrites and re-assesses,
+  no Routing exception header needed. The human also clarified that the Codex
+  and Claude CLIs currently have no usable resources and do not work; both are
+  now statically excluded in docs/model-options.json ("until" fields + policy)
+  and must be treated as unavailable in every subsequent assessment until the
+  human restores them.
+- What waits on it: T-092 rewrite+launch -> T-091 acceptance -> T-036 -> T-038 ->
   T-044 -> T-046 -> T-048 and T-066.

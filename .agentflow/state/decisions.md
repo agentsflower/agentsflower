@@ -588,3 +588,24 @@ a recorded 1200s deadline and its own sleep request. Conductor restarted hidden
 with one-minute rounds and Devin coordinator; no scheduled-task registration
 or global power configuration was changed. Temporary maintenance helper
 removed only after confirming the managed worker's own request was active.
+
+## 2026-10-18: T-092 re-scoped (Option D); Codex and Claude CLIs reported without resources
+
+The human resolved the T-092 routing question with Option D: re-scope the
+tester for T-091 @ 0bf4ac0 to a fast-path re-check (T-085 precedent) - the
+bulk of the artifact was already independently verified by T-083, T-086,
+T-088 and T-090. The Orchestrator rewrites the contract and re-assesses; no
+Routing exception header is needed. The low-confidence astra/xhigh
+assessment is superseded by the narrower contract's fresh assessment, not
+overridden.
+
+The human further clarified that the Codex and Claude CLIs currently have no
+usable resources and do not work. Both tools are statically excluded at
+assessment time: docs/model-options.json now carries "until": "2026-10-17"
+on codex-gpt-6.1-sol, codex-gpt-6-astra, claude-sonnet-5.5 and
+claude-opus-5.5, and its policy text records the human report. This
+supersedes the earlier "codex capacity conserved" wording and makes the
+previously prose-only Claude exclusion deterministic. Devin-hosted families
+(devin quota group, incl. devin-claude-opus-5.5) are unaffected; observed
+agy holds remain honored. Restore by removing the "until" fields when the
+human reports resources back.

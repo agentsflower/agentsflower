@@ -99,3 +99,8 @@ progress; rationale and scoped routing exceptions are in state/decisions.md.
   duration/attempt caps and any actual observed provider hold. Use another
   tool only when no adequate Devin option is usable; never lower requirements
   or bypass an observed quota failure because of the availability report.
+- The Codex and Claude CLIs have no usable resources and do not work (human,
+  2026-10-18). Every subsequent assessment must treat both as unavailable;
+  they are statically excluded via `until` fields in docs/model-options.json.
+  Devin-hosted model families are unaffected. Restore by removing those
+  fields when the human reports resources back.
