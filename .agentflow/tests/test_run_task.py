@@ -389,7 +389,10 @@ class RunTaskTests(unittest.TestCase):
 
         rt_dir = Path(self.tmp.name) / "rt"
         rt_dir.mkdir()
+        # Inside a managed worker the inherited AGENTFLOW_ATTEMPT_ROOT names the real checkout, so the
+        # fixture's launcher root is its disposable repo - production nested_check stays untouched.
         with patch.object(run_task, "RT_DIR", rt_dir), \
+                patch.object(run_task, "ROOT", self.root), \
                 patch.object(run_task, "invoke_gate", side_effect=fake_gate), \
                 patch.object(run_task.subprocess, "run", side_effect=fake_run):
             self.assertEqual(run_task.cmd_launch("T-001", None, True, None), 0)
