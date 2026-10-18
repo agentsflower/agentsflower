@@ -2,6 +2,62 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.1 - 2026-10-18
+
+Urgent repair of worker bounds exposed by T-040 (T-072 watchdog and T-080
+idle-sleep guard, delivered together). Careful attribution: T-040's observed
+overrun hours were mostly confirmed connected standby (Kernel-Power 506/507
+on the host), not proven to be the timeout bug's doing; the invalid-timeout
+gap — `0` or a non-number silently disabling `AGENTFLOW_WORKER_TIMEOUT` — was
+reproduced separately and is fixed here, along with the absence of any
+deadline enforcement outside the worker.
+
+- `AGENTFLOW_WORKER_TIMEOUT` resolves like every positive launcher bound: an
+  invalid, zero or missing value keeps the default (1200s) — a managed worker
+  is never unbounded. The CLI surface is unchanged.
+- Non-manual attempts now persist `workerTimeout` (the resolved bound,
+  including the `AGENTFLOW_TASK_TIMEOUT` remainder clamp) and `deadline` (the
+  absolute instant, from the attempt's `startedAt`).
+- New `python .agentflow/tools/run_task.py --watchdog` (optionally
+  `T-NNN --watchdog`): scans the attempt history and stops every running
+  non-manual attempt whose deadline passed, through the same guarded path as
+  `--stop` — pid-and-start identity required for a kill, a possibly reused
+  pid is never a target, leftover managed processes keep the task locked and
+  diagnosed, and the expected-attempt guard (`--expect-attempt N`) refuses a
+  stale stop so an old watchdog decision cannot kill a newer attempt. A
+  running attempt whose worker already vanished closes as `dead`; a manual
+  or unexpired attempt is never touched; the watchdog never relaunches — a
+  successor stays the Orchestrator's decision.
+- External stops and launches are serialized by the same
+  `.runtime/launch.lock`: a stop waits (bounded, 15s) for an in-flight
+  launch and re-reads the record inside the lock, so a stale decision can
+  neither kill nor overwrite an attempt created meanwhile. `taskkill` on
+  Windows and the post-kill process waits are bounded now too.
+- Stops record `stoppedBy: {initiator, reason, at}`: `initiator` is
+  `watchdog` for a deadline stop or `cli` for the `--stop` command line —
+  a human or a script invoked it, the record does not claim which.
+- New `tools/power_guard.py`: while a bounded worker runs, the worker
+  process asks Windows to keep the system out of automatic idle sleep
+  (`SetThreadExecutionState`, system execution only), so an idle timer
+  cannot suspend it mid-attempt. It is released on every exit path and
+  dropped by the OS if the worker dies. Limits: it never holds the display
+  on, never requests away mode, cannot block an explicit user sleep/lid
+  action, does nothing on POSIX, and changes no power plan, registry or
+  scheduled task; a failed request is recorded on the attempt (`powerGuard`)
+  and in its log rather than assumed. The watchdog deadline keeps its
+  authority across a user-initiated sleep.
+- `conductor.ps1` runs the watchdog at the top of every round, including
+  while a background Orchestrator session is alive (never in `-DryRun`).
+
+Migration: stop the running conductor, run `install.py --update`, then
+start it again — a conductor already loaded in PowerShell keeps its old
+round loop in memory and must be restarted to pick up the watchdog call.
+Attempts started before the update carry no `deadline` field and are
+bounded by the fallback `startedAt + AGENTFLOW_WORKER_TIMEOUT`; an attempt
+with no readable deadline or start is left locked and diagnosed, never
+killed on an unprovable bound. The guard needs no setup and no opt-in: it
+rides the worker process and ends with it.
+
 ## 2.15.0 - 2026-10-18
 
 Bounded autonomy and trustworthy lifecycle records (improvement-plan section

@@ -7,6 +7,7 @@
   python .agentflow/tools/run_task.py T-007 --stop         # kill a hung worker (whole process tree), release the lock
   python .agentflow/tools/run_task.py T-007 --mark-finished# a manual attempt has finished
   python .agentflow/tools/run_task.py T-007 --recheck      # rerun the end check for an attempt that exited 0 but failed it
+  python .agentflow/tools/run_task.py --watchdog           # stop non-manual workers past their recorded deadline
 
 .agentflow/tools/run-task.ps1 is a thin compatibility wrapper: it translates the old parameter names and delegates
 here, preserving the exit code. Existing callers (tick.py, conductor.ps1, humans) keep working on Windows; on
@@ -87,14 +88,26 @@ verbatim because they are constants of this file. User-supplied argv and probe o
 into runtime files or diagnostics, and no remaining-quota percentage is ever claimed.
 Observed limits are records of what a tool reported, not an enforceable time or attempt budget: when a tool's
 remaining quota is unknown it stays unknown, and the bound on one worker is a wall clock the launcher enforces
-itself - AGENTFLOW_WORKER_TIMEOUT seconds (default 1200 = 20 minutes, 0 or a non-number disables it). On expiry
-the launcher kills the managed process tree, records a timeout error and releases the machine lease. All tools
-above run non-interactively, so every worker obeys this bound; an interactive session is a --manual attempt.
+itself - AGENTFLOW_WORKER_TIMEOUT seconds (default 1200 = 20 minutes; an invalid, zero or missing value keeps
+the default - a managed worker is never unbounded). On expiry the launcher kills the managed process tree,
+records a timeout error and releases the machine lease. The resolved bound and its absolute deadline are
+persisted on the attempt record (`workerTimeout`/`deadline`), and an external pass - `--watchdog`, run by the
+conductor every round - stops an overdue non-manual attempt from the outside through the same guarded path as
+--stop (classified `timeout`, initiator `watchdog`); an attempt recorded before the field existed gets the
+bounded fallback `startedAt + workerTimeout`. While that bounded worker runs on Windows it also holds a
+thread-scoped execution request against automatic idle system sleep (power_guard.py): the OS cannot idle-sleep
+mid-attempt, the request never keeps the display on, never asks for away mode, yields to an explicit user
+sleep/lid action, and dies with the worker; POSIX is a no-op and a failed request is recorded, not hidden.
+All tools above run non-interactively, so every worker obeys this bound; an interactive session is a --manual
+attempt and is never touched by the watchdog.
 
 Recovery (protocol: Recovery). Every attempt classifies its end in `stopReason` (completed, limit, timeout,
 stopped, dead, environment, implementation, verification) from launcher facts - never from free text alone.
-An attempt that did not complete also carries a bounded `recovery` record: per checkout the branch, HEAD,
-tracked modifications and untracked paths (paths/status only - file contents never enter runtime state), so a
+An explicit stop records `stoppedBy` - initiator (`watchdog` for a deadline stop, `cli` for the --stop
+command line - invoked by a human or a script, the record claims no more), a safe fixed reason and the time;
+raw argv, environment and secrets are never recorded. An attempt that did not complete also carries a
+bounded `recovery` record: per checkout the branch, HEAD, tracked modifications and untracked paths
+(paths/status only - file contents never enter runtime state), so a
 successor launched on the same Task File continues from the preserved draft instead of starting blind, and the
 record includes whether a Result exists. A new attempt is refused while a managed child of the previous worker
 still runs (the worker's descendants by parent chain plus, on POSIX, processes still in the recorded tool
@@ -123,6 +136,7 @@ import gate  # noqa: E402
 import ledger  # noqa: E402
 import limit_detection  # noqa: E402
 import machine_capacity  # noqa: E402
+import power_guard  # noqa: E402
 import quota_groups  # noqa: E402
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
@@ -188,8 +202,12 @@ def selected_model(tool, model):
 
 # Wall-clock limit for one worker, enforced by the launcher itself (see the docstring): the tool process tree is
 # killed, the attempt recorded as a timeout error and the lease released. AGENTFLOW_WORKER_TIMEOUT overrides it
-# in seconds; 0 or a non-number disables the bound.
+# in seconds; an invalid, zero or missing value keeps the default - a managed worker is never unbounded.
 WORKER_TIMEOUT = 1200
+
+KILL_TIMEOUT = 30       # taskkill itself is bounded: a hung kill must not wedge an external stop
+POST_KILL_WAIT = 30     # waiting on a just-killed direct child is bounded too
+STOP_LOCK_WAIT = 15     # an external stop waits this long for an in-flight launch under launch.lock
 
 # tool -> roles the launcher will start (see the permission matrix in the docstring). Anything else refuses.
 PERMISSIONS = {t: ("developer", "tester") for t in TOOLS}
@@ -201,6 +219,10 @@ class LaunchError(Exception):
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
 def resolve_exe(name, override):
@@ -658,7 +680,11 @@ def _leftover_error(tid, strays, members=0, what="a new attempt"):
 def kill_tree(pid):
     """Kill the worker and its managed descendants (the tool process and what it spawned)."""
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
+                           timeout=env_seconds("AGENTFLOW_KILL_TIMEOUT", KILL_TIMEOUT))
+        except (OSError, subprocess.SubprocessError):
+            pass  # a hung or failed taskkill is covered by the job-object terminate below
         _job_terminate(pid)  # orphans that already left the parent chain still belong to the job
         return
     # Only the tree rooted at pid is signalled: the tool leads its own group, so the caller's group
@@ -777,7 +803,10 @@ def run_capture(argv, timeout=None, cwd=None):
         out, _ = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_tree(p.pid)
-        p.wait()
+        try:
+            p.wait(timeout=POST_KILL_WAIT)
+        except subprocess.TimeoutExpired:
+            pass   # the probe's direct child outlived its kill; the timeout is still raised
         raise
     return p.returncode, out.strip()
 
@@ -967,6 +996,45 @@ def budget_stop(rt, tool):
             return (f"platform switch budget exhausted: this task already ran on {sorted(used)}, cap "
                     f"AGENTFLOW_MAX_TOOL_SWITCHES={cap}; '{tool}' would be another platform")
     return None
+
+
+def worker_bound(rt, att):
+    """(seconds, bound-name): the wall clock a managed worker obeys. AGENTFLOW_WORKER_TIMEOUT resolves
+    like every positive bound here - an invalid, zero or missing value keeps the default, so a managed
+    worker is never unbounded - and the task's own duration budget (from attempt 1's start) clamps it
+    further when tighter."""
+    timeout, bound = env_seconds("AGENTFLOW_WORKER_TIMEOUT", WORKER_TIMEOUT), "AGENTFLOW_WORKER_TIMEOUT"
+    first = (rt.get("attempts") or [att])[0]
+    try:
+        started = parse_ts(first.get("startedAt") or "")
+        remaining = (started + timedelta(seconds=env_seconds("AGENTFLOW_TASK_TIMEOUT", TASK_TIMEOUT))
+                     - datetime.now(timezone.utc)).total_seconds()
+    except ValueError:
+        remaining = None
+    if remaining is not None:
+        if remaining <= 0:
+            raise LaunchError("task duration budget exhausted before the tool started "
+                              f"(AGENTFLOW_TASK_TIMEOUT={env_seconds('AGENTFLOW_TASK_TIMEOUT', TASK_TIMEOUT)}s)")
+        if remaining < timeout:
+            timeout, bound = remaining, "AGENTFLOW_TASK_TIMEOUT"
+    return timeout, bound
+
+
+def attempt_deadline(a):
+    """The attempt's wall-clock deadline (UTC): the launch-persisted value, else startedAt + the resolved
+    worker bound for records written before the field existed - a bounded fallback, never 'no deadline'.
+    None only when neither can be read: the attempt is left locked for diagnosis, never killed on an
+    unprovable deadline."""
+    if a.get("deadline"):
+        try:
+            return parse_ts(a["deadline"])
+        except (TypeError, ValueError):
+            pass  # an unreadable field falls back to the same bound a legacy record gets
+    try:
+        return parse_ts(a.get("startedAt") or "") + timedelta(
+            seconds=env_seconds("AGENTFLOW_WORKER_TIMEOUT", WORKER_TIMEOUT))
+    except (TypeError, ValueError):
+        return None
 
 
 # --- resource and permission checks before a worker start -----------------------------------------------------------
@@ -1245,34 +1313,128 @@ def cmd_status():
     return 0
 
 
-def cmd_stop(tid):
-    rt = read_rt(tid)
-    a = last_attempt(rt)
-    if attempt_alive(a):
-        kill_tree(a["pid"])
-        strays, members = leftover_processes(tid, a, grace=3.0)
-        if strays or members:
-            raise _leftover_error(tid, strays, members, what="releasing the lock")
-    elif attempt_uncertain(a):
-        # A process sits on the recorded pid but its identity cannot be confirmed: it may be a reused pid,
-        # so no kill is sent to it - and closing the attempt would free the lock while the worker may
-        # still run. The lock releases only on a verified stop or a verified process identity.
-        raise LaunchError(f"{tid}: pid {a['pid']} is alive but its start identity cannot be confirmed "
-                          "(none recorded, or not measurable now) - a possibly reused pid is never killed "
-                          "and the task stays locked. If the process really is this worker, end it and run "
-                          f"run_task.py {tid} --stop again.")
-    elif a and a.get("status") == "running" and a.get("pid"):
-        # The recorded worker is gone but never wrote a final state; its managed children may still write.
-        strays, members = leftover_processes(tid, a)
-        if strays or members:
-            raise _leftover_error(tid, strays, members, what="releasing the lock")
-    if a and a.get("status") == "running":
-        a["exitCode"], a["note"] = -1, "; ".join(x for x in [a.get("note"), "stopped with --stop"] if x)
-        complete_attempt(tid, rt, "error", hint="stopped")
-    if a and a.get("machineLease"):
-        machine_capacity.release(a["machineLease"])
-    print(f"{tid} stopped, lock released")
+def _launch_lock(wait=0.0):
+    """The project launch lock (.runtime/launch.lock, O_EXCL): serializes a new attempt with an external
+    stop, so a stop decided on attempt n can never land its kill or its record write on attempt n+1
+    created meanwhile. `wait` seconds of bounded retry let a short launch finish first; a lock older
+    than 300s is a crashed launcher's leftover and is removed. Returns (fd, path); release with
+    os.close(fd) and path.unlink(missing_ok=True)."""
+    lock = RT_DIR / "launch.lock"
+    deadline = time.time() + wait
+    while True:
+        try:
+            if time.time() - lock.stat().st_mtime > 300:
+                lock.unlink()  # left by a crashed launcher
+        except OSError:
+            pass
+        try:
+            return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY), lock
+        except FileExistsError:
+            if time.time() >= deadline:
+                raise LaunchError(f"another launcher run is in progress ({lock}). Wait and check --status.")
+            time.sleep(0.2)
+
+
+def stop_attempt(tid, initiator, reason, hint, expect=None):
+    """Close a running attempt from outside (shared by --stop and the watchdog), serialized with launches
+    by the same launch.lock: a bounded wait lets an in-flight launch finish, then the record is re-read
+    inside the lock and must still name the expected attempt - a stale caller never stops a newer one.
+    Then kill under the recorded-identity rules and close with the classified end, or refuse while
+    managed processes still run (the task stays locked). `initiator`/`reason` land in `stoppedBy` as
+    safe metadata - never raw argv or environment. Returns True when the attempt was closed."""
+    fd, lock = _launch_lock(wait=STOP_LOCK_WAIT)
+    try:
+        rt = read_rt(tid)
+        a = last_attempt(rt)
+        if expect is not None and (not a or a.get("n") != expect):
+            raise LaunchError(f"{tid}: expected attempt {expect} but the last recorded attempt is "
+                              f"{a.get('n') if a else 'none'} - a stale stop was refused, nothing was killed")
+        if not a or a.get("status") != "running":
+            if a and a.get("machineLease"):
+                machine_capacity.release(a["machineLease"])
+            return False
+        if attempt_alive(a):
+            kill_tree(a["pid"])
+            a["stoppedBy"] = {"initiator": initiator, "reason": reason, "at": now()}
+            write_rt(tid, rt)   # who stopped it survives a blocked cleanup retry
+            strays, members = leftover_processes(tid, a, grace=3.0)
+            if strays or members:
+                raise _leftover_error(tid, strays, members, what="releasing the lock")
+        elif attempt_uncertain(a):
+            # A process sits on the recorded pid but its identity cannot be confirmed: it may be a reused
+            # pid, so no kill is sent to it - and closing the attempt would free the lock while the worker
+            # may still run. The lock releases only on a verified stop or a verified process identity.
+            raise LaunchError(f"{tid}: pid {a['pid']} is alive but its start identity cannot be confirmed "
+                              "(none recorded, or not measurable now) - a possibly reused pid is never "
+                              "killed and the task stays locked. If the process really is this worker, "
+                              f"end it and run run_task.py {tid} --stop again.")
+        elif a.get("pid"):
+            # The recorded worker is gone but never wrote a final state; its managed children may still write.
+            strays, members = leftover_processes(tid, a)
+            if strays or members:
+                raise _leftover_error(tid, strays, members, what="releasing the lock")
+        # 'timeout' means the wall clock enforced a kill - the watchdog's kill just now, or the recorded one
+        # a blocked cleanup is retrying. A worker the watchdog found overdue but already gone is 'dead';
+        # a --stop command line stays 'stopped'.
+        if (a.get("stoppedBy") or {}).get("initiator") == "watchdog":
+            hint = "timeout"
+        elif initiator == "watchdog":
+            hint = "dead"
+        a["stoppedBy"] = {"initiator": initiator, "reason": reason, "at": now()}
+        a["exitCode"], a["note"] = -1, "; ".join(x for x in [a.get("note"), reason] if x)
+        complete_attempt(tid, rt, "error", hint=hint)
+        if a.get("machineLease"):
+            machine_capacity.release(a["machineLease"])
+        return True
+    finally:
+        os.close(fd)
+        lock.unlink(missing_ok=True)
+
+
+def cmd_stop(tid, expect=None):
+    stopped = stop_attempt(tid, "cli", "stopped with --stop", "stopped", expect=expect)
+    print(f"{tid} stopped, lock released" if stopped else f"{tid}: no running attempt")
     return 0
+
+
+def cmd_watchdog(tid=None, expect=None):
+    """Enforce persisted launch deadlines from outside the worker: every running non-manual attempt whose
+    deadline passed is stopped through the same guarded path as --stop - classified 'timeout', initiator
+    'watchdog' - under the expected-attempt guard. Manual attempts and attempts inside their bound are
+    left untouched, an attempt whose bound cannot be read stays locked and diagnosed, and the watchdog
+    only stops: it never relaunches. Quiet when nothing is overdue."""
+    paths = [RT_DIR / f"{tid}.json"] if tid else sorted(RT_DIR.glob("T-*.json"))
+    rc = 0
+    for p in paths:
+        if not re.match(r"^T-\d+\.json$", p.name) or not p.exists():
+            continue
+        try:
+            rt = ledger.check_runtime(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
+        except (OSError, ValueError) as e:
+            print(f"{p.stem}  watchdog: cannot read runtime state ({e})", file=sys.stderr)
+            rc = 1
+            continue
+        a = last_attempt(rt)
+        if not a or a.get("status") != "running" or a.get("manual") or not a.get("pid"):
+            continue   # manual sessions and unstarted or finished attempts are never the watchdog's
+        due = attempt_deadline(a)
+        if due is None:
+            print(f"{p.stem}  watchdog: attempt {a.get('n')} is running but has no readable deadline "
+                  "or start - left locked for diagnosis", file=sys.stderr)
+            rc = 1
+            continue
+        if due > datetime.now(timezone.utc):
+            continue   # unexpired
+        try:
+            if stop_attempt(p.stem, "watchdog", f"worker deadline {due.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+                            "passed (watchdog)", "timeout",
+                            expect=expect if expect is not None else a.get("n")):
+                print(f"{p.stem}  watchdog: attempt {a['n']} stopped at its deadline "
+                      f"{due.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        except Exception as e:   # one task's failure never stops the sweep of the others
+            print(f"{p.stem}  watchdog: {type(e).__name__}: {e}", file=sys.stderr)
+            rc = 1
+    return rc
 
 
 def cmd_mark_finished(tid):
@@ -1332,9 +1494,25 @@ def run_logged(argv, log, cwd, env, timeout=None, on_spawn=None):
             code, timed_out = p.wait(timeout=timeout), False
         except subprocess.TimeoutExpired:
             kill_tree(p.pid)
-            code, timed_out = p.wait(), True
+            try:
+                code = p.wait(timeout=POST_KILL_WAIT)
+            except subprocess.TimeoutExpired:
+                code = -1   # the direct child outlived its own kill; the timeout verdict stands
+            timed_out = True
         reader.join(timeout=10)
         return code, timed_out
+
+
+def _attempt_log(log, line):
+    """A durable launcher note inside the attempt log: the worker's own stdout is discarded, so the log
+    file is the only place a launcher-side fact (the power-guard outcome) survives."""
+    if not log:
+        return
+    try:
+        with open(log, "a", encoding="utf-8", errors="replace") as fh:
+            fh.write(f"[run_task {now()}] {line}\n")
+    except OSError:
+        pass
 
 
 def cmd_worker(tid, tool):
@@ -1342,35 +1520,21 @@ def cmd_worker(tid, tool):
     rt = read_rt(tid)
     att = last_attempt(rt)
     log, code, timed_out, note = att.get("log"), 1, False, None
+    guard_held, guard_detail = False, "not requested"
     try:
         if att.get("machineLease"):
             if not machine_capacity.activate(att["machineLease"], os.getpid(), pid_start(os.getpid())):
                 raise LaunchError("machine capacity activation failed")
+        # A bounded worker asks Windows to keep the system out of automatic idle sleep while it runs
+        # (power_guard: system execution only - never display-on or away mode, and an explicit user
+        # sleep/lid still wins; POSIX is a no-op). A failed request is recorded, not hidden.
+        guard_held, guard_detail = power_guard.acquire()
+        _attempt_log(log, f"power guard: {guard_detail}")
         t = invoke_gate("task", tid)
         env = {**os.environ, **worker_env(t)}
-        raw = os.environ.get("AGENTFLOW_WORKER_TIMEOUT")
-        try:
-            timeout = int(raw) if raw else WORKER_TIMEOUT
-        except ValueError:
-            timeout = 0
-        timeout = timeout if timeout > 0 else None
-        bound = "AGENTFLOW_WORKER_TIMEOUT"
-        # the task's own wall-clock budget (counted from attempt 1's start) bounds this worker too
-        first = (rt.get("attempts") or [att])[0]
-        try:
-            started = datetime.strptime(first.get("startedAt") or "", "%Y-%m-%dT%H:%M:%SZ") \
-                .replace(tzinfo=timezone.utc)
-            remaining = (started
-                         + timedelta(seconds=env_seconds("AGENTFLOW_TASK_TIMEOUT", TASK_TIMEOUT))
-                         - datetime.now(timezone.utc)).total_seconds()
-        except ValueError:
-            remaining = None
-        if remaining is not None:
-            if remaining <= 0:
-                raise LaunchError("task duration budget exhausted before the tool started "
-                                  f"(AGENTFLOW_TASK_TIMEOUT={env_seconds('AGENTFLOW_TASK_TIMEOUT', TASK_TIMEOUT)}s)")
-            if timeout is None or remaining < timeout:
-                timeout, bound = remaining, "AGENTFLOW_TASK_TIMEOUT"
+        # the resolved bound is always positive: an invalid/zero AGENTFLOW_WORKER_TIMEOUT keeps the
+        # default, and the task's own duration budget (from attempt 1's start) clamps it when tighter
+        timeout, bound = worker_bound(rt, att)
         prompt = t["prompt"] + (f" {att['handover']}" if att.get("handover") else "")
         argv = [tool_exe(tool)] + tool_argv(tool, t["role"], prompt, t["model"], t["effort"])
         code, timed_out = run_logged(argv, log, cwd=t["workdir"], env=env, timeout=timeout,
@@ -1381,8 +1545,13 @@ def cmd_worker(tid, tool):
     except Exception as e:
         note = f"launch error: {e}"
         print(note)
+    finally:
+        if guard_held:
+            _rel, rel_detail = power_guard.release()
+            _attempt_log(log, f"power guard release: {rel_detail}")
     rt = read_rt(tid)  # re-read: the launcher wrote the pid after start
     a = last_attempt(rt)
+    a["powerGuard"] = {"held": guard_held, "detail": guard_detail}
     a["exitCode"] = 124 if timed_out and code == 0 else code
     # The shared detector judges the session log's tail the same way tick.py and the conductor do: strong
     # provider-directed phrases count even on a clean exit, weak quota words need failure evidence, and a
@@ -1406,13 +1575,7 @@ def cmd_launch(tid, tool, manual, grant):
     if not tool and not manual:
         raise LaunchError("tool required: codex | claude | agy | devin (or --manual)")
     nested_check()
-    lock = RT_DIR / "launch.lock"
-    if lock.exists() and time.time() - lock.stat().st_mtime > 300:
-        lock.unlink()  # left by a crashed launcher
-    try:
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        raise LaunchError(f"another launcher run is in progress ({lock}). Wait and check --status.")
+    fd, lock = _launch_lock()
     lease, worker_started, a, rt = None, False, None, None
     try:
         rt = read_rt(tid)  # corrupted state fails closed in read_rt
@@ -1493,6 +1656,10 @@ def cmd_launch(tid, tool, manual, grant):
         if not manual:
             a["launch"] = {"exe": check["exe"],
                            "argv": tool_argv(tool, t["role"], None, t["model"], t["effort"], masked=True)}
+            # the bound the worker will enforce, and the absolute clock the watchdog enforces
+            a["workerTimeout"], _ = worker_bound(rt, a)
+            a["deadline"] = (parse_ts(a["startedAt"])
+                             + timedelta(seconds=a["workerTimeout"])).strftime("%Y-%m-%dT%H:%M:%SZ")
         if check:
             a["resourceCheck"] = check
         if prev and (prev.get("recovery") or prev.get("stopReason")):
@@ -1571,14 +1738,22 @@ def main():
     ap.add_argument("--manual", action="store_true", help="prepare the launch; a human starts the tool")
     ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)  # internal: inside the worker process
     ap.add_argument("--dispatch-grant", help="shared-dispatch grant token to exchange for the machine lease")
+    ap.add_argument("--watchdog", action="store_true",
+                    help="stop non-manual attempts past their recorded deadline (all tasks, or the named one)")
+    ap.add_argument("--expect-attempt", type=int, metavar="N",
+                    help="refuse the stop when the last attempt is not N (stale-stop guard)")
     a = ap.parse_args()
     try:
         if a.status:
             return cmd_status()
+        if a.watchdog:
+            if a.task and not re.match(r"^T-\d+$", a.task):
+                raise LaunchError("task id T-NNN required")
+            return cmd_watchdog(a.task, a.expect_attempt)
         if not a.task or not re.match(r"^T-\d+$", a.task):
             raise LaunchError("task id T-NNN required")
         if a.stop:
-            return cmd_stop(a.task)
+            return cmd_stop(a.task, a.expect_attempt)
         if a.mark_finished:
             return cmd_mark_finished(a.task)
         if a.recheck:

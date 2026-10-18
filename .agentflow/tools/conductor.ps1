@@ -13,13 +13,15 @@
   Rules: .agentflow/docs/ai-handoff-protocol.md, section "Autonomous orchestration". The human starts the conductor;
   it starts background Orchestrator sessions with full access, as a Developer worker has.
   Each round:
-   1. A background Orchestrator session started earlier is still running: wait for it.
-   2. python .agentflow/tools/tick.py run - accepts and launches what needs no judgment (report only while an
+   1. python .agentflow/tools/run_task.py --watchdog - stops non-manual workers past their recorded
+      deadline (the launcher's wall clock, enforced from outside; also while an Orchestrator is live).
+   2. A background Orchestrator session started earlier is still running: wait for it.
+   3. python .agentflow/tools/tick.py run - accepts and launches what needs no judgment (report only while an
       Orchestrator heartbeat is fresh: the human's session or a background one owns the project then).
-   3. tick.json lists needs and no Orchestrator is live: start a background Orchestrator session in a visible window,
+   4. tick.json lists needs and no Orchestrator is live: start a background Orchestrator session in a visible window,
       on the first tool of AGENTFLOW_ORCHESTRATORS (default claude,codex,devin,agy) that tick.py does not know as
       limited. The same needs are not handed over again before -CooldownMinutes, unless the last session hit a limit.
-   4. A Windows notification for: acceptances and launches, a background session started or finished, every tool
+   5. A Windows notification for: acceptances and launches, a background session started or finished, every tool
       limited, a change in .agentflow/state/questions.md.
   Tool command lines are the developer ones of run-task.ps1 (the Orchestrator merges and writes memory). Machine
   settings: AGENTFLOW_<TOOL> (executable), AGENTFLOW_ORCHESTRATOR_<TOOL>_ARGS (arguments for an Orchestrator session;
@@ -75,6 +77,10 @@ $python = @(if ($env:AGENTFLOW_PYTHON) { Resolve-Exe 'python' $env:AGENTFLOW_PYT
 function Invoke-Tick([string[]]$a) {
   $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
   & $py @pyArgs (Join-Path $flowRoot 'tools\tick.py') @a
+}
+function Invoke-Launcher([string[]]$a) {
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  & $py @pyArgs (Join-Path $flowRoot 'tools\run_task.py') @a
 }
 function Invoke-Machine([string[]]$argv) {
   $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
@@ -242,6 +248,10 @@ if (-not $DryRun) {
 Write-Host "conductor: $root, every $IntervalMinutes min$(if ($DryRun) { ', dry run' }). Close the window to stop."
 while ($true) {
   try {
+    if (-not $DryRun -and (Test-Path (Join-Path $flowRoot 'tools\run_task.py'))) {
+      # the worker-deadline watchdog runs every round, also while an Orchestrator is live
+      Invoke-Launcher @('--watchdog') 2>&1 | ForEach-Object { Write-Host "  watchdog: $_" }
+    }
     $state = Read-State
     $s = $state.session
     if ($s -and $s.finishedAt -and $state.reportedFinish -ne $s.n) {
