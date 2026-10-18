@@ -709,7 +709,8 @@ def log_admission(tid, evidence, rt_dir=None):
 
 def backup_ok(tid, tool, model, effort, rt_dir=None):
     """(ok, reason): may the recorded backup serve this task? Same requirement as the primary - a weaker
-    backup is ineligible."""
+    backup is ineligible - and the live machine-registry hold on the backup's quota group is consulted
+    at call time, so a group held after the assessment refuses it."""
     try:
         rec = latest_assessment(tid, rt_dir)
     except ValueError as e:
@@ -717,7 +718,14 @@ def backup_ok(tid, tool, model, effort, rt_dir=None):
     if rec is None or rec.get("status") != "ok":
         return False, "no ok assessment is recorded for the task"
     problems = identity_problems(rec.get("required"), tool, model, effort)
-    return (False, "; ".join(problems)) if problems else (True, "")
+    if problems:
+        return False, "; ".join(problems)
+    env_model, _env_effort = env_selected(tool)
+    name, o = quota_groups.option_for(tool, model or env_model)
+    end = machine_capacity.limit_until(tool, (o or {}).get("quota_group"))
+    if end:
+        return False, f"{name or tool} is limited until {end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    return True, ""
 
 
 def main():

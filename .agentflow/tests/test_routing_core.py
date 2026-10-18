@@ -273,17 +273,45 @@ class RoutingCoreTests(unittest.TestCase):
 
     def test_backup_must_meet_the_same_requirement(self):
         self.record()
-        ok, _ = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
-        self.assertTrue(ok)
-        ok, reason = route.backup_ok("T-099", "devin", "swe-2-medium", None, self.rt)
-        self.assertFalse(ok)
-        self.assertIn("below the recorded requirement", reason)
-        ok, _ = route.backup_ok("T-099", "agy", "gem-flash-medium", None, self.rt)
-        self.assertFalse(ok, "another tool's weaker backup stays ineligible")
-        (self.rt / "T-099.route.json").unlink()
-        ok, reason = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
-        self.assertFalse(ok)
-        self.assertIn("no ok assessment", reason)
+        env = {"AGENTFLOW_MACHINE_STATE_DIR": str(self.dir / "machine")}
+        with patch.dict(os.environ, env, clear=True):
+            ok, _ = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertTrue(ok)
+            ok, reason = route.backup_ok("T-099", "devin", "swe-2-medium", None, self.rt)
+            self.assertFalse(ok)
+            self.assertIn("below the recorded requirement", reason)
+            ok, _ = route.backup_ok("T-099", "agy", "gem-flash-medium", None, self.rt)
+            self.assertFalse(ok, "another tool's weaker backup stays ineligible")
+            (self.rt / "T-099.route.json").unlink()
+            ok, reason = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertFalse(ok)
+            self.assertIn("no ok assessment", reason)
+
+    def test_backup_ok_consults_the_live_hold_at_call_time(self):
+        """The T-075 V-03 gap: a hold appearing after the assessment must refuse the adequate backup."""
+        self.record()  # assessed ok before the hold exists
+        machine = self.dir / "machine"
+        machine.mkdir()
+        registry = machine / "registry.json"
+        future = time.time() + 3600
+        with patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": str(machine)}, clear=True):
+            registry.write_text(json.dumps({"limits": {"devin:devin": future}}), encoding="utf-8")
+            ok, reason = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertFalse(ok, "a post-assessment group hold refuses the adequate backup")
+            self.assertIn("limited until", reason)
+            registry.write_text(json.dumps({"limits": {"devin": future}}), encoding="utf-8")
+            ok, _ = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertFalse(ok, "a tool-wide hold on the backup tool also refuses")
+            registry.write_text(json.dumps({"limits": {"agy:agy-gemini": future, "codex": future}}),
+                                encoding="utf-8")
+            ok, _ = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertTrue(ok, "a hold on an unrelated group or tool does not block")
+            registry.unlink()
+            ok, _ = route.backup_ok("T-099", "devin", "swe-2-high", None, self.rt)
+            self.assertTrue(ok, "an adequate unheld backup is still admitted")
+            ok, reason = route.backup_ok("T-099", "devin", "swe-2-medium", None, self.rt)
+            self.assertFalse(ok)
+            self.assertIn("below the recorded requirement", reason)
 
     def test_env_selected_parses_documented_flag_forms(self):
         cases = {"AGENTFLOW_CODEX_ARGS": [("-m gpt-x --effort high", ("gpt-x", "high")),
