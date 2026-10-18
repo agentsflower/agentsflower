@@ -291,3 +291,15 @@ provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
   remote not re-pointed - remote changes stay human-authorized). The push
   triggers the pending multi-OS CI rerun; windows/macos log access still
   needs the human (API 403) or authenticated gh.
+
+- 2026-10-18 foreground devin (orchestrator acting): T-092 contract rewritten
+  to a fast-path re-check (T-085 precedent) per the human's Option D; fresh
+  route.py assessment req_01a150e72dd47e2796b8e12c907f730c on the new
+  contract selected devin swe-2-high (option conf 0.95, overall medium 0.60 -
+  orchestrator-confirmed floor fit), all codex/claude options recorded as
+  excluded. Ledger T-092 -> ready; header applied. Launch refused at the
+  fail-closed selected-model inference probe: the devin CLI is not
+  authenticated ("Not logged in"; `auth status` exits 0 vacuously - the
+  inference probe caught it). Recovery: human runs `devin auth login`, then
+  re-run run-task.ps1 T-092 devin; assessment stays valid while the contract
+  is unchanged. This also blocks every future devin launch until fixed.
