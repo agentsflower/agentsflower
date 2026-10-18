@@ -64,6 +64,21 @@ def sha256(s):
     return ledger.sha256(s)
 
 
+# Header lines a routing decision or a retry legitimately rewrites: Tool/Model/Backup come FROM a route
+# assessment and a human's Routing exception line; Resume changes per attempt. None of them may
+# invalidate a recorded assessment - everything else in the header (goal, criteria, checks, setup)
+# does.
+ROUTING_FIELDS = ("Tool", "Model", "Backup Tool", "Backup Model", "Routing exception", "Resume")
+
+
+def requirements_hash(text):
+    """The fingerprint a routing assessment is bound to: the header with the ROUTING_FIELDS lines
+    removed. An assessment recorded against another hash is stale and admits no launch."""
+    head = header(text).replace("\r\n", "\n")
+    rx = r"(?m)^(?:" + "|".join(re.escape(f) for f in ROUTING_FIELDS) + r")[ \t]*:[^\n]*(?:\n|$)"
+    return sha256(re.sub(rx, "", head))
+
+
 def bullets(body):
     return [m.group(1) for m in re.finditer(r"(?m)^[ \t]*-[ \t]+(.+?)[ \t]*$", body)]
 
@@ -220,7 +235,8 @@ def parse(tid):
                      if re.search(r"[a-z0-9]", w := b.replace("`", "").split()[0].lower()) and w != "nothing"],
          "checks": commands(section(text, "Checks")), "acceptance": bullets(section(text, "Acceptance criteria")),
          "independent": field(head, "Independent check"), "target": "local", "env": {}, "setup": [],
-         "headerHash": sha256(header(text)), "result": section(text, "Result")}
+         "headerHash": sha256(header(text)), "requirementsHash": requirements_hash(text),
+         "routingException": field(head, "Routing exception"), "result": section(text, "Result")}
     t["criteria"] = criteria_ids(t["acceptance"])[0]
     t["prompt"] = (f"Your role: .agentflow/roles/{t['role']}.md. Your task: {f}. "
                    "Follow .agentflow/docs/ai-handoff-protocol.md, section 'Starting a role session'. "

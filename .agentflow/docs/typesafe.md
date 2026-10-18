@@ -27,7 +27,9 @@ uses or changes this integration works from the official documentation, not from
 3. Choice criteria are objects: `what`, `not_for`, `examples`, supported effort levels, cost, latency, and context draw
    the boundary between options. Write them in `model-options.json`; the project policy goes into the question's
    instructions. Use `model` + `efforts` when the CLI takes a separate effort flag. Use `model_by_effort` when the
-   effort is part of the concrete model id, as with Devin and the installed Antigravity CLI.
+   effort is part of the concrete model id, as with Devin and the installed Antigravity CLI. `tier` declares the
+   capability ceiling of an effort-less model; `quota_group` binds an option to a provider billing group, so a
+   group hold does not blanket the whole tool.
 4. Confidence: `(p_max - 1/n) / (1 - 1/n)` for a choice. For a model with selectable effort, routing confidence is
    the lower of the model and effort confidences. Bands: >= 0.9 act automatically (`--apply`), 0.5-0.9 a recommendation
    the Orchestrator confirms, < 0.5 no decision (tool-routing.md decides). The docs say to start conservative and
@@ -38,5 +40,19 @@ uses or changes this integration works from the official documentation, not from
    Price: input tokens only (see Models); one route call is about 1k input tokens.
 7. The key is a secret: environment `TYPESAFE_API_KEY` or a file named by `AGENTFLOW_TYPESAFE_KEY_FILE`, outside the
    repository; never printed, logged or committed. Tests use a local stand-in server, never the real service.
-8. The option choice probabilities rank configured candidates. AgentFlow records the chosen primary and the highest-ranked eligible candidate on another CLI platform as backup, resolving the same Jev effort to each model's supported form. Missing CLI executables and observed shared usage limits are excluded before the call. A busy slot does not remove a candidate: the saved backup is used at launch if the primary has no free slot. CLI model entitlement and account access can still fail only when a real session starts.
+8. The option choice probabilities rank configured candidates, but selection is requirement-first: only options
+   that can express the assessed effort (lifted by the project `floor` in model-options.json, never lowered) and
+   complexity are candidates. Among them the `floor` option leads, then `prefer`red CLIs, then the rest by Jev
+   probability. The backup is the highest-ranked adequate candidate on another CLI platform - a backup below the
+   requirement is ineligible. Missing executables and observed quota holds are excluded before the call and
+   recorded per option; an adequate-but-held option is named so a blocked launch knows what it waits on. CLI model
+   entitlement and account access can still fail only when a real session starts.
 9. `plan_route.py` uses the same atomic Jev questions on a short planning goal and never changes the user's current chat. `route_report.py` reads routing metadata, task outcomes, and attempt histories to compare similar tasks; its counts are not a causal measure of model quality. It does not infer unavailable worker cost or token use.
+10. Every route.py call persists an `assessment` event (schemaVersion 1) in
+    `.agentflow/tasks/.runtime/T-NNN.route.json`, bound to `requirementsHash` - the task header without the routing
+    fields (Tool/Model/Backup/Routing exception/Resume). Status is `ok`, `blocked`, `low-confidence` or `failed`;
+    a missing, stale or non-ok record is a diagnosable block, never an admission. A `Routing exception:` header
+    line is the auditable human override and is recorded as a human decision, never as Jev evidence.
+    `route.assessment_problems()`, `route.admission()`, `route.backup_ok()` and `route.log_admission()` are the
+    launch-side API (wired into the launcher by T-076); `admission()` re-checks the resolved model/effort after
+    `AGENTFLOW_<TOOL>_ARGS` overrides against the recorded requirement.
