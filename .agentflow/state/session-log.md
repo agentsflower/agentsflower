@@ -278,3 +278,16 @@ provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
   repairs the base owed the suite, 424 tests green) - tester T-092 blocked:
   the new admission gate itself refuses the low-confidence (0.34)
   assessment; human Routing exception decision pending in questions.md.
+
+- 2026-10-18 foreground devin (human-facing): human resolved the T-092
+  routing question with Option D (re-scope to fast-path re-check, T-085
+  precedent, no exception header) and reported Codex+Claude CLIs out of
+  resources - statically excluded via "until" 2026-10-17 in
+  docs/model-options.json (devin-hosted families unaffected). Recorded in
+  questions.md/current-step.md/decisions.md and committed 20ca4aa.
+  Human then explicitly requested a push: origin/main 50adf65..20ca4aa.
+  GitHub reports the repository moved/renamed to
+  https://github.com/vcherstar/agentflow.git (old URL still redirects;
+  remote not re-pointed - remote changes stay human-authorized). The push
+  triggers the pending multi-OS CI rerun; windows/macos log access still
+  needs the human (API 403) or authenticated gh.
