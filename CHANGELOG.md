@@ -26,7 +26,8 @@ record's safe metadata.
   it — tester independence is the fresh worker session on a disposable
   checkout of the exact artifact (review isolation), and human-reported
   availability never overrides an observed hold or the recorded adequacy
-  floor.
+  floor. T-091 landed the same rule at assessment time: a configured
+  preferred CLI is never removed by the tester-independence exclusion.
 - `route_report.py` task items now carry `assessmentStatus`,
   `assessmentBand`, `required`, `floor`, `excluded`, `inadequate`,
   `adequateHeld`, `blocked`, `admissions`, `humanExceptions`,

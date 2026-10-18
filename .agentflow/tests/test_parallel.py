@@ -114,6 +114,7 @@ class ParallelRuleTests(unittest.TestCase):
                 patch.object(tick, "LOCK", rt / "lock"), \
                 patch.object(tick.gate, "ledger_rows", return_value={"T-002": {"Status": "ready", "Tool": "codex"}}), \
                 patch.object(tick.gate, "parse", return_value={"id": "T-002", "role": "developer", "depends": [], "independent": "none", "result": ""}), \
+                patch.object(tick.route, "assessment_problems", return_value=([], {"source": "jev"})), \
                 patch.object(tick.gate, "last_attempt", return_value=None):
             rep = tick.run(launch=lambda t, tool: (False, refused))
         self.assertEqual(rep["needs"], [])

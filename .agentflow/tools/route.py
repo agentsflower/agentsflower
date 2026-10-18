@@ -27,8 +27,9 @@ Options: `.agentflow/docs/model-options.json` (project-owned):
                         "roles": ["developer", "tester"], "from": "YYYY-MM-DD", "until": "YYYY-MM-DD",
                         "max_complexity": 0|1|2, "escalate_to": "<id>", "quota_group": "..."}}}
 
-An option outside its from/until window or not meant for the task's role is left out; a tester never gets the tool
-of the developer task it checks while another option remains (protocol: Tool Routing, independence).
+An option outside its from/until window or not meant for the task's role is left out; a tester is kept off the
+tool of the developer task it checks while another option remains - unless that tool is a configured preferred
+CLI (`prefer`: independence is the fresh session on the isolated checkout, not a different CLI).
 
 Enforcement (the routing policy): every call persists an assessment record - schemaVersion 1, event
 "assessment" - in .agentflow/tasks/.runtime/T-NNN.route.json, bound to the task's requirementsHash
@@ -381,6 +382,8 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
         avoid = None
         if t["role"] == "tester":
             avoid = gate.field(gate.header(Path(t["checked"]["file"]).read_text(encoding="utf-8-sig")), "Tool")
+            if avoid in (cfg.get("prefer") or []):
+                avoid = None  # a preferred CLI stays eligible: independence is the isolated checkout
         all_options = cfg.get("options", {})
         eligible, excluded = eligibility(all_options, t["role"], avoid, today)
         rec["excluded"] = excluded

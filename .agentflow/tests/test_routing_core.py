@@ -408,9 +408,15 @@ class RoutingRecordTests(unittest.TestCase):
                                self.root / ".agentflow" / "tools" / "route.py", *args],
                               capture_output=True, text=True, encoding="utf-8", env=env)
 
-    def rec(self):
-        p = self.root / ".agentflow" / "tasks" / ".runtime" / "T-099.route.json"
+    def rec(self, tid="T-099"):
+        p = self.root / ".agentflow" / "tasks" / ".runtime" / f"{tid}.route.json"
         return json.loads(p.read_text(encoding="utf-8"))[-1]
+
+    def write_tester(self, tid="T-098", checked="T-099"):
+        tester = TASK.replace("# T-099: Probe", f"# {tid}: Check") \
+            .replace("Role: developer", "Role: tester") \
+            .replace("Depends on: none", f"Depends on: {checked}\nVerifies: {checked} @ " + "a" * 40)
+        (self.root / ".agentflow" / "tasks" / f"{tid}-check.md").write_text(tester, encoding="utf-8")
 
     def test_ok_assessment_persists_the_binding_schema(self):
         Fake.answers = answers(effort="low", probabilities={"devin-swe-2": 0.9, "codex-ultra": 0.1})
@@ -477,6 +483,60 @@ class RoutingRecordTests(unittest.TestCase):
         self.assertIn("codex-ultra", rec["adequateHeld"],
                       "the adequate-but-held option is named so a blocked launch knows what it waits on")
         self.assertIn("limited until", rec["adequateHeld"]["codex-ultra"])
+
+    def test_tester_of_a_preferred_cli_task_keeps_and_selects_it(self):
+        """K-02: the checked task ran on devin and devin is the configured preferred CLI - the
+        independence exclusion does not remove the adequate devin option, so a fresh assessment
+        can select it (independence = the fresh session on the isolated checkout, not the CLI)."""
+        self.write_tester()  # checks T-099, whose Tool is devin
+        Fake.answers = answers(choice="codex-ultra",
+                               probabilities={"codex-ultra": 0.9, "devin-swe-2": 0.1})
+        r = self.route("T-098")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.rec("T-098")
+        self.assertIn("devin-swe-2", rec["eligibleOptions"])
+        self.assertNotIn("kept off devin", json.dumps(rec["excluded"]))
+        self.assertEqual((rec["choice"], rec["tool"]), ("devin-swe-2", "devin"))
+        self.assertEqual(rec["jevChoice"], "codex-ultra")
+        self.assertIn("claude-plain", rec["inadequate"], "adequacy still rules for the tester")
+
+    def test_a_live_hold_still_removes_the_preferred_option_for_a_tester(self):
+        """K-02: prefer spares the option from the independence exclusion, not from an observed
+        hold - a held devin group still excludes it and lands it in adequateHeld."""
+        self.write_tester()
+        registry = Path(self.tmp.name) / "registry.json"
+        registry.write_text(json.dumps({"limits": {"devin": time.time() + 3600}}), encoding="utf-8")
+        Fake.answers = answers(choice="codex-ultra",
+                               probabilities={"codex-ultra": 0.9, "devin-swe-2": 0.1})
+        r = self.route("T-098")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.rec("T-098")
+        self.assertIn("limited until", rec["excluded"]["devin-swe-2"])
+        self.assertIn("devin-swe-2", rec["adequateHeld"])
+        self.assertEqual(rec["choice"], "codex-ultra")
+
+    def test_tester_of_a_nonpreferred_cli_is_still_excluded_then_reincluded(self):
+        """K-02: prefer is devin only - a tester checking a codex task is still kept off codex
+        while another tool is eligible, and codex comes back when nothing else remains."""
+        checked = TASK.replace("T-099", "T-097").replace("Tool: devin", "Tool: codex") \
+            .replace("Model: swe-2-high", "Model: gpt-x")
+        (self.root / ".agentflow" / "tasks" / "T-097-probe.md").write_text(checked, encoding="utf-8")
+        self.write_tester(checked="T-097")
+        Fake.answers = answers(choice="devin-swe-2",
+                               probabilities={"devin-swe-2": 0.9, "codex-ultra": 0.1})
+        r = self.route("T-098")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.rec("T-098")
+        self.assertNotIn("codex-ultra", rec["eligibleOptions"])
+        self.assertIn("kept off codex", rec["excluded"]["codex-ultra"])
+        self.assertEqual(rec["choice"], "devin-swe-2")
+        self.write_options({"options": {"codex-ultra": OPTS["options"]["codex-ultra"]}})
+        Fake.answers = answers(choice="codex-ultra", probabilities={"codex-ultra": 0.9})
+        r = self.route("T-098")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.rec("T-098")
+        self.assertIn("codex-ultra", rec["eligibleOptions"])
+        self.assertNotIn("codex-ultra", rec["excluded"])
 
     def test_stale_contract_makes_the_record_refuse_admission(self):
         Fake.answers = answers()

@@ -223,7 +223,7 @@ A worker may vanish (limit, closed session, hang, broken context).
 
 1. Stale branch: when the only reason a task fails is that its branch predates a fix already on the main branch, the successor is a merge-only developer task: a branch from the main branch that merges the old branch and changes nothing else, `Independent check: none - <the tester tasks that checked the old commit>`, the full Checks.
 2. Re-test: when a Tester attempt fails for its environment (sandbox, usage limit, an end-check formality) rather than for the product, the next attempt or the successor tester names the earlier evidence folder in `Resume:` and redoes only what is missing.
-3. A Tester on the same tool as the Developer only when no other tool is available; say so in the ledger `Notes`.
+3. A Tester on the same tool as the Developer when that tool is a configured preferred CLI (`prefer` in model-options.json), or only when no other tool is available; say so in the ledger `Notes`.
 
 ## Section: Launching workers
 
