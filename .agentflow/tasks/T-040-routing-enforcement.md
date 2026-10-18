@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-max
 Stage: 5
-Depends on: T-034
+Depends on: T-070
 Branch: t-040-routing-enforcement
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-040-routing-enforcement
 Independent check: tester
