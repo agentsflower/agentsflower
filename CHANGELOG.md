@@ -2,6 +2,49 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.4 - 2026-10-18
+
+Scheduler integration of the routing assessment (T-078, third bounded delivery
+of T-040): `tick.py run`'s automatic launches and backup switches now consult
+the persisted assessment before acting, and `route_report.py` exposes the
+record's safe metadata.
+
+- `tick.py`'s `decide()` calls `route.assessment_problems()` for every ready
+  task before reporting `launch`: a missing, stale or non-ok assessment
+  becomes an actionable `need` in `tick.json` (route the task or write a
+  `Routing exception:` header line) instead of a launch the launcher would
+  refuse anyway. The launcher's `route.admission()` stays the final
+  authority: it re-checks the resolved model/effort after
+  `AGENTFLOW_<TOOL>_ARGS` overrides on every real launch.
+- `use_backup()` rewrites an unstarted task's header only after
+  `route.backup_ok()` confirms the recorded `Backup Tool:`/`Backup Model:`
+  meets the task's recorded requirement and carries no live hold on its
+  quota group. An inadequate or group-held backup never replaces a primary;
+  group holds stay scoped (`<tool>:<group>`).
+- The automatic scheduler applies no same-CLI independence removal: a
+  tester task admitted on the same tool as the task it checks launches on
+  it — tester independence is the fresh worker session on a disposable
+  checkout of the exact artifact (review isolation), and human-reported
+  availability never overrides an observed hold or the recorded adequacy
+  floor.
+- `route_report.py` task items now carry `assessmentStatus`,
+  `assessmentBand`, `required`, `floor`, `excluded`, `inadequate`,
+  `adequateHeld`, `blocked`, `admissions`, `humanExceptions`,
+  `admissionSource`, `admissionDeviation` and `humanExceptionReason`.
+  Absent metadata stays `null` — never fabricated.
+- `_template.md` documents the optional `Routing exception:` header field:
+  the auditable human override of routing admission.
+
+Migration: automatic launches now need the same recorded assessment that
+direct launches already require — run `python .agentflow/tools/route.py
+T-NNN` for open ready tasks (the Orchestrator does this per the mandatory
+routing policy), refresh it after a contract change, or record a
+`Routing exception:` header line for an auditable human override. With
+`AGENTFLOW_BACKUP_ROUTING=on`, a header `Backup Tool:` weaker than the
+recorded requirement or on a held quota group is left unused — re-route the
+task to record a usable backup. Legacy route histories without
+schemaVersion-1 assessment records report the new fields as `null`.
+
 ## 2.15.3 - 2026-10-18
 
 Launch enforcement of the routing assessment (T-076, second bounded delivery
