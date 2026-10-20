@@ -42,8 +42,10 @@ uses or changes this integration works from the official documentation, not from
    repository; never printed, logged or committed. Tests use a local stand-in server, never the real service.
 8. The option choice probabilities rank configured candidates, but selection is requirement-first: only options
    that can express the assessed effort (lifted by the project `floor` in model-options.json, never lowered) and
-   complexity are candidates. Among them the `floor` option leads, then `prefer`red CLIs, then the rest by Jev
-   probability. The backup is the highest-ranked adequate candidate on another CLI platform - a backup below the
+   complexity are candidates. Among them `prefer`red CLIs lead by Jev probability, then the rest; the
+   `recommended` map in model-options.json lists the project's preferred options per assessed effort tier and
+   orders probability ties and unranked candidates - Jev sees it as a `recommended_for` hint on each criterion.
+   The backup is the highest-ranked adequate candidate on another CLI platform - a backup below the
    requirement is ineligible. Missing executables and observed quota holds are excluded before the call and
    recorded per option; an adequate-but-held option is named so a blocked launch knows what it waits on. CLI model
    entitlement and account access can still fail only when a real session starts.

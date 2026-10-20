@@ -1,8 +1,17 @@
 {
-  "policy": "Judge the task's own requirements first, independent of availability. The project floor and preference is Devin swe-2-high: it is the minimum permitted default, never an override of a task that needs more. Per the human's 2026-10-18 policy, prefer Devin for development, fresh independent testing and orchestration; use another CLI only when no adequate Devin option is usable. Tester independence is a fresh session on an isolated checkout of the exact artifact - it does not require a different CLI. The human reports Devin has no usage limits until 2026-11-01 (a qualitative report without an exact cutoff, not a measured balance; actual observed holds still apply). Per the human on 2026-10-18, the Codex and Claude CLIs have no usable resources and do not work: both are statically excluded via their options' \"until\" fields until the human restores them (Devin-hosted model families on the devin quota group, including Devin-hosted Claude, are unaffected). Antigravity (agy) Claude and GPT families are quota-limited until about 2026-10-21; agy Gemini is a separately billed group that may still work - never treat one family's hold as proof the whole tool is dead, and never bypass an observed hold. Never lower the required capability or effort to fit a free slot: no adequate model means the task waits, with its reason recorded.",
+  "policy": "Judge the task's own requirements first, independent of availability. The project floor and preference is Devin swe-2-high: it is the minimum permitted default, never an override of a task that needs more. Per the human's 2026-10-18 policy, prefer Devin for development, fresh independent testing and orchestration; use another CLI only when no adequate Devin option is usable. Tester independence is a fresh session on an isolated checkout of the exact artifact - it does not require a different CLI. Devin's pool also includes gemini-4-argon (a 1M-token context, low/medium/high variants) for very complex tasks whose assessed requirement stays at or below high effort. The human reports Devin has no usage limits until 2026-11-01 (a qualitative report without an exact cutoff, not a measured balance; actual observed holds still apply). Per the human on 2026-10-18, the Codex and Claude CLIs have no usable resources and do not work: both are statically excluded via their options' \"until\" fields until the human restores them (Devin-hosted model families on the devin quota group, including Devin-hosted Claude, are unaffected). Antigravity (agy) Claude and GPT families are quota-limited until about 2026-10-21; agy Gemini is a separately billed group that may still work - never treat one family's hold as proof the whole tool is dead, and never bypass an observed hold. Never lower the required capability or effort to fit a free slot: no adequate model means the task waits, with its reason recorded.",
   "jev_model": "jev-1.13.0",
   "floor": {"option": "devin-swe-2", "effort": "high"},
   "prefer": ["devin"],
+  "recommended": {
+    "low": ["devin-swe-2"],
+    "medium": ["devin-swe-2", "devin-gpt-6-sol"],
+    "high": ["devin-swe-2", "devin-gpt-6-sol", "devin-gemini-4-argon", "devin-claude-opus-5.5", "agy-gemini-3.8-flash", "agy-gemini-3.1-pro"],
+    "xhigh": ["devin-gpt-6-astra", "devin-claude-opus-5.5", "devin-swe-2", "agy-claude-opus-4.6-thinking", "codex-gpt-6-astra", "claude-opus-5.5"],
+    "max": ["devin-gpt-6-astra", "devin-swe-2", "devin-claude-opus-5.5", "codex-gpt-6-astra", "claude-opus-5.5", "agy-claude-opus-4.6-thinking"],
+    "ultra": ["codex-gpt-6-astra", "codex-gpt-6.1-sol", "devin-gpt-6-astra"],
+    "default": ["devin-swe-2"]
+  },
   "options": {
     "devin-swe-2": {
       "tool": "devin",
@@ -32,6 +41,17 @@
       "what": "Devin-hosted Claude Opus model for demanding implementation, debugging and review work",
       "not_for": "small mechanical tasks or work swe-2 handles at floor cost",
       "examples": ["cross-cutting refactor", "subtle integration debugging", "critical-path review"],
+      "quota_group": "devin"
+    },
+    "devin-gemini-4-argon": {
+      "tool": "devin",
+      "model_by_effort": {"low": "gemini-4-argon-low", "medium": "gemini-4-argon-medium", "high": "gemini-4-argon-high"},
+      "default_effort": "high",
+      "roles": ["developer", "tester"],
+      "what": "Devin-hosted Gemini 4 Argon model with a 1M-token context for very complex, high-reasoning tasks whose assessed requirement stays at or below high effort",
+      "not_for": "requirements above high effort (its strongest variant reaches only high; xhigh+ belongs to astra or opus) or small mechanical tasks",
+      "examples": ["analyze a large subsystem in one context", "review a wide cross-cutting change"],
+      "context": "1M tokens",
       "quota_group": "devin"
     },
     "devin-gpt-6-sol": {

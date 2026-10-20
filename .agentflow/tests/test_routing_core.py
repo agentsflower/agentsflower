@@ -187,17 +187,28 @@ class RoutingCoreTests(unittest.TestCase):
         codex = OPTS["options"]["codex-ultra"]
         self.assertEqual(route.resolve_requirement(codex, "low"), ("gpt-x", "low", "low"))
 
-    def test_admission_order_floor_then_preferred_then_rest(self):
-        cfg = {"floor": {"option": "devin-swe-2", "effort": "high"}, "prefer": ["devin"]}
+    def test_admission_order_preferred_then_jev_then_recommended(self):
+        """Ordering (human, 2026-10-20): preferred CLIs lead; inside each group Jev's probability ranks,
+        the 'recommended' list for the assessed tier orders ties and unranked candidates."""
+        cfg = {"floor": {"option": "devin-swe-2", "effort": "high"}, "prefer": ["devin"],
+               "recommended": {"high": ["agy-flash", "codex-ultra"]}}
         cands = OPTS["options"]
         probs = {"codex-ultra": 0.9, "agy-flash": 0.7, "devin-swe-2": 0.05}
-        order = route.admission_order(cands, cfg, probs)
-        self.assertEqual(order[0], "devin-swe-2", "the floor option leads when it can meet it")
+        order = route.admission_order(cands, cfg, probs, "high")
+        self.assertEqual(order[0], "devin-swe-2", "the preferred CLI leads even at a low Jev rank")
         self.assertEqual(order[1], "codex-ultra", "Jev ranking orders the non-preferred remainder")
-        nofloor = route.admission_order({"codex-ultra": cands["codex-ultra"],
-                                         "agy-flash": cands["agy-flash"]},
-                                        cfg, probs)
-        self.assertEqual(nofloor[0], "codex-ultra")
+        devins = {"devin-swe-2": cands["devin-swe-2"],
+                  "devin-pro": {"tool": "devin", "model": "swe-x", "tier": "high"}}
+        order = route.admission_order(devins, cfg, {"devin-pro": 0.9, "devin-swe-2": 0.05}, "high")
+        self.assertEqual(order[0], "devin-pro",
+                         "inside the preferred CLI Jev's rank picks the model, not the floor option")
+        tied = route.admission_order(cands, cfg, {"codex-ultra": 0.5, "agy-flash": 0.5}, "high")
+        self.assertLess(tied.index("agy-flash"), tied.index("codex-ultra"),
+                        "a probability tie falls to the tier's recommended order")
+        unranked = route.admission_order(
+            cands, {"prefer": [], "recommended": {"high": ["codex-ultra", "agy-flash"]}}, {}, "high")
+        self.assertEqual(unranked[:2], ["codex-ultra", "agy-flash"],
+                         "with no Jev ranking and no preference the recommended list orders candidates")
 
     # --- record-level admission ---------------------------------------------------
     def test_missing_stale_failed_and_low_confidence_are_diagnosable_blocks(self):
@@ -391,7 +402,8 @@ class RoutingRecordTests(unittest.TestCase):
     def write_options(self, extra):
         cfg = {"policy": "floor first", "jev_model": "jev-1.13.0",
                "floor": {"option": "devin-swe-2", "effort": "high"},
-               "prefer": ["devin"], "options": dict(OPTS["options"])}
+               "prefer": ["devin"], "recommended": {"high": ["devin-swe-2"]},
+               "options": dict(OPTS["options"])}
         cfg.update(extra)
         (self.root / ".agentflow" / "docs" / "model-options.json").write_text(
             json.dumps(cfg), encoding="utf-8")
@@ -423,13 +435,15 @@ class RoutingRecordTests(unittest.TestCase):
         self.assertEqual(rec["required"]["effort"], "high",
                          "the project floor lifts Jev's 'low', never lowers it")
         self.assertEqual(rec["floor"]["option"], "devin-swe-2")
+        self.assertEqual(rec["recommended"], ["devin-swe-2"],
+                         "the record names the fallback order applied for the assessed tier")
         self.assertEqual(rec["selected"]["model"], "swe-2-high")
         self.assertEqual(rec["jev"]["requestId"], "req_core")
         self.assertEqual(rec["requestId"], "req_core")
         self.assertIn("availability", rec)
         self.assertIn("claude-plain", rec["inadequate"])
 
-    def test_floor_beats_a_higher_ranked_other_cli(self):
+    def test_preferred_cli_beats_a_higher_ranked_other_cli(self):
         Fake.answers = answers(choice="codex-ultra",
                                probabilities={"codex-ultra": 0.9, "devin-swe-2": 0.1})
         r = self.route("T-099")

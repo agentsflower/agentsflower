@@ -77,12 +77,12 @@ class ResolutionTests(Base):
 
     def test_project_file_names_an_agy_default_and_its_groups(self):
         real = quota_groups.options(FLOW / "docs" / "model-options.json")
-        for name, o in real.items():
-            self.assertNotIn("argon", name + json.dumps(o), name)
         self.assertEqual(real["agy"]["quota_group"], "agy-gemini",
                          "the option named after the tool defines the CLI default group")
         self.assertEqual({o["quota_group"] for o in real.values() if o.get("quota_group")},
                          {"devin", "codex", "agy-gemini", "agy-claude-gpt", "claude"})
+        self.assertEqual(quota_groups.group_for("devin", "gemini-4-argon-high", real), "devin",
+                         "Devin's argon variants resolve inside the devin quota group")
 
 
 class MachineGroupHoldTests(Base):

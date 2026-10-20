@@ -2,6 +2,45 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.5 - 2026-10-20
+
+Jev-led model selection inside the preferred CLI and a Devin pool update
+(human instruction, 2026-10-20): among adequate options Jev's own ranking now
+picks the model, a configured per-tier `recommended` list orders ties and
+unranked candidates, and `devin-gemini-4-argon` joins the option pool.
+
+- `model-options.json` gains `devin-gemini-4-argon`
+  (`gemini-4-argon-low/-medium/-high`, 1M-token context, devin quota group,
+  developer/tester roles): a top-context model for very complex tasks whose
+  assessed requirement stays at or below high effort - its strongest variant
+  reaches only `high`, so xhigh+ requirements still belong to astra, opus or
+  swe-2-max. This fulfils the recorded 2026-10-18 instruction to include
+  Argon in the top-tier pool; the legacy argon negative assertion in
+  `test_quota_groups.py` is removed and the variant now resolves inside the
+  devin group.
+- New `recommended` map in `model-options.json`: assessed effort tier ->
+  ordered option list (with a `default` list when the tier names none). Jev
+  sees it as a `recommended_for` hint on each option criterion; code applies
+  it only as the fallback order for probability ties and unranked adequate
+  candidates - it never creates eligibility and never lowers the
+  requirement.
+- `admission_order` ordering is now: preferred CLIs first, inside each group
+  by Jev probability, the `recommended` list ordering ties, then name. The
+  configured `floor` option no longer has a dedicated first rank - it still
+  lifts the requirement effort and leads the low-tier recommended lists.
+  Assessment records persist the applied `recommended` list, and
+  `selectionReason` names a Jev rank, a policy preference, a recommended
+  tie-break or a name-order break.
+- `plan_route.py` forwards the map into the Jev questions and uses the same
+  ordering for planning recommendations.
+
+Migration: run `install.py --update`. Projects wanting the new ordering add a
+`recommended` map to their `docs/model-options.json`; without it selection
+falls back to prefer + Jev probability (the floor's dedicated first rank is
+gone there too). To adopt Devin Argon add the `devin-gemini-4-argon` option
+and verify the concrete model ids against `devin models list` - the local
+catalog was not checked for this change (CLI unauthenticated).
+
 ## 2.15.3 - 2026-10-18
 
 Launch enforcement of the routing assessment (T-076, second bounded delivery

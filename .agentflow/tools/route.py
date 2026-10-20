@@ -19,6 +19,7 @@ Options: `.agentflow/docs/model-options.json` (project-owned):
    "jev_model": "jev-1.13.0",
    "floor": {"option": "devin-swe-2", "effort": "high"},   # minimum permitted default, never a downgrade
    "prefer": ["devin"],                                   # CLI preference among adequate options only
+   "recommended": {"high": ["devin-swe-2", "devin-gpt-6-sol"], ...},   # per-tier fallback order
    "options": {"<id>": {"tool": "codex|claude|agy|devin", "model": "...",
                         "efforts": ["low", "medium", "high"],
                         "model_by_effort": {"low": "model-low", "high": "model-high"},
@@ -33,8 +34,9 @@ of the developer task it checks while another option remains (protocol: Tool Rou
 Enforcement (the routing policy): every call persists an assessment record - schemaVersion 1, event
 "assessment" - in .agentflow/tasks/.runtime/T-NNN.route.json, bound to the task's requirementsHash
 (header minus the routing fields Tool/Model/Backup/Routing exception/Resume). Its `status` is
-  ok              an adequate option was selected under the ordering: the floor option first when it can
-                  meet the requirement, then preferred CLIs, then everything else - each by Jev ranking;
+  ok              an adequate option was selected under the ordering: preferred CLIs first, then the
+                  rest - inside each group by Jev probability, the 'recommended' list for the assessed
+                  tier ordering probability ties and unranked candidates;
   blocked         nothing adequate is usable (the record names why per option) - the launch waits;
   low-confidence  Jev answered below the low band - never admission evidence;
   failed          the assessment could not complete (no key, API error, no options file) - never evidence.
@@ -209,17 +211,28 @@ def resolve_requirement(o, required_effort):
     return model, effort, tier
 
 
-def admission_order(candidates, cfg, probabilities):
-    """The policy order over adequate+usable options: the configured floor option first, then the
-    preferred CLIs, then the rest - inside each group by Jev probability. CLI preference never ranks an
-    inadequate option: this sorts only options that already meet the requirement."""
-    floor_option = (cfg.get("floor") or {}).get("option")
+def recommended_order(cfg, required_effort):
+    """The configured fallback order for an assessed requirement tier: 'recommended' maps an effort
+    tier to an ordered option list, with 'default' when the tier names none. It never creates
+    eligibility - it orders only the adequate candidates already selected for a task."""
+    rec = cfg.get("recommended") or {}
+    if not isinstance(rec, dict):
+        return []
+    return rec.get(required_effort) or rec.get("default") or []
+
+
+def admission_order(candidates, cfg, probabilities, required_effort=None):
+    """The policy order over adequate+usable options: preferred CLIs first, then the rest - inside
+    each group by Jev probability, the configured 'recommended' list for the assessed tier ordering
+    probability ties and unranked candidates, then name. CLI preference never ranks an inadequate
+    option: this sorts only options that already meet the requirement."""
     prefer = cfg.get("prefer") or []
+    rank = {name: i for i, name in enumerate(recommended_order(cfg, required_effort))}
 
     def key(name):
         o = candidates[name]
-        rank = 0 if name == floor_option else 1 if o.get("tool") in prefer else 2
-        return (rank, -probabilities.get(name, 0), name)
+        return (0 if o.get("tool") in prefer else 1, -probabilities.get(name, 0),
+                rank.get(name, len(rank)), name)
     return sorted(candidates, key=key)
 
 
@@ -262,13 +275,25 @@ def task_state(t, text, routing_date=None):
     return {"routing_date": routing_date or date.today().isoformat(), "task": task}
 
 
-def questions(options, policy):
+def questions(options, policy, recommended=None):
+    rec_map = recommended if isinstance(recommended, dict) else {}
+    criteria = {}
+    for name, o in options.items():
+        c = criterion(o)
+        tiers = sorted((t for t, lst in rec_map.items()
+                        if t != "default" and name in (lst or [])),
+                       key=lambda t: EFFORT_ORDER.index(t) if t in EFFORT_ORDER else len(EFFORT_ORDER))
+        if tiers:
+            c["recommended_for"] = tiers
+        criteria[name] = c
     return {
         "option": {"type": "choice",
                    "instructions": {"question": "Which option should take this task?",
                                     "project_policy": policy or "none",
-                                    "note": "Options are alternatives; weigh the task against what each is for."},
-                   "criteria": {k: criterion(v) for k, v in options.items()}},
+                                    "note": "Options are alternatives; weigh the task against what each "
+                                            "is for. recommended_for names the assessed effort tiers the "
+                                            "project recommends the option for."},
+                   "criteria": criteria},
         "complexity": {"type": "score",
                        "instructions": "How hard is this task for a capable software engineer?",
                        "criteria": COMPLEXITY},
@@ -393,7 +418,8 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
             print(f"{tid}: blocked - {rec['blocked']}: " +
                   "; ".join(f"{k}: {v}" for k, v in list(excluded.items())[:6]))
             return BLOCKED
-        answers, meta = ask(task_state(t, text, today), questions(eligible, cfg.get("policy", "")),
+        answers, meta = ask(task_state(t, text, today),
+                            questions(eligible, cfg.get("policy", ""), cfg.get("recommended")),
                             api_key(), cfg.get("jev_model", JEV_MODEL), opener)
     except NoDecision as e:
         rec["error"] = str(e)
@@ -415,7 +441,7 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     for name, o in eligible.items():
         r = adequate_reason(o, required)
         (inadequate if r else candidates).__setitem__(name, r or o)
-    order = admission_order(candidates, cfg, probs)
+    order = admission_order(candidates, cfg, probs, required["effort"])
     # Options that meet the requirement but cannot run now: the resource reason a blocked launch waits on.
     held = {}
     for name, o in all_options.items():
@@ -460,12 +486,22 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     elif jev_choice in held:
         reason = f"{jev_choice} is held ({held[jev_choice]}); {choice} is the adequate pick"
     elif jev_choice in candidates:
-        reason = f"{jev_choice} is adequate; the policy order prefers {choice}"
+        pc, pj = probs.get(choice, 0), probs.get(jev_choice, 0)
+        if pc > pj:
+            reason = f"Jev ranks {choice} above {jev_choice} among adequate options"
+        elif pc < pj:
+            reason = f"{jev_choice} is adequate; the policy order prefers {choice}"
+        else:
+            rank = {n: i for i, n in enumerate(recommended_order(cfg, required["effort"]))}
+            reason = (f"{jev_choice} is adequate; the recommended order breaks the tie for {choice}"
+                      if rank.get(choice, -1) != rank.get(jev_choice, -1)
+                      else f"{jev_choice} is adequate; a name-order break of the tie gives {choice}")
     elif jev_choice:
         reason = f"{jev_choice} is not eligible ({excluded.get(jev_choice, 'unconfigured')}); {choice} is the pick"
     else:
         reason = "Jev named no option; the policy order selected"
     rec.update({"floor": _floor_record(cfg), "prefer": cfg.get("prefer") or [],
+                "recommended": recommended_order(cfg, required["effort"]),
                 "required": required, "inadequate": inadequate, "adequateHeld": held,
                 "candidates": order, "jevChoice": jev_choice, "choice": choice,
                 "probabilities": probs, "confidence": conf, "band": band(conf),

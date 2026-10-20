@@ -20,7 +20,7 @@ def recommend(goal, config, current_tool=None, current_model=None, asker=route.a
     state = {"planning_date": date.today().isoformat(),
              "planning": {"goal": route.clip(goal, 2500), "kind": kind}}
     policy = config.get("policy", "") + " Choose a model capable of planning this goal; the current chat is only the interface."
-    qs = route.questions(options, policy)
+    qs = route.questions(options, policy, config.get("recommended"))
     if kind != "plan":
         qs["effort"]["instructions"]["note"] += \
             f" This is a {kind} decision: judge the effort the decision itself needs, not the task's."
@@ -34,7 +34,7 @@ def recommend(goal, config, current_tool=None, current_model=None, asker=route.a
     candidates = {n: o for n, o in options.items() if route.adequate_reason(o, required) is None}
     if not candidates:
         raise route.NoDecision("no usable option can meet the assessed planning requirement")
-    order = route.admission_order(candidates, config, probabilities)
+    order = route.admission_order(candidates, config, probabilities, required.get("effort"))
     chosen = order[0]
     model, flag, resolved = route.resolve_requirement(options[chosen], effort)
     backup_name = next((n for n in order[1:] if options[n]["tool"] != options[chosen]["tool"]), None)

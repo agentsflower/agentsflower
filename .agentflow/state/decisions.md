@@ -1,5 +1,26 @@
 # Decision Log
 
+## 2026-10-20: Jev-led model selection inside the preferred CLI; Devin Argon option
+
+Human instruction: update the Devin model pool (Devin carries gpt-astra and
+argon families too), record recommended options per assessed tier, and let
+Jev's own values drive the model/effort decision while platform availability
+stays honored (today only Devin is usable; codex/claude CLIs stay statically
+excluded and agy holds until ~2026-10-21).
+Decided: `devin-gemini-4-argon` (low/medium/high variants, 1M context) joins
+the pool per the recorded 2026-10-18 instruction, capped at <= high
+requirements - its strongest variant reaches only high, so xhigh+ stays with
+astra, opus or swe-2-max. A new `recommended` map (tier -> ordered options)
+is shown to Jev as `recommended_for` on each criterion and applied by
+`admission_order` only to break probability ties and order unranked
+candidates; the ordering is preferred CLI group -> Jev probability ->
+recommended -> name, so Jev's ranking picks the model inside the preferred
+CLI and the floor option loses its dedicated first rank (it still lifts the
+requirement effort). The live Devin catalog was not queried (CLI
+unauthenticated): verify argon ids against `devin models list` when logged
+in. Rejected: crediting argon-high for xhigh+ requirements (human chose the
+<= high cap) and a strict recommended-first order (human chose Jev-leads).
+
 ## 2026-10-18: Urgent stalled-work repair and scoped routing exception
 
 Subsequent read-only diagnostics identified the stop actor: Devin session
