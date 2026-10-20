@@ -315,3 +315,22 @@ provenance and actual-hold/adequacy safeguards. Foreign questions.md preserved.
   repointed T-091 -> T-093 so the approved chain survives the rejection.
   devin CLI is authenticated again (`devin auth status`: logged in) - the
   earlier launch block is resolved.
+
+## 2026-10-20: Jev-led model selection + Devin Argon pool (2.15.5)
+
+Human instruction (in this chat): update the Devin model pool, record
+recommended options per assessed tier, and let Jev's values drive the
+model/effort decision while platform availability stays honored. Single Mode
+change on branch chore/jev-recommended-routing, merged to main 890ff21:
+devin-gemini-4-argon (low/medium/high, 1M context, devin group) added capped
+at <= high requirements; new `recommended` map (tier -> ordered options)
+shown to Jev as recommended_for and applied by admission_order only for
+probability ties/unranked candidates; ordering is prefer group -> Jev
+probability -> recommended -> name (floor lost its dedicated first rank,
+still lifts the requirement). plan_route uses the same ordering; typesafe.md
+rule 8 updated; test_routing_core ordering test rewritten; argon assertion
+in test_quota_groups replaced with a devin-group resolution check. 409 tests
+pass (3 skipped). Pending: human will paste `devin models list` to verify
+the concrete model ids (CLI was unauthenticated at change time); 2.15.4 from
+the T-093 line lands after this - merge keeps both CHANGELOG sections,
+VERSION stays 2.15.5.
