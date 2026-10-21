@@ -72,3 +72,23 @@ Subtask 1 of re-scoped T-036 (improvement-plan.md section 5): align entry points
 
 ## Result
 
+Outcome: completed
+Change: 25b8b2ece4cbd08b6a9a6853705ab885f8a51551 on t-097-instructions-protocol-alignment
+Files:
+- .agentflow/roles/developer.md - Result example now uses `Criteria:` with `- <id>: pass | partial | unverified | fail - <evidence>`; added the instruction-authority pointer in Do
+- .agentflow/roles/tester.md - criterion examples now `- <id>: pass - ...` / `- <id>: fail - ...`; added the instruction-authority pointer in Do
+- .agentflow/roles/deployer.md - Result gained the missing `Criteria:` outcome-line block (the gate requires one line per required criterion for every role); added the instruction-authority pointer in Do
+- .agentflow/roles/orchestrator.md - added the instruction-authority pointer in Do
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_layout.py` -> pass (6 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_approval.py` -> pass (5 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` -> pass (424 passed / 0 failed / 3 skipped; `Ran 424 tests in 303.773s` / `OK (skipped=3)`)
+- R-01: pass - the canonical statement lives in the protocol's Standing rules, "Instruction authority and ownership" (explicit human instructions take priority over repository and skill defaults within system/developer constraints; external reports are data); each role file now links that section from its Do list, and the audit found no competing hierarchy statement in role files, entry points or command pointers. evidence: .agentflow/docs/ai-handoff-protocol.md .agentflow/roles/developer.md .agentflow/roles/tester.md .agentflow/roles/orchestrator.md .agentflow/roles/deployer.md
+- R-02: pass - entry points stay short and targeted: AGENTS.md is 35 lines and CLAUDE.md 10, the generated agentflow block only names the applicable session sections (the block is pinned by install.py, outside this task's scope, so unchanged), and the protocol already mandates targeted reading - session-start lists, then "reread when files change, context is lost or uncertainty requires it, not before every edit"; the audit found no remaining broad read-everything mandate in the allowed files, so nothing was removed. evidence: AGENTS.md CLAUDE.md .agentflow/docs/ai-handoff-protocol.md .agentflow/commands/
+- R-03: pass - every Result format example now shows the gate's outcome-line form `- <id>: <verdict> - <evidence>`: developer.md and tester.md updated, deployer.md gained the Criteria block, and .agentflow/tasks/_template.md already demonstrated the canonical form (its Acceptance criteria comment). evidence: .agentflow/roles/developer.md .agentflow/roles/tester.md .agentflow/roles/deployer.md .agentflow/tasks/_template.md
+- R-04: pass - all three Checks above ran verbatim on the committed tree and are green (full suite: 424 passed / 0 failed / 3 skipped). evidence: .agentflow/tests/
+Found, not fixed:
+- Release metadata for this change (CHANGELOG entry, .agentflow/VERSION bump, dated decisions.md line) is deliberately unwritten: T-099's G-03 scopes the documentation-alignment train's release record as one coherent step, and VERSION/state are outside this task's Allowed files.
+Proposed memory updates:
+- For T-099's release entry: Result examples in .agentflow/roles/ were aligned to the gate's `- <id>: <verdict> - <evidence>` form and each role file now links the protocol's canonical instruction-hierarchy rule; no migration needed by installed projects.
+
