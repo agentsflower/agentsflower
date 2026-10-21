@@ -369,3 +369,20 @@ per line over the full inherited set. Jev assessed ok (req_01a15d82, band
 medium 0.81 after a leaner contract; devin-swe-2 0.95, floor resolves effort
 to swe-2-high) - Orchestrator confirmed. Launched managed devin attempt 1
 (pid 29976, log .runtime/T-095.1.log). T-036/T-066 still wait on the carrier.
+
+## 2026-10-21 (3): T-095 carrier verified, stale-branch merge successor T-096 launched
+
+Background session devin (devin-background), continued. T-095 carrier completed
+in ~3 min: branch reset onto 0477331, scoped checks 52+11+25 green, Result
+completed -> `gate.py verify` PASS. `accept.py` then stopped at the trial
+merge: VERSION/AGENTS.md/CHANGELOG.md conflict (branch 2.15.4 vs main 2.15.5)
+- the anticipated stale-branch case. Rejected T-095 -> T-096 merge-only
+successor: branch from main, merge t-095-fixed-clock-carrier, resolution
+pinned line-by-line (VERSION/AGENTS block = 2.15.5; CHANGELOG = verbatim
+2.15.5 entry then verbatim 2.15.4 entry), full suite required on the merge
+SHA (route.py/typesafe.md/test_quota_groups.py auto-merged = changed input).
+Jev assessed ok after a leaner contract wording (req_01a15d89a, band medium
+0.86; devin-swe-2 0.88, floor resolves effort to swe-2-high) - Orchestrator
+confirmed. Launched managed devin attempt 1 (pid 3092, deadline ~08:4xZ, log
+.runtime/T-096.1.log). Lesson recorded: comma-separated `Allowed files`
+bullets silently fail the scope gate - one path per line (known-issues).
