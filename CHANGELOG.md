@@ -2,6 +2,50 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.7 - 2026-10-21
+
+Stage 5 close-out (improvement-plan section 6, T-038): a reproducible
+scenario suite now exercises the lifecycle, recovery and evidence machinery
+end to end in disposable repositories, an update test proves open tasks
+survive `install.py --update`, and this entry consolidates the Stage 5
+releases (2.12.1-2.15.7) into one migration path. This is the final Stage 5
+version.
+
+- `.agentflow/tests/test_scenarios.py` (new) drives the real `run_task.py`,
+  `gate.py`, `accept.py`, `tick.py` and `ledger.py` in disposable git
+  repositories through the plan's named cases: a bug-fix task carried from a
+  red project check to an accepted merge, a contract-change task where a
+  passed verify does not carry to a moved artifact or a moved base, a
+  quota/limit recovery (classified `limit`, draft preserved, the recorded
+  hold refuses a same-tool relaunch until it expires, the successor is
+  told), and an interrupted-merge recovery (git state plus
+  `T-NNN.accept.json` resume it - merged once, never twice). Simulated
+  workers are marked `_simulated` in the test names; the real-platform
+  variant is skipped unless `AGENTFLOW_REAL_PLATFORM=1`, never faked.
+- The same module proves open-task migration safety: `install.py --update`
+  onto a fixture project holding open Task Files and a mixed-status ledger
+  preserves every project-owned byte (ledger, Task Files, rules, plan,
+  state, model options, runbook) while replacing all template-owned files
+  and entry-point blocks, and the preserved open task still parses under
+  the new `gate.py` and reads under the new `ledger.py`.
+- `.agentflow/docs/release-validation.md` gains the Stage 5 evidence map:
+  what is locally verified, what still needs remote CI (the
+  windows-latest/macos-latest failure of run `39026298541` stays an open
+  gap) and what is simulation-only.
+
+Migration: one `install.py --update` covers every intermediate Stage 5
+release - template files are replaced cumulatively, so no step-wise update
+is needed. Then apply the task-side notes the entries record: worker
+launches need a routing assessment (`route.py T-NNN`) or a
+`Routing exception:` header line (2.15.3/2.15.4), a running conductor must
+be restarted to pick up the watchdog (2.15.1), and `model-options.json` may
+gain `quota_group` (2.13.0), `floor`/`prefer` (2.15.2) and `recommended`
+(2.15.5) - all optional project-owned settings. Open Task Files, the ledger
+and state need no data migration. Scope honesty: no external rollout exists
+or is claimed - the project has been repository-only since 2026-10-17, and
+the remote-CI gap above stays open until a green
+windows-latest/macos-latest run exists.
+
 ## 2.15.6 - 2026-10-21
 
 Documentation-alignment train (T-097 core instructions, T-098 shipped-features

@@ -44,6 +44,34 @@ never presented as a green macOS run.
   read. No green macOS result exists: do not claim macOS compatibility from
   this file or from a local Windows/Linux pass alone.
 
+## Stage 5 evaluation evidence (2.12.1-2.15.7)
+
+Improvement-plan section 6 asks for reproducible scenarios and a migration
+proof. What that work actually verified, and what it did not:
+
+- **Locally verified (this machine, Windows 10 / Python 3.13):**
+  `.agentflow/tests/test_scenarios.py` drives the real `run_task.py`,
+  `gate.py`, `accept.py`, `tick.py` and `ledger.py` in disposable git
+  repositories through four named cases — a bug-fix task, a contract-change
+  task (a passed verify does not carry to a moved artifact or a moved base),
+  a quota/limit recovery and an interrupted-merge recovery — plus an
+  `install.py --update` fixture proving open Task Files, ledger statuses and
+  project-owned docs/settings survive an update byte-for-byte and stay
+  operable under the new tools. The full suite
+  (`python -m unittest discover -s .agentflow/tests`) passes including these.
+- **Simulation-only:** every worker in the scenario fixtures is a fake CLI
+  script; no real model, account or provider is contacted. The provider-limit
+  line, the hold expiry and the accept crash are simulated (marked `_simulated`
+  in the test names). A real-platform launch variant exists but is skipped
+  unless `AGENTFLOW_REAL_PLATFORM=1` — it is never faked. The migration proof
+  covers a disposable fixture, not a production project; no external rollout
+  has happened since the 2026-10-17 repository-only scope was set, and none
+  is claimed.
+- **Still needs remote CI:** a green `tests (windows-latest, ...)` and
+  `tests (macos-latest, ...)` job on the new suite size. The recorded failure
+  above (run `39026298541`) is an open evidence gap, unchanged by the local
+  additions — local green never substitutes for those cells.
+
 ## How to obtain a green remote run (human steps)
 
 1. Push a branch containing `.github/workflows/ci.yml` to
