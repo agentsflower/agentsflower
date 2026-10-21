@@ -50,3 +50,48 @@ The pages compare against these exact strings; change both sides together. Displ
 Three different questions, three different fields: ledger `status` (is it accepted), `result` (what the worker reported), `check` (what the independent review found). "Completed by worker" is not "Done", and a `fail` verdict is a completed negative report, not a worker failure.
 
 The page header shows the name of the repository folder containing `.agentflow/` (or `demo-project` in demo mode).
+
+## Roadmap data (payload `schemaVersion: 1`)
+
+Additive fields for the roadmap view; every field above is unchanged. All strings from project files are untrusted data: pages must escape them, and the build never fetches anything.
+
+| Field | Source | Values shown |
+|---|---|---|
+| `schemaVersion` | build.py | integer, `1`; absent in older payloads |
+| `stages[]` | `docs/project-plan.md` | one record per `### Stage <id>` heading, in source order (not sorted) |
+| `stages[].id`, `.title`, `.ordinal`, `.line` | plan heading | id text; title or `null`; 0-based source position; source line |
+| `stages[].declaredRaw`, `.declared`, `.declaredKey` | `Status:` block | raw text verbatim; normalized `Planned`/`Current`/`Closed` or `null` when unrecognized (raw still shown, warning issued) |
+| `stages[].source`, `.sourceRef`, `.sourceHref` | plan path | repo-relative file, anchor label, link relative to `out/` |
+| `stages[].exitCriteria` | `Exit criteria:` block | full block text verbatim, `null` when absent |
+| `stages[].criteria` | authored bullets | `null` = unstructured criteria (coverage unknown); else `[{id, text, evidence}]` |
+| `stages[].criteria[].evidence` | authored `evidence:` line | `{state: pass|fail|stale|pending|unknown, label, provenance, recorded, artifact, external, supersededBy, ref, refKind: file|url|invalid, refExists, refHref}` — absent keys stay absent |
+| `stages[].recurring` | `Recurring:` block | `{kind, note, cycles[]: {id, result, recorded, note, ref, refKind, refExists, refHref}}` — a completed cycle never closes the stage |
+| `stages[].historicalRefs` | `References:` block | `[{label, note}]`, display text only, never resolved |
+| `stages[].taskIds`, `.counts` | ledger join | linked task ids; `{accepted, active, review, blocked, ready, rejected, cancelled, other{}, total}` — the denominator is `total`; no percentage is computed, a zero-task stage has `total: 0`, not 0%/100% |
+| `stages[].coverage` | criteria states | `{kind: "authored", total, states{state: n}}` or `{kind: "unstructured"}` |
+| `stages[].duplicate`, `.diagnostics[]` | parser | duplicate stage ids are never resolved silently: both records are flagged and their tasks stay unmapped |
+| `tasks[].attempts` | `.runtime/T-NNN.json` | allowlisted fields only (n, tool, role, manual, status, exitCode, startedAt/finishedAt, requestedModel/requestedEffort, effectiveModel/effectiveEffort, toolVersion, limitHit, stopReason, workerTimeout, deadline, target, note, logRef); `null` = not recorded. Never argv/env/pid/paths/quota |
+| `tasks[].routing` | `.runtime/T-NNN.route.json` | `{assessments[], events[]}` allowlisted the same way (`usage`, `jev`, `probabilities`, `requestId`, `candidates`, `backup` internals are never exported); `null` = not recorded |
+| `tasks[].verifications` | `.runtime/T-NNN.verify.json` | allowlisted gate records; `checks[]` reduced to `{cmd, exit}` (no output text); `stale: true` when the record SHA does not match the task's current artifact; `null` = not recorded |
+| `diagnostics` | build | `{sources[]: {file, status: read|missing|unreadable|absent|synthetic, mtime, fingerprint}, warnings[], gaps[], unmappedTaskIds[], freshnessNote}` |
+| `provenance` | build | `{plan, ledger, taskFiles, runtime, git, payload, synthetic}` — `synthetic: true` marks the demo fixture |
+
+Three facts per stage stay independent: `declared` (what the plan says), `counts` (what the ledger did), `coverage` (what authored evidence says). A mismatch is a warning, never a rewrite. Tasks whose `stage` value is absent from the plan — or ambiguous because the id is duplicated — stay visible under `diagnostics.unmappedTaskIds`; bad stage data never hides task data.
+
+### Optional authored syntax in project-plan.md
+
+Not required — a plan with plain `Status:`/`Exit criteria:` paragraphs parses unchanged. To get per-criterion coverage, author inside a stage's `Exit criteria:` block:
+
+```markdown
+Exit criteria:
+- S5-E1: scenario suite passes            # - <ID>: <text>; the ID needs a digit or -/_
+  evidence: state=pass; label="recorded pass"; provenance="gate verify"; recorded=2026-10-20; artifact=abc1234; ref=.agentflow/state/x.md
+- S5-E2: external CI green
+  evidence: state=pending; external=true; ref=https://ci.example/run/1
+```
+
+- `evidence:` line indent under its criterion; `;`-separated `key=value` pairs (quote values containing `;`). Keys: `state` (pass/fail/stale/pending/unknown), `label`, `provenance`, `recorded`, `artifact`, `ref`, `external`, `supersededBy`.
+- `ref=` is checked at build: a path must resolve under the project root (traversal and symlink escapes are rejected, a missing target is shown as text with a warning); only `http(s)` URLs are treated as external references — `javascript:`/`data:` and other schemes are rejected. Nothing is ever fetched.
+- `Recurring: <kind>` block: note lines, then `- <cycle-id>: <result>; recorded=...; ref=...; note=...` bullets. A completed cycle does not close the stage.
+- `References:` block: `- <label>; note=...` bullets for historical evidence outside the repository — display text only.
+- A stage block ends at the next level-1..3 heading; deeper headings and fenced code blocks are opaque (a `### Stage` line inside a fence is ignored).

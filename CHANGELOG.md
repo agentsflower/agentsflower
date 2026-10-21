@@ -2,6 +2,52 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.8 - 2026-10-21
+
+Roadmap data layer for the dashboard (T-044, planning draft
+`.agentflow/tasks/.runtime/dashboard-roadmap-planning/PLAN.md` sections 1-3;
+mockup selection recorded in decisions.md 2026-10-18). `build.py` now parses
+`docs/project-plan.md` into stage records and joins them with ledger, Task File
+and `.runtime/` evidence into one `schemaVersion: 1` payload shared by both
+pages. All additions are additive: existing task fields are unchanged (a golden
+fixture in `test_dashboard.py` pins them against the pre-change build), and the
+pages themselves render exactly as before - the roadmap UI lands separately.
+
+- `stages[]`: every `### Stage <id>` section of the plan, in source order, with
+  declared status (raw + normalized), verbatim exit criteria, linked task ids
+  and execution counters with an explicit denominator. Declared status, task
+  counts and criterion evidence stay three independent facts; no stage-completion
+  percentage exists and a zero-task stage is "no local tasks", not 0%/100%.
+- Optional authored plan syntax (documented in `dashboard/README.md`, never
+  required): `- <ID>: <text>` criterion bullets with `evidence:` key=value
+  lines, `Recurring:` cycle blocks, `References:` historical links. Local
+  evidence refs must resolve under the project root; traversal, symlinks and
+  non-http(s) URL schemes are rejected; external refs are displayed, never
+  fetched.
+- `tasks[].attempts` / `.routing` / `.verifications`: allowlisted views of the
+  `.runtime/` records (attempt outcome, requested/effective model identity,
+  routing assessment and admission events, gate verify results with `stale`
+  artifact binding). Raw argv/env, paths, credentials, provider request ids and
+  quota data are never exported; absent or malformed records degrade to `null`
+  plus a diagnostic, never to invented values.
+- `diagnostics`: source fingerprints (plan/ledger/tasks/runtime/git), warnings
+  (duplicate stage ids, declared-vs-ledger mismatches, stale Verifies links,
+  ledger stages absent from the plan) and gaps (missing plan, absent runtime,
+  unstructured criteria). Duplicate stage ids are never resolved silently and
+  unmapped tasks stay listed.
+- `--demo` grew a six-stage fixture covering the plan's acceptance cases
+  (zero-task and historical stages, a recorded recurring cycle, accepted tasks
+  beside failed/pending external evidence, a duplicate-id warning, unmapped
+  task) and embedded attempt/routing/verify records; demo mode still reads no
+  canonical memory.
+
+Migration: `install.py --update` replaces the template files. Installed
+projects keep their existing `project-plan.md` untouched - plain
+`Status:`/`Exit criteria:` plans parse as before; the authored metadata syntax
+is opt-in. Projects that already wrote a roadmap view against the pre-1 payload
+should adopt `schemaVersion` - all 2.15.x fields are still present. Rebuild the
+dashboard (`python .agentflow/dashboard/build.py`) to pick up the new fields.
+
 ## 2.15.7 - 2026-10-21
 
 Stage 5 close-out (improvement-plan section 6, T-038): a reproducible
