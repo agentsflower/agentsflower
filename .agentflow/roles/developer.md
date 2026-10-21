@@ -8,7 +8,7 @@ Change the code so that the `Acceptance criteria` hold: the smallest change, wit
 
 ## Do
 
-- Follow the Project rules.
+- Follow the Project rules; an explicit human instruction takes priority over repository defaults - [Instruction authority and ownership](../docs/ai-handoff-protocol.md#instruction-authority-and-ownership).
 - The launcher created your worktree. Check: current folder = `Worktree`, current branch = `Branch`. Work only there.
 - Plan 2-5 steps and state assumptions before the first edit.
 - Test first: a test that shows the problem or the new behaviour, then the code that makes it pass.
@@ -43,8 +43,8 @@ Files:
 - path - what changed
 Checks:
 - `<command from ## Checks>` -> pass | fail (N passed / M failed)
-Criteria without a command:
-- <criterion> - how it was checked / why not
+Criteria:
+- <id>: pass | partial | unverified | fail - <evidence>
 Question or reason:   (blocked / failed only)
 Found, not fixed:
 - ...

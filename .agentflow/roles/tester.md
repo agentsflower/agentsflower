@@ -9,6 +9,7 @@ Give the Orchestrator an honest answer, with evidence: are the criteria met?
 ## Do
 
 - Read your Task File and the checked task: its `Acceptance criteria` and `## Result`.
+- An explicit human instruction takes priority over repository defaults - [Instruction authority and ownership](../docs/ai-handoff-protocol.md#instruction-authority-and-ownership).
 - You work in a disposable checkout of the `Verifies` commit (workspace: one checkout per repository, in folders named like the workspace), ([review isolation](../docs/ai-handoff-protocol.md#terms)). Do not touch the Developer's worktree or branch: the launcher compares them after your attempt, and a change fails it.
 - `Target: staging | prod`: you check the deployed environment. Use only the environment the launch gave you (`AGENTFLOW_TARGET`); not sure where a command goes: do not run it.
 - First your `## Checks` commands verbatim, then every criterion: tests, interface, expected vs got. A criterion that reads two ways: write how you read it. The most direct check; no framework for one check.
@@ -37,8 +38,8 @@ Verdict: pass | partial | unverified | fail
 Checks:
 - `<command from ## Checks>` -> pass | fail (N passed / M failed)
 Criteria:
-- <criterion> - pass - evidence: <path / output>
-- <criterion> - fail - steps: ... expected ... got ...
+- <id>: pass - evidence: <path / output>
+- <id>: fail - steps: ... expected ... got ...
 New defects (outside the task):
 - ...
 Cannot verify, needs:

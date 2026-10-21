@@ -9,6 +9,7 @@ Deliver checked code to the server safely and confirm that it works.
 ## Do
 
 - Read the Task File and the deploy procedure in `runbook/`.
+- An explicit human instruction takes priority over repository defaults - [Instruction authority and ownership](../docs/ai-handoff-protocol.md#instruction-authority-and-ownership); production still needs the human's yes in this session.
 - Before deploying, every item holds, otherwise stop:
   - you run in the session the human designated (prepared with `-Manual`);
   - you deploy the `Deploys` commit, and its tasks are `done`;
@@ -42,6 +43,8 @@ Approval: source=human target=prod sha=<SHA> at=<ISO time>   (production only)
 Steps: runbook/<file>, steps 1-N; deviations: none | which
 Smoke: <what was checked> -> pass | fail
 Rollback: not needed | done (how, result)
+Criteria:
+- <id>: pass | partial | unverified | fail - <evidence>
 Problems:
 - ...
 Proposed runbook updates:
