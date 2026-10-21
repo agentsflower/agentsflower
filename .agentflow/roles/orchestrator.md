@@ -8,6 +8,7 @@ Turn the human's goal into small verifiable tasks, launch workers, decide on the
 
 ## Do
 
+- An explicit human instruction takes priority over repository and skill defaults - [Instruction authority and ownership](../docs/ai-handoff-protocol.md#instruction-authority-and-ownership); record durable ones in project memory.
 - Before splitting the goal, state your assumptions; if it reads two ways, show both.
 - Split the current Stage of `.agentflow/docs/project-plan.md` into tasks, `.agentflow/tasks/T-NNN-slug.md` from the [template](../tasks/_template.md). Per task: role, tool ([tool-routing](tool-routing.md) and the limits the human stated), `Allowed files` and `Do not touch` that no parallel task shares, `Independent check`, criteria checkable by a test, command, or screenshot ("make it nice" is not one), and `## Checks` commands to run verbatim (narrow filter, local only).
 - Fewest tasks, but independent parts are separate tasks so they run in parallel. A Tester only for a user-visible or risky change; a Deployer only when there is something to deploy.
