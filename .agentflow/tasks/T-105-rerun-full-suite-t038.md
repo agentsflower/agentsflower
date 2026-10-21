@@ -70,3 +70,16 @@ Use the current gate format in Result: one `- R-01: pass - <evidence>` (or
 partial/unverified/fail) line for each R-01..R-02 plus `Verdict:`.
 
 ## Result
+Outcome: completed
+Verdict: pass
+Checks:
+- `python -m unittest discover -s .agentflow/tests` -> pass (432 passed / 0 failed, 4 skipped: platform and real-platform opt-ins) evidence: .agentflow/tasks/.runtime/T-105.evidence/T-105.check-fullsuite.txt
+Criteria:
+- R-01: pass - one verbatim run on detached HEAD d4c6e8daf318e943f0df098612ca58a5186b4e04 in a clean disposable checkout: Ran 432 tests in 373.343s, OK (skipped=4), EXITCODE=0; no PermissionError/WinError-5 os.replace signature present, so no rerun was needed; attempts recorded: 1 evidence: .agentflow/tasks/.runtime/T-105.evidence/T-105.check-fullsuite.txt
+- R-02: pass - T-104 criteria W-01..W-04, W-06 and the scoped-check part of W-05 stand on the earlier attempt's evidence chain (the folder .agentflow/tasks/.runtime/T-104.evidence, referenced as the prior task's record - not re-claimed as this task's evidence); nothing re-verified, nothing dropped; this attempt closed only the missing clean full-suite run evidence: .agentflow/tasks/.runtime/T-105.evidence/T-105.check-fullsuite.txt
+New defects (outside the task):
+- none; the documented %TEMP% os.replace WinError-5 flake did not recur in this run
+Cannot verify, needs:
+- nothing; the missing piece from T-104 is now covered on the exact SHA
+Proposed memory updates:
+- none new; T-104's proposed known-issues entry for the %TEMP% os.replace flake still stands

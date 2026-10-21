@@ -85,7 +85,7 @@ Checks:
 - `python .agentflow/tests/check_package.py` -> pass (all checks passed)
 Criteria:
 - V-01: pass - evidence: .agentflow/tests/test_scenarios.py; all four named cases run in disposable git repositories only; simulated workers carry `_simulated` in test names and docstrings; the real-platform variant is skipped unless AGENTFLOW_REAL_PLATFORM=1 (1 of the 4 suite skips), never faked
-- V-02: pass - evidence: .agentflow/tests/test_scenarios.py (OpenTaskMigrationTests): --update preserves ledger statuses, open Task Files, project-owned docs/settings and runbook byte-for-byte, delivers current template files, and the preserved task still reads under the new ledger.py/gate.py; test_stage5_changelog_entries_carry_migration_notes checks every entry >= 2.12.1 records a migration note
+- V-02: pass - evidence: .agentflow/tests/test_scenarios.py (OpenTaskMigrationTests): --update preserves ledger statuses, open Task Files, project-owned docs and settings and runbook byte-for-byte, delivers current template files, and the preserved task still reads under the new ledger and gate tools; test_stage5_changelog_entries_carry_migration_notes checks every entry >= 2.12.1 records a migration note
 - V-03: pass - evidence: .agentflow/docs/release-validation.md lines 47-73; run 39026298541 recorded as an open evidence gap
 - V-04: pass - evidence: CHANGELOG.md (2.15.7 entry), .agentflow/VERSION, AGENTS.md; no external rollout claimed, unmet external criteria recorded as out of scope
 - V-05: pass - full suite green verbatim including the new module; dated decisions.md text proposed below
