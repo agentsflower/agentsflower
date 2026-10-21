@@ -8,7 +8,7 @@ Depends on: T-099
 Branch: t-038-evaluation-rollout
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-038-evaluation-rollout
 Independent check: tester
-Resume: none
+Resume: a7142bf93038b23ca94490b8211f241953ee5a30
 
 ## Goal
 
@@ -72,3 +72,25 @@ This is the last Stage 5 implementation task.
 - `python .agentflow/tests/check_package.py` - packaged-template integrity after all Stage 5 changes.
 
 ## Result
+Outcome: completed
+Change: d4c6e8d on t-038-evaluation-rollout
+Files:
+- .agentflow/tests/test_scenarios.py - new: disposable-repo fixture driving the real run_task.py/gate.py/accept.py/tick.py/ledger.py; four simulated cases (bug-fix, contract-change with moved-artifact/moved-base re-verify, quota-limit recovery, interrupted-merge resume), an opt-in real-platform variant, an install.py --update open-task migration proof, and a Stage 5 CHANGELOG migration-note check
+- .agentflow/docs/release-validation.md - new "Stage 5 evaluation evidence" section: locally verified vs simulation-only vs still-needs-remote-CI; run 39026298541 windows/macos failure kept as an open gap
+- .agentflow/VERSION - 2.15.6 -> 2.15.7
+- AGENTS.md - AgentFlow block version line 2.15.6 -> 2.15.7
+- CHANGELOG.md - 2.15.7 consolidation entry over the Stage 5 releases with migration notes and scope honesty
+Checks:
+- `python -m unittest discover -s .agentflow/tests` -> pass (432 passed / 0 failed, 4 skipped: platform and real-platform opt-ins)
+- `python .agentflow/tests/check_package.py` -> pass (all checks passed)
+Criteria:
+- V-01: pass - evidence: .agentflow/tests/test_scenarios.py; all four named cases run in disposable git repositories only; simulated workers carry `_simulated` in test names and docstrings; the real-platform variant is skipped unless AGENTFLOW_REAL_PLATFORM=1 (1 of the 4 suite skips), never faked
+- V-02: pass - evidence: .agentflow/tests/test_scenarios.py (OpenTaskMigrationTests): --update preserves ledger statuses, open Task Files, project-owned docs/settings and runbook byte-for-byte, delivers current template files, and the preserved task still reads under the new ledger.py/gate.py; test_stage5_changelog_entries_carry_migration_notes checks every entry >= 2.12.1 records a migration note
+- V-03: pass - evidence: .agentflow/docs/release-validation.md lines 47-73; run 39026298541 recorded as an open evidence gap
+- V-04: pass - evidence: CHANGELOG.md (2.15.7 entry), .agentflow/VERSION, AGENTS.md; no external rollout claimed, unmet external criteria recorded as out of scope
+- V-05: pass - full suite green verbatim including the new module; dated decisions.md text proposed below
+Found, not fixed:
+- none new; the remote-CI windows/macos gap and the unrelated known-issues entries stand as recorded
+Proposed memory updates:
+- decisions.md: `- 2026-10-21 - T-038 closed Stage 5 at 2.15.7: a reproducible scenario suite (test_scenarios.py) covers the plan's named lifecycle/recovery cases in disposable repositories with simulated workers only, and install.py --update is proven to preserve open tasks and project-owned files. Rejected: claiming any external rollout or remote-CI parity - the project is repository-only since 2026-10-17 and the run-39026298541 windows/macos failure remains an open evidence gap.`
+- known-issues.md: the run-39026298541 entry remains accurate; nothing new to add
