@@ -909,7 +909,7 @@ def read_plan(problems):
         return PLAN.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         problems.append(f"{PLAN_REL} is missing - no stage records; every task falls in the Unmapped group")
-    except OSError as e:
+    except (OSError, ValueError) as e:
         problems.append(f"{PLAN_REL} is unreadable ({e}) - no stage records; every task falls in the Unmapped group")
     return None
 
@@ -976,7 +976,11 @@ def real_graph():
         t["sizeCls"] = size_class(t["size"])
         t["sizeN"] = (t["size"]["codeAdd"] + t["size"]["codeDel"]) if t["size"] else 0
 
-    sources = [file_source(PLAN, PLAN_REL), file_source(LEDGER, LEDGER_REL),
+    plan_source = file_source(PLAN, PLAN_REL)
+    if plan_text is None and plan_source["status"] == "read":
+        plan_source["status"] = "unreadable"  # bytes fingerprinted, but the text did not decode
+        plan_source["detail"] = "not decodable as UTF-8 text"
+    sources = [plan_source, file_source(LEDGER, LEDGER_REL),
                {"file": TASKS_REL + "/T-*.md", "status": "read" if files else "missing",
                 "mtime": None, "fingerprint": None, "detail": f"{len(files)} files read"},
                runtime_source(rt_missing),

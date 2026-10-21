@@ -40,6 +40,9 @@ pages themselves render exactly as before - the roadmap UI lands separately.
   beside failed/pending external evidence, a duplicate-id warning, unmapped
   task) and embedded attempt/routing/verify records; demo mode still reads no
   canonical memory.
+- Hardening (T-107): an undecodable `project-plan.md` (e.g. non-UTF-8 bytes)
+  now degrades to diagnostics - plan source `unreadable`, stage data absent -
+  instead of crashing the build; task data is still emitted.
 
 Migration: `install.py --update` replaces the template files. Installed
 projects keep their existing `project-plan.md` untouched - plain

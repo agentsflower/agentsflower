@@ -277,6 +277,18 @@ class PlanParserTests(unittest.TestCase):
         self.assertTrue(all(s["duplicate"] for s in dups))
         self.assertTrue(any("duplicate stage id '7'" in p for p in problems))
 
+    def test_undecodable_plan_is_a_diagnostic_not_a_crash(self):
+        """T-106 V-02 repro: non-UTF-8 plan bytes degrade like a missing plan."""
+        plan = self.base / "project-plan.md"
+        plan.write_bytes(b"\xff\xfe")
+        problems = []
+        with patch.object(dashboard, "PLAN", plan):
+            self.assertIsNone(dashboard.read_plan(problems))
+            with patch.object(Path, "read_text", side_effect=ValueError("weird plan bytes")):
+                self.assertIsNone(dashboard.read_plan(problems))
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(all("unreadable" in p for p in problems))
+
 
 class StageJoinTests(unittest.TestCase):
     def setUp(self):
