@@ -57,7 +57,7 @@ No additional plan approval is needed for the completed local task pool.
 - What waits on it: T-092 rewrite+launch -> T-091 acceptance -> T-036 -> T-038 ->
   T-044 -> T-046 -> T-048 and T-066.
 
-## 2026-10-21 - T-036 and T-066 launches need a routing decision (xhigh effort wobble)
+## 2026-10-21 - T-036 and T-066 launches need a routing decision (RESOLVED: human chose Option C + check all available models on low confidence) (RESOLVED)
 
 - Task: T-036 (docs alignment, leads the T-038->T-044->T-046->T-048 chain) and
   T-066 (hidden Windows consoles, queued behind the chain on purpose).
@@ -67,16 +67,14 @@ No additional plan approval is needed for the completed local task pool.
     xhigh confidence 0.42-0.45 -> status low-confidence (complexity ~1.86/2).
   - T-066: req_01a15d98d2 - devin-swe-2 at 0.92, effort xhigh confidence 0.42
     -> status low-confidence (complexity 1.98/2).
-  Jev clearly selects swe-2-max (the resolved pick both headers already carry)
-  but cannot certify the effort call at the top tier - the same reading three
-  times, not transient noise. The mandatory-routing policy blocks the launch
-  without an explicit auditable human exception; the Orchestrator cannot write
-  it. Which do you approve?
-  - A: `Routing exception: <reason>` in both headers; launch Devin swe-2-max -
-    Jev's own top pick both times and the model the headers already name.
-  - B: `Routing exception: <reason>`; launch Devin gemini-4-argon-* - Jev's
-    distant second (~0.07-0.20); weaker fit than A per its own ranking.
-  - C: re-scope T-036 into smaller tasks first (Option-D precedent) - real
-    plan-scope change, needs your split direction.
-- What waits on it: T-036 -> T-038 -> T-044 -> T-046 -> T-048; T-066 after
-  T-036. The routing-repair chain itself (through T-096) is fully merged.
+- Resolution: human chose Option C on 2026-10-21:
+  1. Re-scope T-036 into smaller, focused tasks with lower assessed complexity
+     (separating core instructions/protocol alignment, shipped features docs,
+     and user guides/Russian translation parity).
+  2. All other models from the available pool (including Devin astra, Devin claude
+     opus, Devin argon, Devin sol, agy gemini) remain eligible. In cases of ambiguity,
+     uncertainty, or low confidence for the top option, Jev/routing must evaluate the
+     other available models in the pool to select one with higher confidence rather
+     than halting.
+- What was unblocked: Orchestrator re-scopes T-036 into smaller subtasks under the
+  updated pool policy, assessments rerun for high-confidence launch.

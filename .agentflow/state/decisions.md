@@ -1,5 +1,16 @@
 # Decision Log
 
+## 2026-10-21: Re-scope T-036 and fall back across available pool for high-confidence routing
+
+Human instruction: approved Option C for T-036 / T-066 routing ambiguity.
+1. Re-scope T-036 into smaller, focused tasks with lower assessed complexity
+   (core instructions/protocol, shipped features docs, user guides/Russian parity)
+   to eliminate the top-tier effort wobble.
+2. Maintain the full available model pool (Devin swe-2, gpt-6-astra, claude-opus-5.5,
+   gemini-4-argon, gpt-6-sol, and agy Gemini). In case of ambiguity, uncertainty, or
+   low confidence on the top option, Jev/routing evaluates the other available models
+   in the pool to identify candidates with higher confidence rather than halting.
+
 ## 2026-10-20: Jev-led model selection inside the preferred CLI; Devin Argon option
 
 Human instruction: update the Devin model pool (Devin carries gpt-astra and
