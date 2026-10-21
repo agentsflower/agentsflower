@@ -461,6 +461,8 @@ def decide(rows, at=None):
                 else:
                     out.append((tid, "wait", f"quota policy: {hold['detail']} - the declared action pauses "
                                              "launches on it until a fresh reading shows headroom"))
+            elif (problems := route.assessment_problems(t, rt_dir=RT)[0]):
+                out.append((tid, "need", "routing admission: " + "; ".join(problems)))
             else:
                 out.append((tid, "launch", tool))
             continue
@@ -550,6 +552,9 @@ def use_backup(tid, current_tool):
     if not backup or backup not in LAUNCHABLE or backup == current_tool:
         return False, "no usable backup is recorded"
     model, effort = gate.parse_model(gate.field(head, "Backup Model"))
+    admissible, why = route.backup_ok(tid, backup, model, effort, rt_dir=RT)
+    if not admissible:
+        return False, f"backup {backup} is not admissible: {why}"
     group = tool_group(backup, model)
     if limited(backup, group) or not machine_capacity.has_capacity(backup, FLOW_ROOT.parent, group=group):
         return False, f"backup {backup} has no free slot"
@@ -560,7 +565,8 @@ def use_backup(tid, current_tool):
         return False, f"backup update failed: {output[-200:]}"
     try:
         route._log(tid, {"event": "backup-selected", "at": iso(now()), "primaryTool": current_tool,
-                         "tool": backup, "model": model, "effort": effort, "reason": "primary unavailable"})
+                         "tool": backup, "model": model, "effort": effort, "reason": "primary unavailable"},
+                   rt_dir=RT)
     except (OSError, ValueError):
         pass  # the ledger and Task File are authoritative for launch; a missing metric cannot block it
     return True, backup

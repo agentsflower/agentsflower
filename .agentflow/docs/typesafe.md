@@ -58,4 +58,9 @@ uses or changes this integration works from the official documentation, not from
     `route.assessment_problems()`, `route.admission()`, `route.backup_ok()` and `route.log_admission()` are the
     launch-side API wired into the launcher (T-076): every launch and retry is refused without a usable record,
     and `admission()` re-checks the resolved model/effort after `AGENTFLOW_<TOOL>_ARGS` overrides against the
-    recorded requirement.
+    recorded requirement. The scheduler uses the same API (T-078): `tick.py run` turns a ready task whose record
+    fails `assessment_problems()` into a diagnosable need instead of a doomed launch, and a backup switch
+    (`AGENTFLOW_BACKUP_ROUTING=on`) rewrites the header only after `backup_ok()` confirms the recorded backup
+    meets the requirement and carries no live group hold. `route_report.py` items expose the assessment's
+    status/band, `required`, `floor`, `excluded`/`inadequate`/`adequateHeld` and `blocked` reasons plus the
+    admission/human-exception counts, source, deviation and reason; absent metadata stays `null`, never invented.

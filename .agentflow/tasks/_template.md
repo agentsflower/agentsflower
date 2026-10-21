@@ -8,6 +8,7 @@ Tool: claude | codex | agy | devin | antigravity      <!-- ../roles/tool-routing
 Model: <model>[, effort=<level>]               <!-- optional; from docs/model-options.json or route.py; delete to use the tool's default -->
 Backup Tool: claude | codex | agy | devin        <!-- optional; Jev's best eligible alternative on another CLI -->
 Backup Model: <model>[, effort=<level>]        <!-- optional; selected only before the first attempt -->
+Routing exception: <reason>                    <!-- optional; auditable human override of routing admission, recorded as a human decision -->
 Stage: <Stage number from .agentflow/docs/project-plan.md>
 Depends on: T-xxx | none
 Repo: <repo>[, <repo>...]                      <!-- workspace only: repositories from .agentflow/workspace.json; delete the line in a single repository -->

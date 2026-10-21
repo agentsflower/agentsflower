@@ -52,6 +52,35 @@ class RouteReportTests(unittest.TestCase):
         self.assertEqual(result["groups"][0]["tasks"], 2)
         self.assertEqual(result["groups"][0]["backupUsed"], 1)
 
+    def test_assessment_and_admission_metadata_is_exposed_safely(self):
+        """T-078/S-02: the report surfaces assessment status, exclusions and the human-exception
+        record; absent fields stay None (unknown), never fabricated."""
+        rec = {"event": "assessment", "schemaVersion": 1, "status": "blocked",
+               "blocked": "no option is eligible", "jevChoice": "devin-swe-2",
+               "tool": "devin", "model": "swe-2-high",
+               "required": {"effort": "high", "complexity": 1.9},
+               "excluded": {"agy": "limited until ..."}, "inadequate": {"codex-sol": "cap"},
+               "adequateHeld": {"agy": "limited"}}
+        adm = {"event": "human-exception", "source": "human-exception",
+               "reason": "human assigned", "overrode": ["no recorded assessment"]}
+        item = route_report.summarize("T-9", {"Role": "developer", "Status": "in progress"},
+                                      [rec, adm], [])
+        self.assertEqual(item["assessmentStatus"], "blocked")
+        self.assertEqual(item["blocked"], "no option is eligible")
+        self.assertEqual(item["excluded"], {"agy": "limited until ..."})
+        self.assertEqual(item["inadequate"], {"codex-sol": "cap"})
+        self.assertEqual(item["adequateHeld"], {"agy": "limited"})
+        self.assertEqual(item["humanExceptions"], 1)
+        self.assertEqual(item["admissionSource"], "human-exception")
+        self.assertEqual(item["humanExceptionReason"], "human assigned")
+        self.assertIsNone(item["admissionDeviation"])
+        bare = route_report.summarize("T-8", {"Role": "developer", "Status": "done"},
+                                    [recommendation()], [])
+        self.assertIsNone(bare["assessmentStatus"])   # a legacy record has no status
+        self.assertIsNone(bare["excluded"])
+        self.assertEqual(bare["humanExceptions"], 0)
+        self.assertIsNone(bare["admissionSource"])
+
     def test_all_projects_combines_installed_reports_and_names_missing_versions(self):
         with tempfile.TemporaryDirectory() as temp:
             installed = Path(temp) / "installed"
