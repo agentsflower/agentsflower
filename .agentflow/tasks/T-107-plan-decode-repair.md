@@ -80,3 +80,23 @@ task's scope (recorded in known-issues).
 - `python -m unittest discover -s .agentflow/tests`
 
 ## Result
+Outcome: completed
+Change: 096040e on t-107-plan-decode-repair
+Files:
+- .agentflow/dashboard/build.py - read_plan catches (OSError, ValueError) so UnicodeDecodeError degrades to the `unreadable` diagnostic; real_graph marks the plan sources entry `unreadable` (keeping fingerprint, detail "not decodable as UTF-8 text") when bytes were readable but undecodable
+- .agentflow/tests/test_dashboard.py - PlanParserTests.test_undecodable_plan_is_a_diagnostic_not_a_crash: b"\xff\xfe" plan and a generic ValueError both return None with an `unreadable` diagnostic, no exception
+- CHANGELOG.md - one hardening line added to the unreleased 2.15.8 entry
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_dashboard.py` -> pass (31 passed / 0 failed)
+- `python .agentflow/dashboard/build.py` -> pass (89 tasks, 6 stages, 91 dependencies, 20 successors, 209 commits -> out/)
+- `python .agentflow/dashboard/build.py --demo` -> pass (8 tasks, 7 stages, 2 dependencies, 1 successors, 24 commits -> out/ [DEMO DATA])
+- `python -m unittest discover -s .agentflow/tests` -> pass (450 passed / 4 skipped)
+Criteria:
+- R-01: pass - live repro verified on the artifact base: worktree project-plan.md replaced with b"\xff\xfe", `python .agentflow/dashboard/build.py` exited 0 with 89 tasks and 0 stages emitted; payload shows plan source status "unreadable" (fingerprint kept, detail "not decodable as UTF-8 text"), warning "is unreadable ('utf-8' codec can't decode byte 0xff...)" and gap "project plan ... unavailable - stage data absent"; the b"\xff\xfe" repro is a regression test in test_dashboard.py
+- R-02: pass - decodable-malformed behavior untouched: parse_plan/join_stages unchanged, all 30 pre-existing dashboard tests still pass; the sources-status flip only fires when bytes read but text undecodable (missing->missing and OSError->unreadable paths unchanged)
+- R-03: pass - CHANGELOG 2.15.8 gained the "- Hardening (T-107)..." line; VERSION still 2.15.8, AGENTS block untouched
+- R-04: pass - all three T-044 Checks plus the full suite ran verbatim and green on 096040e
+Found, not fixed:
+- same UnicodeDecodeError fragility pre-exists in the ledger/Task File readers (LEDGER.read_text and Task File reads in real_graph) - predates the artifact, explicitly out of this task's scope (recorded in known-issues)
+Proposed memory updates:
+- none
