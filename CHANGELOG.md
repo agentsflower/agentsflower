@@ -2,6 +2,52 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.9 - 2026-10-21
+
+Roadmap view UI for the dashboard (T-046, per the planning draft sections 3-4
+and the human's 2026-10-18 decision approving all three mockup layouts).
+`build.py` now emits a third page, `out/roadmap.html`, from the same
+`schemaVersion: 1` payload the other pages consume; a Roadmap item joins the
+shared header navigation. Overview and Gantt & timeline render exactly as
+before - the payload, filter dimensions and shared task card are unchanged.
+
+- Three layouts behind a persisted selector (the human approved all three
+  mockups rather than picking one): **Cards** (stage-first cards with a plan
+  index rail and totals), **Journey** (the plan as a stepper with dated-record
+  spans) and **Matrix** (one expandable row per stage). The choice is kept in
+  `localStorage`.
+- Every declared stage renders regardless of task filters - filters slice only
+  the execution data and filtered-vs-total counts are shown explicitly
+  ("Showing N of M tasks · stage list unaffected"). The full filter set
+  (status, set-by, stage, role, agent, outcome, check, size, links, dates,
+  text search) works identically to the other pages.
+- Per stage, the three facts never merge: declared status (raw + normalized),
+  local task counts with an explicit denominator, and exit-criteria evidence
+  (pass/fail/stale/pending/unknown chips; unstructured criteria say "coverage
+  unknown"). Zero-task stages say "No local tasks" - no invented Done badge.
+  Recurring stages show the ongoing declaration separately from recorded
+  cycles; duplicate stage ids and declared-vs-ledger mismatches render as
+  warnings. Unmapped tasks keep their own visible group.
+- Task drill-down reuses the shared task card (status history, links,
+  independent check) plus an allowlisted execution section: recorded attempts,
+  routing assessment/floor/selection/availability summaries and gate verify
+  records with stale-artifact flags. Absent records say "not recorded";
+  missing fields say "unknown" - nothing is inferred.
+- A diagnostics card shows source freshness (build time, per-source mtimes and
+  content fingerprints), warnings, known gaps and payload provenance - labeled
+  as a build snapshot, never live monitoring.
+- Still fully offline: one self-contained HTML, stdlib build, no UI framework,
+  no server, no external fetch; light/dark themes, keyboard navigation and
+  the DEMO DATA badge carry over.
+
+Migration: `install.py --update` replaces the template files; the new page
+needs no configuration. Rebuild the dashboard
+(`python .agentflow/dashboard/build.py`) to generate `out/roadmap.html` -
+older `out/` folders simply lack the file until rebuilt. `snapshot.py` still
+versions only the pre-existing source set; `roadmap_template.html`,
+`roadmap.css` and `roadmap.js` are not yet covered by `snapshot.py
+save/restore` (a follow-up may extend its source list).
+
 ## 2.15.8 - 2026-10-21
 
 Roadmap data layer for the dashboard (T-044, planning draft
