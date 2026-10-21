@@ -1,36 +1,55 @@
-# Release notes — AgentFlow 2.12.0
+# Release notes — AgentFlow 2.15.6
 
-Prepared locally on 2026-10-17. **Not yet published.** Push, CI verification,
+Prepared locally on 2026-10-21. **Not yet published.** Push, CI verification,
 tagging and the GitHub Release are human steps; see *Publish (human steps)*.
-Status update (2026-10-21): no `v2.12.0` tag or GitHub Release was ever created;
-the repository has since moved through 2.15.x — see [CHANGELOG.md](CHANGELOG.md).
-These notes stay as the record of the 2.12.0 release preparation.
+These notes supersede the never-published 2.12.0 preparation record: no tag or
+GitHub Release has ever been created, so the first published release carries
+everything that landed through 2.15.6 — details per version in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## What is in this release
 
-- Cross-platform Python launcher `.agentflow/tools/run_task.py` (stdlib only);
-  `.agentflow/tools/run-task.ps1` stays as a thin Windows compatibility wrapper.
-- Distributable package `agentflow-sdlc` (`python -m build`; source/local install —
-  not published on PyPI) with the unified `agentflow` CLI: `install`, `run`,
-  `gate`, `accept`, `ledger`, `mcp`, `dashboard`. Zero third-party runtime
-  dependencies.
-- Optional MCP server `.agentflow/tools/mcp_server.py` on the official `mcp`
-  SDK (`pip install "agentflow-sdlc[mcp]"`); read-only tools by default,
-  `agentflow_accept_task` only behind `--enable-orchestrator-tools`;
-  `install.py --mcp [--mcp-client cursor]` wires the client config on explicit
-  opt-in.
-- English dashboard with evidence metrics (first-pass gate rate, lead time,
-  verdict counts — N/A where telemetry is missing) and an isolated,
-  visibly marked `--demo` mode.
-- CI workflow `.github/workflows/ci.yml`: unit tests on ubuntu/macos/windows ×
-  Python 3.10–3.12 plus `package` and `mcp` jobs; read-only, offline core.
-- English `GUIDE.md` (Russian preserved as `GUIDE.ru.md`), rewritten
-  `README.md` with badges, Mermaid architecture diagram, production
-  references and the real dashboard screenshot
-  (`.agentflow/docs/assets/dashboard.png`, from this repository's own
-  development dashboard — real task data captured by T-008).
+Highlights of the accumulated release; every item is summarized from the
+changelog entry of the version that shipped it:
 
-Details per version: [CHANGELOG.md](CHANGELOG.md).
+- Project memory and four roles (2.x line): Orchestrator, Developer, Tester,
+  Deployer over `.agentflow/`, with Task Files, one branch/worktree per task,
+  ledger-driven acceptance and an evidence-bound `## Result`.
+- Shared machine scheduling (2.11.x): `machine_capacity.py` registry for tool
+  slots and PORT leases across projects on one machine, machine-wide observed
+  limits, `AGENTFLOW_SHARED_DISPATCHER` `shadow`/`active` modes, and
+  `upstream.py` template-drift reports (the conductor runs `--check` daily).
+- Cross-platform surface (2.12.0): `run_task.py` Python launcher
+  (`run-task.ps1` is the Windows compatibility wrapper; managed workers run as
+  detached background processes, no console windows), packaged `agentflow-sdlc`
+  CLI (source install, not on PyPI), optional MCP server with read-only tools
+  by default and `agentflow_accept_task` behind
+  `--enable-orchestrator-tools`, the English dashboard with evidence metrics
+  and a marked `--demo` mode, the CI workflow, and the rewritten
+  `README.md`/`GUIDE.md`.
+- Trustworthy lifecycle (2.12.1–2.13.3): ledger transitions enforce verified
+  state and awaiting-approval blocks, malformed runtime records fail closed,
+  acceptance binds to the verified attempt/artifact/base, and recoverable
+  handover keeps a classified `stopReason` plus a bounded `recovery` record so
+  a successor continues the preserved draft; `limit_detection.py` is the single
+  judge of provider limits, scoped to quota groups.
+- Artifact-bound completion gate (2.14.x): required criteria carry stable IDs,
+  evidence paths are validated against task scope, and `gate.py done` runs the
+  task's Checks on the artifact and on a trial merge onto the current base.
+- Bounded autonomy and enforced routing (2.15.x): launcher-enforced worker
+  wall clock (`AGENTFLOW_WORKER_TIMEOUT`) plus `--watchdog`, budgets for
+  attempts, task duration, identical failures and platform switches, a Windows
+  idle-sleep guard (`power_guard.py`), the persisted routing assessment
+  (`T-NNN.route.json`, enforced on every launch with an auditable
+  `Routing exception:` override), declared quota-policy/sample files, an
+  opt-in Codex Stop-hook adapter (`hooks.py`), and Jev-ranked model selection
+  with `recommended` tie-breaks.
+- Documentation-alignment train (2.15.6): role Result examples match the
+  gate's outcome-line format; `GUIDE.md`, `README.md`, `.agentflow/README.md`
+  and `release-validation.md` describe the shipped 2.15.x behavior;
+  `GUIDE.ru.md` reaches section-by-section parity with `GUIDE.md` in Russian;
+  the `tool-routing.md` Antigravity CLI note matches the non-interactive
+  worker argv.
 
 ## Evidence status and limits
 
@@ -54,7 +73,7 @@ Details per version: [CHANGELOG.md](CHANGELOG.md).
   only https://aisidebar.app is linked. The maintainer should add the store
   URLs to the README production table before or after publication.
 - No package is published on PyPI; `agentflow-sdlc` is a local distribution
-  name only. No `v2.12.0` tag or GitHub Release exists yet.
+  name only. No `v2.x` tag or GitHub Release exists yet.
 
 ## Verify locally
 
@@ -77,7 +96,7 @@ After final review and acceptance of the release tasks:
 3. Tag (only after the remote run is verified — do not tag a state that
    still lacks CI evidence if the tag is meant to represent a verified
    release):
-   `git tag -a v2.12.0 -m "AgentFlow 2.12.0: public release docs, cross-platform CLI, optional MCP, evidence dashboard"`
-   `git push origin v2.12.0`
-4. Create the GitHub Release for `v2.12.0`, using this file's *What is in
+   `git tag -a v2.15.6 -m "AgentFlow 2.15.6: project-memory template, cross-platform CLI, optional MCP, evidence dashboard, trustworthy lifecycle and enforced routing"`
+   `git push origin v2.15.6`
+4. Create the GitHub Release for `v2.15.6`, using this file's *What is in
    this release* and *Evidence status and limits* sections as the notes.
