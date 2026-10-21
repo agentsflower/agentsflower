@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-high
 Stage: 5
-Depends on: T-046
+Depends on: T-110
 Branch: t-048-dashboard-integration
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-048-dashboard-integration
 Independent check: tester
