@@ -75,7 +75,7 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
 - 2026-10-03 - `limitHit` is a text match ("usage limit", "rate limit", "quota") on the last 50 log lines; a task whose output mentions these words can be misread. Reopen if a tool reports limits in a structured way.
 - 2026-10-03 - Runtime state is not committed: on a fresh clone `ledger.py set --status done` needs `gate.py verify` to run again.
 - 2026-10-03 - `## Checks` commands run in PowerShell on Windows and `sh` elsewhere; a command written for another shell fails verify.
-- 2026-10-03 - Antigravity IDE cannot be automated: its attempts are `-Manual` and end with `-MarkFinished`.
+- 2026-10-03 - Antigravity IDE cannot be automated: its attempts are `-Manual` and end with `-MarkFinished`. CLI note (2026-10-21): the `agy` CLI is automated - developer and tester run non-interactive `-p --output-format stream-json`; only the IDE stays `-Manual`.
 
 - 2026-10-18 - Resolved at fc2c37c (T-082, independently verified by T-083): backup_ok
   did not consult quota-group holds - an adequate backup held after assessment was
@@ -112,10 +112,18 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
 - 2026-10-18 - devin CLI authentication is restored (`devin auth status`:
   logged in, Vladimir Chernetsov); the 21:27 launch block is resolved and
   managed devin launches are usable again.
-- 2026-10-21 - gate.py `paths()` parses only the FIRST whitespace token of each
-  `Allowed files` bullet: comma-separated path lists silently fail (a trailing
-  comma breaks the first path and the rest never register), so `verify` flags
-  genuinely-allowed inherited files as out of scope (cost T-094 an otherwise
-  green artifact). Authoring rule: one path per bullet in `Allowed files` and
-  `Do not touch`. Re-check: if a verify reports "changed file outside Allowed
-  files" for files visibly listed in the section, check the line format first.
+- 2026-10-21 - RESOLVED (rotation commit, 2026-10-21): gate.py `paths()` now
+  splits comma-separated bullets and strips trailing punctuation. Formerly it
+  parsed only the FIRST whitespace token of each `Allowed files` bullet, so
+  comma-separated path lists silently failed (a trailing comma broke the first
+  path and the rest never registered) and `verify` flagged genuinely-allowed
+  inherited files as out of scope (cost T-094 an otherwise green artifact).
+  One path per bullet remains the authored convention.
+- 2026-10-21 - install.py:269's 2.1-layout refusal tells readers to see
+  GUIDE.md "Migration from the root layout", but the guide's section is
+  "C. Migrate the old layout" (found by T-102, pre-existing in both files).
+- 2026-10-21 - Quoting an `evidence:` marker inside Result prose makes the
+  evidence-path validator count the following tokens as claims (T-100 V-03
+  flagged '/' and 'roles/_template/protocol' from a quoted example; fixed by
+  rewording). Authoring rule for workers: the literal `evidence:` may appear
+  once per line, before the real claim paths only.

@@ -399,3 +399,24 @@ Fresh Jev assessments for both heavy tasks land stable low-confidence
 admission gate refuses, a human `Routing exception:` or re-scope decision is
 recorded in questions.md 2026-10-21; both set `blocked`. Whole remaining chain
 (T-038->T-044->T-046->T-048, then T-066) waits on that answer.
+
+## 2026-10-21 (5): docs-alignment train landed at 2.15.6; rotation routing committed; T-038 running
+
+Background session devin (devin-background). Executed the human's Option-C
+re-scope end to end: wrote T-098/T-099 Task Files, launched/accepted
+T-097 (25b8b2e -> T-100 pass), T-098 (38f94f6 -> T-101 pass) and
+T-099 (4519a63 -> T-102 pass) - the documentation-alignment train is merged
+at VERSION 2.15.6. Two attempts (T-098.1, T-099.1/.2) hit the 2400s wall
+clock mid-suite and were resumed on preserved drafts via Resume:<sha> -
+worked as designed. One transient WinError-5 os.replace flake seen in
+verify (temp fixture, unrelated to the diff). Surgical Result-section fix
+on T-100: a quoted `evidence:` marker produced false path claims; reworded,
+verdict and evidence unchanged. Committed the human-attended session's
+uncommitted rotation work (route.py low-confidence candidate rotation,
+AGENTFLOW_BACKUP_ROUTING default on, gate.py paths() comma support,
+decisions.md entry) - tests 26/26 green. T-066 re-assessed `ok` (swe-2-max,
+medium) and set ready; queued behind the docs chain by file overlap. T-038
+repointed Depends T-036 -> T-099 and launched. known-issues annotated:
+agy CLI automation note, paths() marked resolved, install.py:269 section
+name nit, evidence:-marker quoting rule. decisions.md train entry proposed
+by T-098/T-099 workers - left for the human's session (background limit).
