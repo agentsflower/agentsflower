@@ -71,10 +71,12 @@ No additional plan approval is needed for the completed local task pool.
   1. Re-scope T-036 into smaller, focused tasks with lower assessed complexity
      (separating core instructions/protocol alignment, shipped features docs,
      and user guides/Russian translation parity).
-  2. All other models from the available pool (including Devin astra, Devin claude
-     opus, Devin argon, Devin sol, agy gemini) remain eligible. In cases of ambiguity,
-     uncertainty, or low confidence for the top option, Jev/routing must evaluate the
-     other available models in the pool to select one with higher confidence rather
-     than halting.
+  2. The available model catalog is defined by what is live in the Devin CLI
+     (`devin models list`), including swe-2, claude-opus-5.5, claude-sonnet-5.5,
+     gpt-6-astra, gpt-6-sol, gpt-6.1-sol, gemini-4-argon, gemini-3.8-flash,
+     deepseek-v4-pro, kimi-k3, and other supported families. In cases of ambiguity,
+     uncertainty, or low confidence for a candidate, Jev/routing must evaluate the
+     other available models in the Devin CLI catalog to select one with higher
+     confidence rather than halting.
 - What was unblocked: Orchestrator re-scopes T-036 into smaller subtasks under the
-  updated pool policy, assessments rerun for high-confidence launch.
+  Devin CLI model catalog policy, assessments rerun for high-confidence launch.

@@ -1,15 +1,17 @@
 # Decision Log
 
-## 2026-10-21: Re-scope T-036 and fall back across available pool for high-confidence routing
+## 2026-10-21: Re-scope T-036 and use the full Devin CLI model catalog for high-confidence routing
 
-Human instruction: approved Option C for T-036 / T-066 routing ambiguity.
+Human instruction: approved Option C for T-036 / T-066 routing ambiguity with full Devin CLI model availability.
 1. Re-scope T-036 into smaller, focused tasks with lower assessed complexity
    (core instructions/protocol, shipped features docs, user guides/Russian parity)
    to eliminate the top-tier effort wobble.
-2. Maintain the full available model pool (Devin swe-2, gpt-6-astra, claude-opus-5.5,
-   gemini-4-argon, gpt-6-sol, and agy Gemini). In case of ambiguity, uncertainty, or
-   low confidence on the top option, Jev/routing evaluates the other available models
-   in the pool to identify candidates with higher confidence rather than halting.
+2. The authority for available models is what is live and available in `devin models list`
+   in the Devin CLI (encompassing swe-2, claude-opus-5.5, claude-sonnet-5.5, gpt-6-astra,
+   gpt-6-sol, gpt-6.1-sol, gemini-4-argon, gemini-3.8-flash, deepseek-v4-pro, kimi-k3,
+   and other supported families). In case of ambiguity, uncertainty, or low confidence
+   on a particular option, Jev/routing must evaluate the other available models from
+   the CLI catalog to identify a candidate with higher confidence rather than halting.
 
 ## 2026-10-20: Jev-led model selection inside the preferred CLI; Devin Argon option
 
