@@ -41,7 +41,19 @@ the release metadata for the documentation-alignment train.
 
 - .agentflow/state/
 - .agentflow/tasks/ (other Task Files)
-- .agentflow/roles/, .agentflow/commands/, .claude/commands/, .agentflow/docs/ other than listed
+- .agentflow/commands/
+- .claude/commands/
+- .agentflow/docs/improvement-plan.md
+- .agentflow/docs/ai-handoff-protocol.md
+- .agentflow/docs/project-rules.md
+- .agentflow/docs/model-options.json
+- .agentflow/docs/quota-policy.json
+- .agentflow/docs/typesafe.md
+- .agentflow/docs/engineering-rules.md
+- .agentflow/roles/developer.md
+- .agentflow/roles/tester.md
+- .agentflow/roles/orchestrator.md
+- .agentflow/roles/deployer.md
 - .github/
 - pyproject.toml, setup.py, MANIFEST.in
 - .agentflow/dashboard/

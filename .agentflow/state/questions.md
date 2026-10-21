@@ -81,20 +81,18 @@ No additional plan approval is needed for the completed local task pool.
 - What was unblocked: Orchestrator re-scopes T-036 into smaller subtasks under the
   Devin CLI model catalog policy, assessments rerun for high-confidence launch.
 
-## 2026-10-21 - T-066 still unlaunchable after catalog re-assessment (OPEN)
+## 2026-10-21 - T-066 unlaunchable after catalog re-assessment (RESOLVED: automatic model/platform rotation mandated; no waiting for quota resets) (RESOLVED)
 
 - Task: T-066 (hide Windows background process consoles), stays queued behind
   the T-097 -> T-098 -> T-099 -> T-038 -> T-044 -> T-046 -> T-048 chain.
-- Situation: per the Option C + catalog policy above, Jev re-assessed T-066
-  against the live Devin CLI catalog (req_01a15dad03, after model-options.json
-  was updated from `devin models list`). Jev confidently selects devin-swe-2
-  (0.96) but effort-xhigh confidence stays 0.45 (complexity 1.98/2) -> status
-  low-confidence; every other catalog model scored ~0, so no higher-confidence
-  candidate exists. The admission gate still refuses the launch.
-- Options:
-  - A: write `Routing exception: <reason>` in the T-066 header -> launches
-    Devin swe-2-max (the T-081/T-075 precedent).
-  - B: approve re-scoping T-066 into smaller subtasks, as done for T-036.
-  - C: leave it blocked; agy's limit expires 2026-10-21T22:09Z - a later
-    assessment may find an adequate agy model with higher confidence.
+- Situation: Jev assesses T-066 with devin-swe-2 at 0.96 confidence, but effort
+  confidence is 0.45.
+- Human instruction (2026-10-21): Waiting for an external platform limit reset (e.g.
+  Antigravity until 22:09Z) is rejected. The project must implement and rely on
+  automatic rotation of platforms and models based on live availability and capacity.
+  When an option or platform is held or uncertain, the orchestrator/router rotates
+  through available catalog models and backups without stalling for hours.
+- Resolution: Automatic platform/backup rotation enabled by default in tick.py;
+  Option C (waiting for agy reset) discarded. T-066 will proceed via dynamic rotation
+  to an adequate available model or re-scoping when reached in the queue.
 - What waits on it: only T-066; the documentation chain proceeds regardless.

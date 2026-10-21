@@ -83,13 +83,19 @@ def bullets(body):
     return [m.group(1) for m in re.finditer(r"(?m)^[ \t]*-[ \t]+(.+?)[ \t]*$", body)]
 
 
-def paths(body):  # first token of each bullet that looks like a path: "- `src/a.ts` - why"
+def paths(body):  # tokens of each bullet that look like paths: "- `src/a.ts` - why" or "- A.md, B.md"
     out = []
     for b in bullets(body):
-        m = re.match(r"^`([^`]+)`", b)
-        tok = m.group(1) if m else b.split()[0]
-        if re.search(r"[\\/.*]", tok):
-            out.append(re.sub(r"^\./", "", tok.replace("\\", "/")).rstrip("/").lower())
+        for part in re.split(r",\s*", b):
+            part = part.strip()
+            if not part:
+                continue
+            m = re.match(r"^`([^`]+)`", part)
+            tok = (m.group(1) if m else part.split()[0]).rstrip(".,;:")
+            if re.search(r"[\\/.*]", tok):
+                out.append(re.sub(r"^\./", "", tok.replace("\\", "/")).rstrip("/").lower())
+            if not m and " " in part:
+                break
     return out
 
 

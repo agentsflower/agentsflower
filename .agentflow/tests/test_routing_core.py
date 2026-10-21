@@ -564,6 +564,26 @@ class RoutingRecordTests(unittest.TestCase):
         self.assertIsNone(ev)
         self.assertIn("stale", problems[0])
 
+    def test_low_confidence_first_candidate_rotates_to_adequate_alternative(self):
+        """When the top candidate in order has low confidence (e.g. variable effort uncertainty),
+        route evaluates subsequent adequate candidates in policy order and rotates to one with confidence >= LOW."""
+        opts = dict(OPTS)
+        opts["options"] = dict(OPTS["options"])
+        opts["options"]["devin-fixed"] = {"tool": "devin", "model": "fixed-sol", "tier": "high", "quota_group": "devin"}
+        self.write_options(opts)
+        Fake.answers = {
+            "option": {"choice": "devin-swe-2", "confidence": 0.92,
+                       "probabilities": {"devin-swe-2": 0.6, "devin-fixed": 0.4}},
+            "effort": {"choice": "high", "confidence": 0.42},
+            "complexity": {"score": 1.0, "confidence": 0.9},
+        }
+        r = self.route("T-099")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = self.rec("T-099")
+        self.assertEqual(rec["status"], "ok")
+        self.assertEqual(rec["choice"], "devin-fixed")
+        self.assertIn("devin-swe-2 has low confidence", rec["selectionReason"])
+
 
 if __name__ == "__main__":
     unittest.main()

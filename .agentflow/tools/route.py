@@ -458,6 +458,15 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     jev_choice = opt.get("choice")
     needs_effort = bool(choice and supported_efforts(candidates[choice]))
     conf = min(option_conf, effort_conf) if needs_effort and effort_conf is not None else option_conf
+    if choice and conf < LOW:
+        for alt in order[1:]:
+            alt_needs_effort = bool(supported_efforts(candidates[alt]))
+            alt_conf = min(option_conf, effort_conf) if alt_needs_effort and effort_conf is not None else option_conf
+            if alt_conf >= LOW:
+                choice = alt
+                conf = alt_conf
+                needs_effort = alt_needs_effort
+                break
     selected, sel_model, sel_effort, sel_tier = None, None, None, None
     if choice:
         o = candidates[choice]
@@ -466,8 +475,8 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
                     "effort": sel_effort, "resolvedEffort": sel_tier}
     backup = None
     if choice:
-        for name in order[1:]:
-            if candidates[name].get("tool") != candidates[choice].get("tool"):
+        for name in order:
+            if name != choice and candidates[name].get("tool") != candidates[choice].get("tool"):
                 bm, be, bt = resolve_requirement(candidates[name], required["effort"])
                 backup = {"option": name, "tool": candidates[name].get("tool"), "model": bm,
                           "effort": be, "resolvedEffort": bt, "probability": probs.get(name)}
@@ -489,16 +498,19 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     elif jev_choice in held:
         reason = f"{jev_choice} is held ({held[jev_choice]}); {choice} is the adequate pick"
     elif jev_choice in candidates:
-        pc, pj = probs.get(choice, 0), probs.get(jev_choice, 0)
-        if pc > pj:
-            reason = f"Jev ranks {choice} above {jev_choice} among adequate options"
-        elif pc < pj:
-            reason = f"{jev_choice} is adequate; the policy order prefers {choice}"
+        if order and choice != order[0]:
+            reason = f"{order[0]} has low confidence; rotated to {choice} ({conf:.2f})"
         else:
-            rank = {n: i for i, n in enumerate(recommended_order(cfg, required["effort"]))}
-            reason = (f"{jev_choice} is adequate; the recommended order breaks the tie for {choice}"
-                      if rank.get(choice, -1) != rank.get(jev_choice, -1)
-                      else f"{jev_choice} is adequate; a name-order break of the tie gives {choice}")
+            pc, pj = probs.get(choice, 0), probs.get(jev_choice, 0)
+            if pc > pj:
+                reason = f"Jev ranks {choice} above {jev_choice} among adequate options"
+            elif pc < pj:
+                reason = f"{jev_choice} is adequate; the policy order prefers {choice}"
+            else:
+                rank = {n: i for i, n in enumerate(recommended_order(cfg, required["effort"]))}
+                reason = (f"{jev_choice} is adequate; the recommended order breaks the tie for {choice}"
+                          if rank.get(choice, -1) != rank.get(jev_choice, -1)
+                          else f"{jev_choice} is adequate; a name-order break of the tie gives {choice}")
     elif jev_choice:
         reason = f"{jev_choice} is not eligible ({excluded.get(jev_choice, 'unconfigured')}); {choice} is the pick"
     else:

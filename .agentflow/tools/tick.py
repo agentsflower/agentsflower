@@ -612,7 +612,7 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
                     ok, msg = accept(tid)
                     (acted if ok else failed).append({"task": tid, "action": "accept", "detail": msg if ok else f"accept stopped: {msg}"})
                 rows = gate.ledger_rows()
-            if os.environ.get("AGENTFLOW_BACKUP_ROUTING", "off") == "on":
+            if os.environ.get("AGENTFLOW_BACKUP_ROUTING", "on") == "on":
                 for tid, row in rows.items():
                     if row.get("Status") != "ready":
                         continue

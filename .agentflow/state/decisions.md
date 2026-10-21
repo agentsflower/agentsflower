@@ -1,5 +1,12 @@
 # Decision Log
 
+## 2026-10-21: Mandatory dynamic platform and model rotation based on live availability
+
+Human instruction: waiting for external platform limit resets (such as Antigravity quota hold until 22:09Z) is rejected. The project must implement and rely on automatic rotation of platforms and models based on availability and capacity.
+1. `tick.py`: Backup routing (`use_backup`) is enabled by default (`AGENTFLOW_BACKUP_ROUTING` defaults to `on` instead of `off`) so that an unstarted task whose primary tool/quota is limited or has no free slot automatically switches to its evaluated backup without manual intervention or waiting for limit expiry.
+2. `gate.py`: `paths()` handles comma-separated file lists (e.g. `- AGENTS.md, CLAUDE.md (...)`) and strips trailing punctuation, preventing false verification rejections on multi-file allowed bullets.
+3. `route.py`: When the first candidate in `order` has low confidence (due to variable reasoning effort uncertainty), evaluate subsequent candidates in the policy order (including fixed-tier catalog models from `devin models list`) to select an adequate candidate with high confidence rather than stalling on `low-confidence`.
+
 ## 2026-10-21: Re-scope T-036 and use the full Devin CLI model catalog for high-confidence routing
 
 Human instruction: approved Option C for T-036 / T-066 routing ambiguity with full Devin CLI model availability.
