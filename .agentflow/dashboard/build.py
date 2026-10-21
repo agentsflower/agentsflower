@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds .agentflow/dashboard/out/index.html and out/graph.html from .agentflow/state/tasks.md, .agentflow/tasks/T-*.md and git history.
+"""Builds .agentflow/dashboard/out/index.html, out/graph.html and out/roadmap.html from .agentflow/state/tasks.md, .agentflow/tasks/T-*.md and git history.
 
 Run from anywhere: python .agentflow/dashboard/build.py        (real project data)
                    python .agentflow/dashboard/build.py --demo (deterministic DEMO DATA fixture, no project reads)
@@ -1213,7 +1213,8 @@ def main(argv=None):
     graph, n_deps, n_succ = demo_graph() if demo else real_graph()
     payload = json.dumps(graph, ensure_ascii=False).replace("</", "<\\/")  # both pages get the same data
     OUT.mkdir(exist_ok=True)
-    for tpl_name, out_name in (("graph_template.html", "graph.html"), ("template.html", "index.html")):
+    for tpl_name, out_name in (("graph_template.html", "graph.html"), ("template.html", "index.html"),
+                               ("roadmap_template.html", "roadmap.html")):
         page = render(tpl_name).replace("__PROJECT__", graph["project"]).replace("__DATA__", payload)
         (OUT / out_name).write_text(page, encoding="utf-8")
     print(f"{len(graph['tasks'])} tasks, {len(graph['stages'])} stages, {n_deps} dependencies, "
@@ -1225,7 +1226,8 @@ def render(name):
     """page template with shared CSS/JS inlined: each page is one self-contained file"""
     page = (HERE / name).read_text(encoding="utf-8")
     for marker, src in (("/*FILTERBAR_CSS*/", "filterbar.css"), ("/*FILTERBAR_JS*/", "filterbar.js"),
-                        ("/*COMMON_CSS*/", "common.css"), ("/*COMMON_JS*/", "common.js")):
+                        ("/*COMMON_CSS*/", "common.css"), ("/*COMMON_JS*/", "common.js"),
+                        ("/*ROADMAP_CSS*/", "roadmap.css"), ("/*ROADMAP_JS*/", "roadmap.js")):
         page = page.replace(marker, (HERE / src).read_text(encoding="utf-8"))
     return page
 

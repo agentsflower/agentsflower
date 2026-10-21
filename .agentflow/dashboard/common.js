@@ -73,7 +73,7 @@ const C=(function(){
     if(saved) document.documentElement.dataset.theme=saved;
     const hdr=document.getElementById("hdr");
     hdr.className="topbar";
-    hdr.innerHTML=`<h1>Tasks${project?" · "+esc(project):""}</h1><nav class="nav"><a href="index.html"${active==="over"?' class="on"':""}>Overview</a><a href="graph.html"${active==="gantt"?' class="on"':""}>Gantt & timeline</a></nav><span class="sp"></span>${demo?'<span class="demobadge">DEMO DATA — not real project evidence</span>':""}<span class="gen">Built ${esc(generated)}</span><button class="iconbtn" id="theme" type="button" aria-label="Toggle theme"></button>`;
+    hdr.innerHTML=`<h1>Tasks${project?" · "+esc(project):""}</h1><nav class="nav"><a href="index.html"${active==="over"?' class="on"':""}>Overview</a><a href="graph.html"${active==="gantt"?' class="on"':""}>Gantt & timeline</a><a href="roadmap.html"${active==="roadmap"?' class="on"':""}>Roadmap</a></nav><span class="sp"></span>${demo?'<span class="demobadge">DEMO DATA — not real project evidence</span>':""}<span class="gen">Built ${esc(generated)}</span><button class="iconbtn" id="theme" type="button" aria-label="Toggle theme"></button>`;
     const btn=document.getElementById("theme");
     const isDark=()=>{ const t=document.documentElement.dataset.theme; return t?t==="dark":matchMedia("(prefers-color-scheme:dark)").matches; };
     const paint=()=>{ btn.innerHTML=isDark()?SUN:MOON; btn.title=isDark()?"Light theme":"Dark theme"; };

@@ -4,12 +4,12 @@ Local layout: `file` is the repository-relative Task File path;
 `fileHref` is the link relative to generated HTML in `out/`.
 Workflow storage lives in `.agentflow/`; Git history is read from the repository root.
 
-A read-only view of the project for the human (English interface): task table and filters (`out/index.html`), Gantt, timeline, links and evidence metrics (`out/graph.html`). It never changes the project; it reads `.agentflow/state/tasks.md` (Task Ledger), `.agentflow/tasks/T-*.md` (Task Files), `.agentflow/tasks/.runtime/` (attempt and gate evidence, via `tools/route_report.py`) and git history. Template-owned: see `.agentflow/docs/ai-handoff-protocol.md`, section "Dashboard".
+A read-only view of the project for the human (English interface): task table and filters (`out/index.html`), Gantt, timeline, links and evidence metrics (`out/graph.html`), and the roadmap (`out/roadmap.html`): every `### Stage` of `docs/project-plan.md` with declared status, local task counts and exit-criteria evidence as three separate facts, plus safe attempt/routing/gate records in the task drill-down. It never changes the project; it reads `.agentflow/state/tasks.md` (Task Ledger), `.agentflow/tasks/T-*.md` (Task Files), `.agentflow/tasks/.runtime/` (attempt and gate evidence, via `tools/route_report.py`), `.agentflow/docs/project-plan.md` and git history. Template-owned: see `.agentflow/docs/ai-handoff-protocol.md`, section "Dashboard".
 
 ## Use
 
 ```
-python .agentflow/dashboard/build.py                          # build out/index.html and out/graph.html, open either in a browser
+python .agentflow/dashboard/build.py                          # build out/index.html, out/graph.html and out/roadmap.html, open any in a browser
 python .agentflow/dashboard/build.py --demo                   # same pages from a deterministic DEMO DATA fixture: no project reads or memory writes, clearly marked
 python .agentflow/dashboard/snapshot.py save "what changed"   # keep the current dashboard sources as version vN
 python .agentflow/dashboard/snapshot.py list
@@ -23,7 +23,8 @@ Needs Python 3 and git. Run it after the Orchestrator updates the ledger, or whe
 | File | Role |
 |---|---|
 | `build.py` | reads ledger, Task Files, git, `route_report.metrics()`; writes `out/*.html`; owns the data contract below |
-| `template.html`, `graph_template.html` | the two pages; `__DATA__` and `__PROJECT__` are replaced by `build.py` |
+| `template.html`, `graph_template.html`, `roadmap_template.html` | the three pages; `__DATA__` and `__PROJECT__` are replaced by `build.py` |
+| `roadmap.css`, `roadmap.js` | roadmap-only styles and stage renderers (inlined into `roadmap.html`); the roadmap page renders the roadmap data below as three switchable layouts (cards, journey, matrix) |
 | `common.css`, `common.js` | header, task card, shared helpers (inlined into both pages) |
 | `filterbar.css`, `filterbar.js` | the filter panel (inlined into both pages) |
 | `snapshot.py` | local versions of the dashboard sources, rollback |
@@ -77,6 +78,8 @@ Additive fields for the roadmap view; every field above is unchanged. All string
 | `provenance` | build | `{plan, ledger, taskFiles, runtime, git, payload, synthetic}` — `synthetic: true` marks the demo fixture |
 
 Three facts per stage stay independent: `declared` (what the plan says), `counts` (what the ledger did), `coverage` (what authored evidence says). A mismatch is a warning, never a rewrite. Tasks whose `stage` value is absent from the plan — or ambiguous because the id is duplicated — stay visible under `diagnostics.unmappedTaskIds`; bad stage data never hides task data.
+
+`roadmap.html` renders this payload: every declared stage regardless of task filters (filters slice only the task slice, with filtered-vs-total counts shown), a Cards/Journey/Matrix view switch (the human approved all three mockups on 2026-10-18), drill-down into the shared task card plus the allowlisted `attempts`/`routing`/`verifications` records, and a diagnostics area labeled as a build snapshot, not live monitoring.
 
 ### Optional authored syntax in project-plan.md
 

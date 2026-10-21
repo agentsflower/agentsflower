@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks __PROJECT__ · Roadmap</title>
+<style>
+/*COMMON_CSS*/
+/*FILTERBAR_CSS*/
+/*ROADMAP_CSS*/
+</style>
+</head>
+<body>
+<div class="app">
+<header id="hdr"></header>
+
+<div class="card fbcard" id="fbar"></div>
+<div class="fbchosen" id="fchosen"></div>
+
+<aside class="side left" id="lrail"></aside>
+
+<main class="center">
+  <div class="card vbar"><span class="seg2" id="views">
+    <button class="btn" type="button" data-v="cards">Cards</button><button class="btn" type="button" data-v="journey">Journey</button><button class="btn" type="button" data-v="matrix">Matrix</button>
+  </span> <span class="mut" id="vinfo"></span></div>
+  <div class="stagecol" id="stagecol"></div>
+</main>
+
+<aside class="side right">
+  <div class="card diag" id="diag"></div>
+  <div class="card" id="detail"><h2>Selection</h2><div class="mut">Click a task row or a link — details appear here.</div></div>
+</aside>
+</div>
+
+<script>
+/*COMMON_JS*/
+/*FILTERBAR_JS*/
+/*ROADMAP_JS*/
+const DATA = __DATA__;
+const P = C.prep(DATA), byId = P.byId;
+const T = P.tasks, calcAct = C.activeModel(P.pings, 60);
+const esc = C.esc, $ = id => document.getElementById(id);
+const STAGES = DATA.stages || [];
+R.prepStages(DATA, byId);
+const UNMAPPED = R.unmappedTasks(DATA, byId);
+const selStageShown = s => { const f = new Set(filtered().map(t => t.id)); return s.tasks.filter(t => f.has(t.id)); };
+
+// ---- filter set: identical dims and flags as the other pages; tasks only ----
+const DIMS = C.makeDims(T, t => t.status);
+const sel = {}; DIMS.forEach(d => sel[d.k] = new Set());
+let flags = {owner: false, blocked: false}, query = "", qBody = false, selTask = null, selStage = null;
+const baseHay = t => (t.id + " " + t.title + " " + t.notes + " " + t.commit + " " + t.goal).toLowerCase();
+function pass(t, skip){
+  if (!C.matchDims(t, DIMS, sel, skip)) return false;
+  if (!C.flagMatch(t, flags)) return false;
+  if (query){ const h = baseHay(t) + (qBody ? " " + t.bl : ""); if (!query.split(/\s+/).every(w => h.includes(w))) return false; }
+  return true;
+}
+const filtered = () => T.filter(t => pass(t));
+const bodyOnly = t => qBody && query && !query.split(/\s+/).every(w => baseHay(t).includes(w));
+const fb = createFilterBar({
+  bar: $("fbar"), chosen: $("fchosen"), sel,
+  dims: DIMS.map(d => ({k: d.k, l: d.l, vals: () => d.vals(), count: v => T.filter(t => d.get(t).includes(v) && pass(t, d.k)).length})),
+  flags: [{k: "owner", l: "Waiting on owner", get: () => flags.owner, set: v => {flags.owner = v;}},
+          {k: "blocked", l: "Waiting on a task", get: () => flags.blocked, set: v => {flags.blocked = v;}}],
+  search: {placeholder: "Search: id, title, notes, commit…", get: () => query, set: v => {query = v.trim().toLowerCase();}},
+  body: {get: () => qBody, set: v => {qBody = v;}},
+  shown: () => `Showing ${filtered().length} of ${T.length} tasks · stage list unaffected`,
+  clear: () => {DIMS.forEach(d => sel[d.k].clear()); flags.owner = false; flags.blocked = false; query = "";},
+  onChange: () => render()
+});
+
+// ---- shared drill-down: the same task card as the other pages + execution records ----
+function bindLinks(root){
+  root.querySelectorAll("[data-go]").forEach(a => {
+    a.onclick = e => { e.preventDefault(); e.stopPropagation(); select(a.dataset.go); };
+    if (!a.hasAttribute("tabindex")) a.tabIndex = 0;
+    a.onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); select(a.dataset.go); } };
+  });
+}
+function select(id){
+  const t = byId[id]; if (!t) return;
+  selTask = id;
+  const ctx = {byId, edges: P.edges, NOW: P.NOW, dur: (a,b) => (b-a)/C.H, calDur: (a,b) => (b-a)/C.H, actDur: (a,b) => calcAct(b)-calcAct(a), query, qBody};
+  $("detail").innerHTML = C.taskCard(t, ctx) + R.runtimeCard(t);
+  C.bindCard($("detail"), select); bindLinks($("detail"));
+  document.querySelectorAll(".tmini tr.row").forEach(r => r.classList.toggle("sel", r.dataset.go === id));
+}
+
+// ---- shared summaries ----
+function totalsCard(){
+  const f = filtered();
+  const decl = {}; STAGES.forEach(s => { const k = s.declared || (s.declaredRaw ? "not recognized" : "not declared"); decl[k] = (decl[k]||0)+1; });
+  const ev = {pass:0,fail:0,stale:0,pending:0,unknown:0,untracked:0};
+  STAGES.forEach(s => { const cv = s.coverage||{}; if (cv.kind !== "authored") ev.untracked++; else R.EV_ORDER.forEach(k => ev[k] += (cv.states||{})[k]||0); });
+  return Object.entries(decl).map(([k,v]) => `<div class="tot"><span>Declared: ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="tot"><span>Tasks shown</span><b>${f.length} of ${T.length}</b></div>`
+    + C.ST_ORDER.map(k => { const n = f.filter(t => t.status === k).length; return n ? `<div class="tot"><span><span class="cchip"><i style="background:${C.col(k)}"></i></span> ${k}</span><b>${n}</b></div>` : ""; }).join("")
+    + `<div class="tot"><span>Evidence · pass/fail/stale/pending/unknown</span><b>${ev.pass}/${ev.fail}/${ev.stale}/${ev.pending}/${ev.unknown}</b></div>`
+    + `<div class="tot"><span>Stages without tracked criteria</span><b>${ev.untracked}</b></div>`
+    + (UNMAPPED.length ? `<div class="tot"><span>Unmapped tasks</span><b>${UNMAPPED.length}</b></div>` : "");
+}
+function glanceCard(){
+  const f = filtered();
+  const decl = {}; STAGES.forEach(s => { const k = s.declared || (s.declaredRaw ? "not recognized" : "not declared"); decl[k] = (decl[k]||0)+1; });
+  const ev = {pass:0,fail:0,stale:0,pending:0,unknown:0};
+  STAGES.forEach(s => { const cv = s.coverage||{}; if (cv.kind === "authored") R.EV_ORDER.forEach(k => ev[k] += (cv.states||{})[k]||0); });
+  return `<div class="gl"><span>Stages declared in the plan</span><b>${STAGES.length}</b></div>`
+    + Object.entries(decl).map(([k,v]) => `<div class="gl"><span>· ${esc(k)}</span><b>${v}</b></div>`).join("")
+    + `<div class="gl"><span>Stages with local tasks</span><b>${STAGES.filter(s => s.tasks.length).length}</b></div>`
+    + `<div class="gl"><span>Tasks shown / total</span><b>${f.length} / ${T.length}</b></div>`
+    + `<div class="gl"><span>Unmapped tasks</span><b>${UNMAPPED.length}</b></div>`
+    + `<div class="gl"><span>Evidence pass/fail/stale/pend/?</span><b>${ev.pass}/${ev.fail}/${ev.stale}/${ev.pending}/${ev.unknown}</b></div>`;
+}
+const howtoCard = `<div class="card"><h2>How to read</h2><div class="howto">
+  The rail is the plan in source order — every declared stage is a node, with or without tasks.
+  Each node keeps three facts separate: the <b>declared status</b> the plan records,
+  the <b>local task counts</b> from the ledger, and the <b>recorded exit-criteria evidence</b>.
+  Dated spans are observed local records only; a stage with none says so instead of guessing.
+  Click a node to open its criteria, evidence and tasks.
+</div></div>`;
+
+// ---- view A: stage-first cards ----
+function renderCards(){
+  $("stagecol").className = "stagecol";
+  $("lrail").innerHTML = `<div class="card"><h2>Roadmap · plan source order</h2><div id="rail">${
+    STAGES.map(s => {
+      const shown = selStageShown(s), n = s.tasks.length;
+      const tc = n ? `${shown.length===n?shown.length:shown.length+"/"+n} task${n===1?"":"s"}` : "No local tasks";
+      return `<button type="button" class="stg${selStage===s.id?" sel":""}" data-st="${esc(s.id)}">
+        <span class="nm"><b>Stage ${esc(s.id)}</b> · ${esc(s.title||"(no title)")}</span>
+        <span class="sub"><span class="tag" style="background:var(${R.DECL[s.declared]||"--s-canc"})">${esc(s.declared||"not recognized")}</span> ${tc}${s.recurring?" · recurring":""}</span>
+      </button>`;
+    }).join("")
+  }${UNMAPPED.length ? `<button type="button" class="stg" data-st="unmapped"><span class="nm"><b>Unmapped</b> · no matching plan stage</span><span class="sub">${UNMAPPED.length} task${UNMAPPED.length===1?"":"s"}</span></button>` : ""}</div></div>
+  <div class="card"><h2>Totals</h2>${totalsCard()}</div>`;
+  document.querySelectorAll("#rail .stg").forEach(b => b.onclick = () => {
+    selStage = b.dataset.st; renderCards();
+    const el = document.getElementById("s" + selStage); if (el) el.scrollIntoView({block: "nearest"});
+  });
+  $("vinfo").textContent = "every declared stage, plan source order";
+  const sc = $("stagecol");
+  sc.innerHTML = STAGES.map(s => {
+    const shown = selStageShown(s);
+    return `<section class="scard" id="s${esc(s.id)}">
+      <div class="shead"><b>Stage ${esc(s.id)}</b><span class="ttl">${esc(s.title||"")}</span><span class="sp"></span><a class="src" href="${esc(s.sourceHref||"#")}" title="${esc(s.source||"")}">${esc(s.sourceRef||"plan")} ↗</a></div>
+      ${R.warnsHtml(s)}${R.factsHtml(s, shown)}${R.blockersHtml(s)}${R.extrasHtml(s)}${R.taskTable(shown, s.tasks.length, bodyOnly)}
+    </section>`;
+  }).join("") + (UNMAPPED.length ? `<section class="scard" id="sunmapped">
+      <div class="shead"><b>Unmapped</b><span class="ttl">tasks whose Stage has no plan entry</span></div>
+      <div class="warn">⚠ These tasks name a stage that is absent from or ambiguous in the plan — they stay visible instead of being hidden or guessed.</div>
+      ${R.taskTable(UNMAPPED.filter(t => pass(t)), UNMAPPED.length, bodyOnly)}
+    </section>` : "");
+  bindLinks(sc);
+}
+
+// ---- view B: journey stepper ----
+const jopen = new Set();
+function stageWhen(s){
+  const ds = [];
+  s.tasks.forEach(t => { if (t.created) ds.push(t.created); if (t.updated) ds.push(t.updated); });
+  if (s.recurring) (s.recurring.cycles||[]).forEach(c => c.recorded && ds.push(c.recorded));
+  if (s.criteria) s.criteria.forEach(c => c.evidence && c.evidence.recorded && ds.push(c.evidence.recorded));
+  if (!ds.length) return "no dated local records";
+  ds.sort();
+  return ds[0] === ds[ds.length-1] ? "recorded " + ds[0] : "records " + ds[0] + " → " + ds[ds.length-1];
+}
+function jOneLiner(s, shown){
+  const n = s.tasks.length;
+  const t = n ? (shown.length===n ? n : shown.length+"/"+n) + " tasks" : "no local tasks";
+  const cv = s.coverage||{};
+  const e = cv.kind === "authored" ? "evidence " + R.EV_ORDER.filter(k => (cv.states||{})[k]).map(k => k+" "+cv.states[k]).join("/") : "evidence untracked";
+  return `${t} · ${e}`;
+}
+function renderJourney(){
+  $("stagecol").className = "stagecol";
+  if (!jopen.size && !renderJourney.seeded){
+    STAGES.forEach(s => { if (s.tasks.length || (s.warns||[]).length || s.recurring) jopen.add(s.id); });
+    if (UNMAPPED.length) jopen.add("unmapped");
+    renderJourney.seeded = true;
+  }
+  $("lrail").innerHTML = `<div class="card"><h2>At a glance</h2>${glanceCard()}</div>${howtoCard}`;
+  $("vinfo").textContent = "the plan as a path — click a node to expand";
+  const nodeHtml = s => {
+    const shown = selStageShown(s), isOpen = jopen.has(s.id);
+    return `<div class="jnode${isOpen?" open":""}" id="s${esc(s.id)}" style="--jc:var(${R.DECL[s.declared]||"--s-canc"})">
+      <div class="jhead" data-st="${esc(s.id)}" tabindex="0" role="button" aria-expanded="${isOpen}">
+        <div class="jh1"><b>Stage ${esc(s.id)}</b><span class="ttl">${esc(s.title||"")}</span>
+          <span class="tag" style="background:var(${R.DECL[s.declared]||"--s-canc"})">${esc(s.declared||"not recognized")}</span>
+          <a class="src" href="${esc(s.sourceHref||"#")}" title="${esc(s.source||"")}" onclick="event.stopPropagation()">${esc(s.sourceRef||"plan")} ↗</a></div>
+        <div class="jwhen">${esc(stageWhen(s))} · ${esc(jOneLiner(s, shown))}${s.recurring?" · recurring":""}</div>
+      </div>
+      <div class="jbody"${isOpen?"":" hidden"}>
+        ${R.warnsHtml(s)}${R.factsHtml(s, shown)}${R.blockersHtml(s)}${R.extrasHtml(s)}${R.taskTable(shown, s.tasks.length, bodyOnly)}
+      </div>
+    </div>`;
+  };
+  const sc = $("stagecol");
+  sc.innerHTML = `<div class="jrail">${STAGES.map(nodeHtml).join("")}${
+    UNMAPPED.length ? `<div class="jnode${jopen.has("unmapped")?" open":""}" id="sunmapped" style="--jc:var(--s-rej)">
+      <div class="jhead" data-st="unmapped" tabindex="0" role="button" aria-expanded="${jopen.has("unmapped")}">
+        <div class="jh1"><b>Unmapped</b><span class="ttl">tasks whose Stage has no plan entry</span></div>
+        <div class="jwhen">${UNMAPPED.length} task${UNMAPPED.length===1?"":"s"} — visible, not guessed</div>
+      </div>
+      <div class="jbody"${jopen.has("unmapped")?"":" hidden"}>
+        <div class="warn">⚠ These tasks name a stage that is absent from or ambiguous in the plan.</div>
+        ${R.taskTable(UNMAPPED.filter(t => pass(t)), UNMAPPED.length, bodyOnly)}
+      </div>
+    </div>` : ""}</div>`;
+  sc.querySelectorAll(".jhead").forEach(h => {
+    const toggle = () => { const id = h.dataset.st; jopen.has(id) ? jopen.delete(id) : jopen.add(id); renderJourney(); };
+    h.onclick = e => { if (e.target.closest("a,[data-go]")) return; toggle(); };
+    h.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } };
+  });
+  bindLinks(sc);
+}
+
+// ---- view C: compact matrix ----
+function renderMatrix(){
+  $("stagecol").className = "stagecol mtx-mode";
+  $("lrail").innerHTML = `<div class="card"><h2>Summary</h2>${glanceCard()}</div>`;
+  $("vinfo").textContent = "one row per stage — click a row to expand";
+  const evCell = s => {
+    const cv = s.coverage||{};
+    if (cv.kind !== "authored") return `<span class="mut">untracked</span>`;
+    return R.EV_ORDER.filter(k => (cv.states||{})[k]).map(k => `<span class="evchip" style="background:var(${R.EV[k]})">${k} ${cv.states[k]}</span>`).join(" ") || `<span class="mut">none recorded</span>`;
+  };
+  const blkCell = s => s.blockers.length ? s.blockers.map(t => `<a data-go="${t.id}">${t.id}</a>`).join(", ") : `<span class="mut">—</span>`;
+  const stageRow = s => {
+    const shown = selStageShown(s), open = selStage === s.id, n = s.tasks.length;
+    const tc = n ? `<b>${shown.length===n?shown.length:shown.length+"/"+n}</b> ` + (shown.length ? R.countsHtml(shown) : `<span class="mut">all filtered out</span>`) : `<b>No local tasks</b>`;
+    let h = `<tr class="row${open?" sel":""}" data-st="${esc(s.id)}" tabindex="0">
+        <td><b>Stage ${esc(s.id)}</b><br><span class="mut">${esc(s.title||"")}</span></td>
+        <td><span class="tag" style="background:var(${R.DECL[s.declared]||"--s-canc"})">${esc(s.declared||"not recognized")}</span>${s.recurring?`<br><span class="cchip">recurring</span>`:""}</td>
+        <td>${tc}</td><td>${evCell(s)}</td><td>${blkCell(s)}</td>
+        <td><a class="src" href="${esc(s.sourceHref||"#")}" onclick="event.stopPropagation()">${esc(s.sourceRef||"plan")} ↗</a></td>
+      </tr>`;
+    if (open) h += `<tr class="xrow"><td colspan="6">${R.warnsHtml(s)}${R.factsHtml(s, shown)}${R.blockersHtml(s)}${R.extrasHtml(s)}${R.taskTable(shown, s.tasks.length, bodyOnly)}</td></tr>`;
+    return h;
+  };
+  const unRows = UNMAPPED.length ? `<tr class="row${selStage==="unmapped"?" sel":""}" data-st="unmapped" tabindex="0">
+      <td><b>Unmapped</b><br><span class="mut">no matching plan stage</span></td>
+      <td><span class="tag" style="background:var(--s-rej)">n/a</span></td>
+      <td><b>${(()=>{const f=UNMAPPED.filter(t=>pass(t)).length;return f===UNMAPPED.length?UNMAPPED.length:f+"/"+UNMAPPED.length;})()}</b></td>
+      <td><span class="mut">—</span></td><td><span class="mut">—</span></td><td><span class="mut">—</span></td>
+    </tr>` + (selStage==="unmapped" ? `<tr class="xrow"><td colspan="6">
+      <div class="warn">⚠ These tasks name a stage that is absent from or ambiguous in the plan — kept visible.</div>
+      ${R.taskTable(UNMAPPED.filter(t => pass(t)), UNMAPPED.length, bodyOnly)}
+    </td></tr>` : "") : "";
+  const sc = $("stagecol");
+  sc.innerHTML = `<div class="card mcard"><h2>Roadmap — every declared stage, plan source order</h2>
+    <div class="tablewrap"><table class="mtx" id="mtx"><thead><tr><th>Stage</th><th>Declared</th><th>Local tasks</th><th>Evidence</th><th>Blockers</th><th>Source</th></tr></thead>
+    <tbody>${STAGES.map(stageRow).join("")}${unRows}</tbody></table></div></div>`;
+  sc.querySelectorAll("#mtx tr.row").forEach(r => {
+    const toggle = () => { selStage = selStage === r.dataset.st ? null : r.dataset.st; renderMatrix(); };
+    r.onclick = e => { if (e.target.closest("a,[data-go],details")) return; toggle(); };
+    r.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); toggle(); } };
+  });
+  bindLinks(sc);
+}
+
+// ---- view selector (human approved all three layouts; choice persists) ----
+const VIEWS = {cards: renderCards, journey: renderJourney, matrix: renderMatrix};
+let view = "cards";
+try { const v = localStorage.getItem("dash-roadmap-view"); if (VIEWS[v]) view = v; } catch(e){}
+function paintViewBtns(){ document.querySelectorAll("#views .btn").forEach(b => b.classList.toggle("on", b.dataset.v === view)); }
+document.querySelectorAll("#views .btn").forEach(b => b.onclick = () => {
+  view = b.dataset.v; try { localStorage.setItem("dash-roadmap-view", view); } catch(e){}
+  selStage = null; paintViewBtns(); render();
+});
+
+function render(){ fb.render(); paintViewBtns(); VIEWS[view](); if (selTask) select(selTask); }
+$("diag").innerHTML = R.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + R.provenanceCard(DATA);
+C.initHeader("roadmap", DATA.generated, DATA.project, DATA.demo);
+render();
+</script>
+</body>
+</html>

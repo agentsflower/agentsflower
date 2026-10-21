@@ -1,0 +1,127 @@
+/* ===== Roadmap page: stage cards, journey stepper, matrix, diagnostics =====
+   Layout follows the same .app grid as the other pages; tokens come from
+   common.css. Three facts per stage stay separate: declared status (plan),
+   local task counts (ledger), exit-criteria evidence (authored records). */
+
+/* app columns: same grid rows as the other pages (common.css owns .app) */
+.app>header{grid-column:1/-1;margin:0}
+.fbcard,.fbchosen{grid-column:1/-1}
+.fbcard{margin:0!important;padding:10px 12px}
+.fbchosen{margin:-4px 0 0;padding:0 4px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.flag{color:var(--s-block);font-size:12px;margin-left:6px}
+.side{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.side .card{margin:0;flex:0 0 auto}
+.center{min-height:0;min-width:0;display:flex;flex-direction:column;gap:10px}
+.vbar{margin:0;padding:6px 10px}
+.stagecol{flex:1;min-height:0;overflow:auto;padding-right:2px}
+.stagecol.mtx-mode{display:flex;flex-direction:column;overflow:hidden}
+.stagecol.mtx-mode .mcard{min-height:0}
+@media (max-width:1100px){
+  .topbar{flex-wrap:wrap;row-gap:6px}
+  .side{overflow:visible;margin-bottom:12px}
+  .center{margin-bottom:12px}
+  .stagecol{overflow:visible}
+}
+
+/* view selector: same segmented look as the Gantt page's view switch */
+.seg2{display:inline-flex}
+.seg2 .btn{border-radius:0}
+.seg2 .btn:first-child{border-radius:8px 0 0 8px}
+.seg2 .btn:last-child{border-radius:0 8px 8px 0}
+.seg2 .btn.on{outline:2px solid var(--accent);outline-offset:-2px;font-weight:600}
+
+/* ---- stage presentation, shared vocabulary for all three views ---- */
+.decl{font-weight:600}
+.facts{display:grid;gap:5px;margin:8px 0}
+.fact{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px;min-width:0}
+.fact .fl{flex:0 0 168px;color:var(--mut);font-size:12px}
+.fact .fv{min-width:0}
+.cchip{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;margin:0 2px;white-space:nowrap}
+.cchip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:0}
+.evchip{display:inline-block;padding:0 8px;border-radius:999px;font-size:12px;color:#fff;margin:0 2px;white-space:nowrap}
+.ev-ext{font-size:11px;border:1px dashed currentColor;border-radius:4px;padding:0 3px;margin-left:3px;opacity:.9}
+.stalemark{color:var(--s-block);font-weight:600}
+.blk{font-size:12.5px;margin:6px 0}
+.blk a{color:var(--accent);cursor:pointer}
+details.fold{margin:4px 0}
+details.fold summary{cursor:pointer;color:var(--accent);font-size:13px}
+.cycles{font-size:12.5px;margin:6px 0}
+.cycles .cy{border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:4px 0;background:var(--chip)}
+.warn{background:var(--chip);border-left:4px solid var(--s-block);padding:6px 10px;border-radius:6px;font-size:12.5px;margin:8px 0}
+.src{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}
+.src:hover{text-decoration:underline}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap}
+.pill{font-size:12px;color:var(--mut)}
+.empty{padding:14px;text-align:center;color:var(--mut);font-size:13px}
+.mut{color:var(--mut)}
+table{border-collapse:collapse;width:100%}
+th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--mut);white-space:nowrap}
+.tablewrap{overflow-x:auto}
+
+/* mini task table inside a stage block: extra columns hide by width, no page scroll */
+.tmini td,.tmini th{padding:4px 6px;font-size:12.5px}
+.tmini tr.row{cursor:pointer}
+.tmini tr.row:hover{background:var(--chip)}
+.tmini tr.row.sel{outline:2px solid var(--accent);outline-offset:-2px}
+@media (max-width:900px){.tmini th:nth-child(7),.tmini td:nth-child(7){display:none}}
+@media (max-width:640px){.tmini th:nth-child(5),.tmini td:nth-child(5),.tmini th:nth-child(6),.tmini td:nth-child(6){display:none}}
+@media (max-width:520px){.tmini th:nth-child(3),.tmini td:nth-child(3){display:none}}
+
+/* variant A: stage-first cards */
+.scard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.scard>.shead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.scard>.shead b{font-size:15px}
+.scard>.shead .ttl{font-size:14px}
+.scard>.shead .sp{flex:1}
+
+/* left rail: roadmap index and summaries */
+.stg{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:6px 4px;cursor:pointer;color:var(--ink);font:inherit;font-size:13px}
+.stg:hover{background:var(--chip)}
+.stg.sel{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
+.stg .nm{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stg .sub{font-size:11.5px;color:var(--mut)}
+.tot,.gl{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.tot:last-child,.gl:last-child{border-bottom:0}
+.howto{font-size:12px;color:var(--mut);line-height:1.5}
+
+/* variant B: journey stepper */
+.jrail{position:relative;padding-left:26px}
+.jrail::before{content:"";position:absolute;left:9px;top:8px;bottom:8px;width:2px;background:var(--line)}
+.jnode{position:relative;margin-bottom:14px}
+.jnode::before{content:"";position:absolute;left:-23px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--jc,var(--s-ready));border:2px solid var(--panel);box-shadow:0 0 0 2px var(--line)}
+.jnode>.jhead{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.jnode>.jhead:hover{border-color:var(--accent)}
+.jnode>.jhead:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.jnode.open>.jhead{border-color:var(--accent)}
+.jnode .jbody{border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;padding:10px 12px;background:var(--panel);margin:-8px 6px 0}
+.jnode .jbody[hidden]{display:none}
+.jhead .jh1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.jhead .jh1 .ttl{font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.jwhen{font-size:11.5px;color:var(--mut)}
+
+/* variant C: compact matrix */
+.mcard{flex:1;min-height:0;display:flex;flex-direction:column;margin:0}
+.mcard .tablewrap{flex:1;min-height:0;overflow:auto}
+.mtx td{vertical-align:top}
+.mtx tr.row{cursor:pointer}
+.mtx tr.row:hover{background:var(--chip)}
+.mtx tr.row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.mtx tr.row.sel td{background:var(--chip)}
+.mtx tr.xrow>td{background:var(--chip);padding:10px 14px}
+@media (max-width:1500px){.mtx th:nth-child(5),.mtx td:nth-child(5){display:none}}
+@media (max-width:900px){.mtx th:nth-child(4),.mtx td:nth-child(4),.mtx th:nth-child(6),.mtx td:nth-child(6){display:none}}
+
+/* runtime detail: attempts, routing, gate records */
+.rtitle{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin:10px 0 4px}
+.rtab td,.rtab th{padding:3px 6px;font-size:12.5px}
+
+/* diagnostics + detail cards */
+.diag table{font-size:12px}
+.diag li{margin:4px 0;font-size:12.5px}
+.diag h3{font-size:12px;margin:10px 0 4px;color:var(--mut)}
+.diag h2{font-size:13px;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+#detail{overflow:auto}
+.side.right>#detail{height:auto;flex:1 1 auto;min-height:0}
