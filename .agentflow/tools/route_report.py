@@ -39,10 +39,14 @@ def attempt_seconds(attempts):
 
 
 def summarize(tid, row, history, attempts, verdict=None):
-    recommendations = [entry for entry in history if isinstance(entry, dict) and entry.get("jevChoice")]
+    recommendations = [entry for entry in history if isinstance(entry, dict)
+                       and (entry.get("jevChoice") or entry.get("event") == "assessment")]
     if not recommendations:
         return None
     selected = next((entry for entry in reversed(recommendations) if entry.get("applied")), recommendations[-1])
+    admitted = [entry for entry in history if isinstance(entry, dict)
+                and entry.get("event") in ("admission", "human-exception")]
+    last_admission = admitted[-1] if admitted else None
     actual_tool = attempts[-1].get("tool") if attempts else None
     primary, backup = selected.get("tool"), selected.get("backupTool")
     if actual_tool == primary:
@@ -57,6 +61,7 @@ def summarize(tid, row, history, attempts, verdict=None):
     passed = done and (row.get("Role") != "tester" or verdict == "pass")
     first_pass = passed and len(attempts) == 1 and attempts[0].get("status") == "exited" and (
         attempts[0].get("exitCode") in (0, None))
+    exceptions = [entry for entry in admitted if entry.get("event") == "human-exception"]
     return {"task": tid, "role": row.get("Role"), "status": row.get("Status"),
             "complexity": selected.get("complexity"), "complexityBand": complexity_band(selected.get("complexity")),
             "confidence": selected.get("confidence"), "primaryTool": primary, "primaryModel": selected.get("model"),
@@ -64,7 +69,15 @@ def summarize(tid, row, history, attempts, verdict=None):
             "eligibleOptions": selected.get("eligibleOptions"), "actualTool": actual_tool,
             "actualModel": actual_model, "actualSource": actual_source, "attempts": len(attempts),
             "attemptWallSeconds": attempt_seconds(attempts), "acceptedPass": passed, "firstAttemptPass": first_pass,
-            "routeRequestId": selected.get("requestId")}
+            "routeRequestId": selected.get("requestId"),
+            "assessmentStatus": selected.get("status"), "assessmentBand": selected.get("band"),
+            "required": selected.get("required"), "floor": selected.get("floor"),
+            "excluded": selected.get("excluded"), "inadequate": selected.get("inadequate"),
+            "adequateHeld": selected.get("adequateHeld"), "blocked": selected.get("blocked"),
+            "admissions": len(admitted) - len(exceptions), "humanExceptions": len(exceptions),
+            "admissionSource": last_admission.get("source") if last_admission else None,
+            "admissionDeviation": last_admission.get("deviation") if last_admission else None,
+            "humanExceptionReason": exceptions[-1].get("reason") if exceptions else None}
 
 
 def aggregate(tasks):

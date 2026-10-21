@@ -23,6 +23,7 @@ Branch: t-001-probe
 Worktree: {wt}
 Independent check: none - probe
 Resume: none
+Routing exception: approved fixture task
 
 ## Goal
 

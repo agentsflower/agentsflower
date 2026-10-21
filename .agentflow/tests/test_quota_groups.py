@@ -151,6 +151,7 @@ class TickGroupTests(Base):
 
     def decide(self, tasks, rows):
         with patch.object(tick.gate, "parse", side_effect=lambda t: tasks[t]), \
+                patch.object(tick.route, "assessment_problems", return_value=([], {"source": "jev"})), \
                 patch.object(tick.gate, "last_attempt", return_value=None):
             return {t: (a, d) for t, a, d in tick.decide(rows, AT)}
 

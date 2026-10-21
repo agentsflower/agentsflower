@@ -41,6 +41,7 @@ class TickTests(unittest.TestCase):
         self.patches = [patch.object(tick, "RT", rt), patch.object(tick, "HEARTBEAT", rt / "orchestrator.json"),
                         patch.object(tick, "LIMITS", rt / "tool-limits.json"), patch.object(tick, "TICK", rt / "tick.json"),
                         patch.object(tick, "LOCK", rt / "tick.lock"),
+                        patch.object(tick.route, "assessment_problems", return_value=([], {"source": "jev"})),
                         patch.dict(os.environ, clean, clear=True)]
         for p in self.patches:
             p.start()
@@ -187,6 +188,7 @@ class TickTests(unittest.TestCase):
         with patch.object(tick.gate, "last_attempt", return_value=None), \
                 patch.object(tick.gate, "parse", return_value={"file": str(path)}), \
                 patch.object(tick.machine_capacity, "has_capacity", return_value=True), \
+                patch.object(tick.route, "backup_ok", return_value=(True, "")), \
                 patch.object(tick, "limited", return_value=False), \
                 patch.object(tick, "py", return_value=(0, "")), \
                 patch.object(tick.route, "_log"):
