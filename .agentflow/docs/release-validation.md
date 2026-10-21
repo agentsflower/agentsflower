@@ -8,12 +8,13 @@ never presented as a green macOS run.
 
 - `.github/workflows/ci.yml` runs `python -m unittest discover -s .agentflow/tests`
   on a matrix of `ubuntu-latest`, `macos-latest`, `windows-latest` crossed with
-  Python `3.10`, `3.11`, `3.12` — nine jobs per run.
+  Python `3.10`, `3.11`, `3.12` — nine test jobs, plus the `package` and `mcp`
+  jobs below (thirteen jobs per run).
 - Triggers: `push`, `pull_request`, and manual `workflow_dispatch`. The workflow is
   read-only (`permissions: contents: read`, `persist-credentials: false`), calls no
   models, and performs no deployment or publishing.
-- `fail-fast: false`, so one failing cell does not hide results from the other eight;
-  each job is bounded by `timeout-minutes: 20`.
+- `fail-fast: false`, so one failing cell does not hide results from the others;
+  each job is bounded by `timeout-minutes: 20` (30 for the integration jobs).
 - A second job `package` runs `python .agentflow/tests/check_package.py` on
   `ubuntu-latest` and `windows-latest` (Python 3.12): it provisions `build`/`setuptools`
   into disposable venvs, builds the `agentflow-sdlc` wheel and sdist, and exercises the
@@ -32,22 +33,29 @@ never presented as a green macOS run.
 
 - Local evidence so far: Windows (this development machine) and Linux (Docker),
   recorded in the task results and `known-issues.md`.
-- Remote CI evidence: **not yet obtained**. The nine matrix jobs have never run on
-  GitHub-hosted runners; in particular there is no green macOS result. Do not claim
-  macOS compatibility from this file or from a local Windows/Linux pass alone.
+- Remote CI evidence: one run has executed — run `39026298541` on `main@50adf65`
+  (2026-10-17). Result: all three `ubuntu-latest` test jobs and both
+  `package` jobs passed; all three `windows-latest` and all three
+  `macos-latest` test jobs exited 1 at `python -m unittest discover`; both
+  `mcp` jobs were skipped by dependency (`needs: tests`). The failure is
+  specific to the GitHub windows-2025/macos-arm64 runner environments — a
+  local Windows 10 / Python 3.13 run reproduces green (204 tests) even with
+  the CI environment — and the failing step logs need authenticated access to
+  read. No green macOS result exists: do not claim macOS compatibility from
+  this file or from a local Windows/Linux pass alone.
 
-## How to obtain the remote evidence (human steps)
+## How to obtain a green remote run (human steps)
 
 1. Push a branch containing `.github/workflows/ci.yml` to
    `https://github.com/vcherstar/AgentFlow` (or merge it into `main`):
    `git push origin <branch>`.
 2. The `push` trigger starts a run automatically. To run it without pushing, open
    the repository on GitHub -> Actions -> "CI" -> "Run workflow" (manual dispatch).
-3. Read results: Actions -> select the run -> the nine jobs appear as
-   `tests (<os>, Python <version>)`. A green run is evidence for that OS/Python
-   cell; inspect any failed job's "Run unit tests" step log before deciding.
+3. Read results: Actions -> select the run -> the jobs appear as
+   `tests (<os>, Python <version>)`, `package integration (<os>)` and
+   `mcp integration (<os>)`. A green run is evidence for that OS/Python
+   cell; inspect any failed job's "Run unit tests" step log before deciding
+   (log download needs repository access — anonymous API reads return 403).
 4. Record the outcome (run URL, date, per-cell result) in the release task's Result
-   or project memory. Only a completed remote run closes the macOS evidence gap.
-
-Later package/MCP tasks may extend this workflow; ownership of `ci.yml` ends with
-this task.
+   or project memory. Only a green remote `tests (macos-latest, ...)` job closes
+   the macOS evidence gap.

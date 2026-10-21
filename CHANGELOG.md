@@ -2,6 +2,47 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.6 - 2026-10-21
+
+Documentation-alignment train (T-097 core instructions and T-098 shipped-features
+docs): the user-facing and folder-map documentation now describes what 2.15.x
+actually ships, role Result examples match the gate's outcome-line format, and
+every role file links the protocol's canonical instruction-hierarchy rule.
+
+- `.agentflow/roles/` (T-097): Developer/Tester/Deployer Result examples now
+  demonstrate `- <id>: <verdict> - <evidence>` exactly as the completion gate
+  requires, and every role file points at the protocol's "Instruction authority
+  and ownership" section.
+- `GUIDE.md` documents the shipped launch surface: routing admission
+  (`T-NNN.route.json` assessment or a `Routing exception:` header), the free
+  account probe (`AGENTFLOW_<TOOL>_PROBE`) and the opt-in selected-model probe
+  (`AGENTFLOW_<TOOL>_MODEL_PROBE=on`), the enforced worker clock
+  (`AGENTFLOW_WORKER_TIMEOUT`, `--watchdog`) and the other autonomy budgets,
+  the `gate.py done` completion check with the opt-in Codex Stop-hook adapter,
+  quota-group-scoped holds and the declared quota-policy files, and the three
+  `AGENTFLOW_SHARED_DISPATCHER` modes. The `agentflow` subcommand list now
+  includes `done` and `hooks`; the Codex Windows-sandbox limitation is stated,
+  and the fixed per-tool worker argv is documented (the agy tester runs
+  non-interactive `-p --output-format stream-json`; Devin workers get
+  `--permission-mode dangerous --respect-workspace-trust false`, the opt-in
+  probe `--permission-mode auto`).
+- `.agentflow/README.md`'s folder map names every shipped tool
+  (`tick.py`, `hooks.py`, `power_guard.py`, `limit_detection.py`,
+  `quota_groups.py`, the Windows-only conductor helpers, and the rest) and the
+  optional `quota-policy.json`/`quota-samples.json` project files.
+- `README.md`, `RELEASE_NOTES.md` and `release-validation.md` no longer claim
+  the remote CI matrix never ran: run `39026298541` (2026-10-17) is recorded —
+  ubuntu test and both package jobs green, windows/macos test jobs failed
+  (environment-specific, open), mcp jobs skipped — and there is still no green
+  macOS result. The version badge matches `.agentflow/VERSION`.
+- `docs/typesafe.md` was audited against `route.py`'s current
+  assessment/admission behavior and needed no correction.
+
+Migration: run `install.py --update` to pick up the updated `.agentflow/README.md`,
+`typesafe.md`, role files, and the `AGENTS.md`/`CLAUDE.md` version blocks. No
+configuration changes are required; the corrected documents describe behavior
+that 2.15.x already shipped — no workflow, option or contract changed.
+
 ## 2.15.5 - 2026-10-20
 
 Jev-led model selection inside the preferred CLI and a Devin pool update

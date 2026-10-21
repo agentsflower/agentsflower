@@ -15,9 +15,10 @@ Everything AgentFlow needs lives in this folder, so it never collides with a pro
 | `tasks/.runtime/` | local | attempt history, logs, evidence (git-ignored) |
 | `state/` | project | handoff, current step, decisions, known issues, session log, Task Ledger |
 | `workspace.json` | project | workspace only: the product repositories under the workspace root |
-| `docs/model-options.json` | project | tools, model families, effort variants, and availability windows for `route.py` |
+| `docs/model-options.json` | project | tools, model families, effort variants, availability windows and `quota_group`s for `route.py` |
+| `docs/quota-policy.json`, `docs/quota-samples.json` | project | optional declared quota expectations and their readings (`tick.py`; `AGENTFLOW_QUOTA_POLICY`/`AGENTFLOW_QUOTA_SAMPLES` override) |
 | `template-source.json` | project | where this install came from (written by `install.py`); `upstream.py` reads it |
-| `tools/` | template | `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified `agentflow` entry, `mcp_server.py` optional MCP server, `machine_capacity.py` shared machine slots, `dispatch.py` shared scheduling preview and grants, `route.py` and `plan_route.py` (Jev), `route_report.py` selection outcomes, `upstream.py` template drift report, `gate.py`, `ledger.py`, `accept.py`, `install.py`, `paths.py` |
+| `tools/` | template | `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified `agentflow` entry, `gate.py` preflight/verify/`done`, `accept.py`, `ledger.py`, `install.py`, `paths.py`, `tick.py` scheduler, `mcp_server.py` optional MCP server, `machine_capacity.py` shared machine slots and limits, `dispatch.py` shared scheduling preview and grants, `route.py`/`plan_route.py`/`route_report.py` (Jev routing), `quota_groups.py`, `limit_detection.py`, `hooks.py` Codex Stop-hook adapter, `power_guard.py` Windows idle-sleep guard, `conductor.ps1`/`conductor-panel.ps1` Windows-only helpers, `upstream.py` template drift report |
 | `dashboard/` | template | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `tests/` | template | checks of the tools themselves (`python -m unittest discover -s .agentflow/tests`) |
 
