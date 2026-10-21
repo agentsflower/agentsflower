@@ -4,10 +4,12 @@ What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisi
 
 ## 2.15.6 - 2026-10-21
 
-Documentation-alignment train (T-097 core instructions and T-098 shipped-features
-docs): the user-facing and folder-map documentation now describes what 2.15.x
-actually ships, role Result examples match the gate's outcome-line format, and
-every role file links the protocol's canonical instruction-hierarchy rule.
+Documentation-alignment train (T-097 core instructions, T-098 shipped-features
+docs, T-099 Russian guide parity and release finalization): the user-facing and
+folder-map documentation now describes what 2.15.x actually ships, role Result
+examples match the gate's outcome-line format, every role file links the
+protocol's canonical instruction-hierarchy rule, and the Russian guide carries
+the same shipped facts as the English one.
 
 - `.agentflow/roles/` (T-097): Developer/Tester/Deployer Result examples now
   demonstrate `- <id>: <verdict> - <evidence>` exactly as the completion gate
@@ -37,11 +39,30 @@ every role file links the protocol's canonical instruction-hierarchy rule.
   macOS result. The version badge matches `.agentflow/VERSION`.
 - `docs/typesafe.md` was audited against `route.py`'s current
   assessment/admission behavior and needed no correction.
+- `GUIDE.ru.md` (T-099) is rewritten to section-by-section parity with
+  `GUIDE.md`: the same install/update/migrate/package/MCP/machine-resource
+  surface, launch checks and worker bounds, fixed per-tool worker argv and
+  recovery semantics, in Russian. Its stale claims now match the shipped
+  behavior: managed workers are detached background processes watched through
+  the attempt log and `--status` (no console windows to babysit), the
+  dashboard UI is English, the agy CLI tester is non-interactive, and the 2.1
+  migration follows the installer's refusal path. The Russian-only operational
+  sections the English guide does not carry (machine preparation, TypeSafe
+  setup, the per-tool smoke check, the day scenario and the cheat sheet) are
+  dropped — parity is one factual surface. `RELEASE_NOTES.md` becomes the
+  release notes of this train's pending release instead of the
+  never-published 2.12.0 plan.
+- `.agentflow/roles/tool-routing.md`: the Antigravity CLI note now says both
+  managed roles run non-interactive `-p --output-format stream-json` (the
+  Developer adds `--dangerously-skip-permissions`); only the IDE stays
+  `-Manual`.
 
 Migration: run `install.py --update` to pick up the updated `.agentflow/README.md`,
-`typesafe.md`, role files, and the `AGENTS.md`/`CLAUDE.md` version blocks. No
-configuration changes are required; the corrected documents describe behavior
-that 2.15.x already shipped — no workflow, option or contract changed.
+`typesafe.md`, role files (including `tool-routing.md`), and the
+`AGENTS.md`/`CLAUDE.md` version blocks; `GUIDE.ru.md` is template-side
+documentation and is not installed into a project. No configuration changes are
+required; the corrected documents describe behavior that 2.15.x already shipped —
+no workflow, option or contract changed.
 
 ## 2.15.5 - 2026-10-20
 
