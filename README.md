@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.12.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.15.6-blue.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MCP ready](https://img.shields.io/badge/MCP-optional%20server-green.svg)](#mcp-server-optional)
 
@@ -68,18 +68,18 @@ A read-only view for the human: task table, filters, Gantt, timeline, and eviden
 | `.agentflow/roles/` | one instruction file per role; `tool-routing.md`: which tool takes which task |
 | `.agentflow/commands/` | slash-command texts (`.claude/commands/` holds one-line pointers) |
 | `.agentflow/tasks/_template.md` | Task File template |
-| `.agentflow/tools/` | `install.py` installer/updater, `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified CLI, `gate.py` preflight/verify, `accept.py` acceptance, `ledger.py` Task Ledger, `mcp_server.py` optional MCP server |
+| `.agentflow/tools/` | `install.py` installer/updater, `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified CLI, `gate.py` preflight/verify/`done`, `accept.py` acceptance, `ledger.py` Task Ledger, `tick.py` scheduler, routing (`route.py`, `plan_route.py`, `route_report.py`, `quota_groups.py`), machine sharing (`machine_capacity.py`, `dispatch.py`), `hooks.py` Codex adapter, `mcp_server.py` optional MCP server |
 | `.agentflow/dashboard/` | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `.agentflow/tests/` | tests of the tools (`python -m unittest discover -s .agentflow/tests`) |
 | `.agentflow/VERSION`, `.agentflow/README.md` | version and folder map |
 | `AGENTS.md`, `CLAUDE.md`, `.claude/commands/` | entry points for the tools |
 | `GUIDE.md` | step-by-step guide: install, update, machine setup, daily use ([Russian version](GUIDE.ru.md)) |
 | `CHANGELOG.md`, `RELEASE_NOTES.md` | what changed in each version; latest release notes |
-| `.github/workflows/ci.yml` | CI matrix: ubuntu/macos/windows × Python 3.10–3.12 |
+| `.github/workflows/ci.yml` | CI matrix: ubuntu/macos/windows × Python 3.10–3.12, plus package and MCP integration jobs |
 
 The template's own memory (`.agentflow/state/`, `.agentflow/docs/project-plan.md`) describes the development of AgentFlow itself and is never copied into a project.
 
-Requirements: git, Python 3.10+, and the CLIs of the tools you use. PowerShell 7 only on Windows (compatibility wrapper and optional conductor). The conductor/autostart helpers are Windows-only.
+Requirements: git, Python 3.10+, and the CLIs of the tools you use. PowerShell is needed only on Windows, for the compatibility wrapper and the optional conductor (7 verified; 5.1 unverified). The conductor/autostart helpers are Windows-only.
 
 ## Quick start
 
@@ -111,6 +111,6 @@ Read-only tools by default; `agentflow_accept_task` only behind the explicit ope
 
 ## Verification status
 
-Local evidence: Windows and Linux test-suite runs are recorded in [.agentflow/docs/release-validation.md](.agentflow/docs/release-validation.md). The nine-job GitHub Actions matrix exists but is a separate release gate — there is no remote run or green macOS result yet, and none is claimed here.
+Local evidence: Windows and Linux test-suite runs are recorded in [.agentflow/docs/release-validation.md](.agentflow/docs/release-validation.md). One remote CI run has executed (2026-10-17): the ubuntu test jobs and both package jobs were green; the windows-latest and macos-latest test jobs failed (the unit-test command exited 1) — an environment-specific failure still open — and the mcp jobs were skipped by dependency. There is still no green macOS result, and none is claimed here.
 
 License: MIT.

@@ -4,7 +4,7 @@ A project-memory template with a team of agent roles: Orchestrator, Developer, T
 
 The *template* is the folder where you cloned this repository, written below as `<AgentFlow>` — substitute your own path. Everything AgentFlow puts into a project lives in one folder, `.agentflow/`; the project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`. A project's own `docs/`, `tasks/`, `tools/` are never touched.
 
-Requirements on the machine: git, Python 3.10+ (stdlib only — no third-party runtime dependencies), and the CLIs of the tools your workers will use (`claude`, `codex`, `agy`, `devin`). PowerShell 7 is needed only on Windows for the compatibility wrapper `run-task.ps1` and the optional conductor; the launcher itself is `run_task.py` (pure Python, cross-platform).
+Requirements on the machine: git, Python 3.10+ (stdlib only — no third-party runtime dependencies), and the CLIs of the tools your workers will use (`claude`, `codex`, `agy`, `devin`). The launcher itself is `run_task.py` (pure Python, cross-platform); on Windows the compatibility wrapper `run-task.ps1` and the optional conductor need PowerShell — 7 is the verified line, 5.1 compatibility is unverified.
 
 ---
 
@@ -110,10 +110,12 @@ The wheel bundles the whole installer-owned template under `agentflow/template/`
 ```bash
 agentflow install <project> [--update] [--dry-run] [--inside-repo] [--workspace] [--repos a,b] [--git-init] [--mcp [--mcp-client claude|cursor]]
 agentflow run T-NNN --role <developer|tester|deployer> [--project <dir>]
-agentflow gate <verify|preflight|endcheck|task> <T-NNN> [--project <dir>]
+agentflow gate <task|preflight|endcheck|verify|stage> <args> [--project <dir>]
+agentflow done T-NNN [--project <dir>]
 agentflow accept T-NNN [--project <dir>]
 agentflow ledger <add|set|approve|show> [--project <dir>]
 agentflow mcp [--enable-orchestrator-tools] [--project <dir>]
+agentflow hooks <args> [--project <dir>]
 agentflow dashboard [--open] [--project <dir>]
 ```
 
@@ -141,7 +143,11 @@ python .agentflow/tools/install.py <project> --update --mcp --mcp-client cursor 
 
 ## F. Machine resources (opt-in)
 
-Shared machine scheduling — how many tool slots this machine offers to AgentFlow projects — is opt-in per machine. `machine_capacity.py` keeps a registry of projects that claimed a slot; `dispatch.py` previews shared scheduling and issues grants a launcher can exchange (`run_task.py --dispatch-grant <token>`). If you never configure it, every command above works unchanged: launching a worker does not require a grant.
+Shared machine scheduling — how many tool slots this machine offers to AgentFlow projects — is opt-in per machine. `machine_capacity.py` keeps a registry (`registry.json`, shared by all projects of one OS user; `AGENTFLOW_MACHINE_STATE_DIR` points it elsewhere) of projects that claimed a slot. If you never configure it, every command above works unchanged: launching a worker does not require a grant.
+
+Cross-project dispatch has three modes under `AGENTFLOW_SHARED_DISPATCHER` (default `off`): `shadow` adds a read-only preview of the fair allocation to `tick.py run`'s `dispatchShadow` report — `dispatch.py` simulates it without launching anything; `active` makes each project's conductor publish its ready tasks and request a short-lived grant that the launcher exchanges for its normal machine lease (`run_task.py --dispatch-grant <token>`). Enable `active` only after every participating project runs this version — older launchers do not reserve against grants.
+
+Observed tool limits are recorded per *quota group*, not per CLI: an option in `model-options.json` marks its provider billing group with `quota_group`, a hold is stored under `<tool>:<group>` and blocks only sessions of that group (a bare `<tool>` hold blocks them all). Declared quota *expectations* are optional project files: `.agentflow/docs/quota-policy.json` (`AGENTFLOW_QUOTA_POLICY` overrides, `off` disables) holds `{"policies": [{"tool", "group"?, "remaining": {"percent_below": n}, "action": "pause|switch|report", "sample_max_age_seconds"?}]}`, and `quota-samples.json` next to it (`AGENTFLOW_QUOTA_SAMPLES` overrides) holds the readings keyed `<tool>` or `<tool>:<group>`. With no fresh reading the state is `unknown` and nothing blocks — the file is a wish, never a claim that a percentage is enforced.
 
 The `conductor.ps1` / `conductor-panel.ps1` helpers (scheduled orchestrator ticks and autostart subscription on this machine) are **Windows-only** — they use PowerShell, `conductor.env.json` and Task Scheduler. They are not part of the core workflow and are never required on Linux or macOS.
 
@@ -172,10 +178,26 @@ Process control for a stuck or manual attempt:
 
 ```bash
 python .agentflow/tools/run_task.py --status          # state of the last attempt of every task
-python .agentflow/tools/run_task.py --stop            # kill a hung worker's whole process tree
-python .agentflow/tools/run_task.py --mark-finished   # a --manual attempt has finished
-python .agentflow/tools/run_task.py --recheck         # rerun the end check after fixing its cause
+python .agentflow/tools/run_task.py T-NNN --stop      # kill a hung worker's whole process tree
+python .agentflow/tools/run_task.py T-NNN --mark-finished  # a --manual attempt has finished
+python .agentflow/tools/run_task.py T-NNN --recheck   # rerun the end check after fixing its cause
+python .agentflow/tools/run_task.py --watchdog        # stop every running non-manual attempt past its deadline (optionally T-NNN)
 ```
+
+## Launch checks and worker bounds
+
+Before a worker starts, the launcher checks (a failure refuses the launch with a diagnosable reason; nothing is started):
+
+- **Routing admission**: `python .agentflow/tools/route.py T-NNN` must have left a usable `assessment` record in `.agentflow/tasks/.runtime/T-NNN.route.json` matching the task's current `requirementsHash`, and the tool/model/effort the launch resolves to — after any `AGENTFLOW_<TOOL>_ARGS` overrides — must still meet the recorded requirement. A missing, stale or non-`ok` record refuses the launch; a `Routing exception: <reason>` header line is the auditable human override.
+- **Executable and free access probe**: the tool CLI exists (`AGENTFLOW_<TOOL>` overrides the lookup; `AGENTFLOW_<TOOL>_ARGS` appends machine-wide flags) and answers a free account-access probe (`AGENTFLOW_<TOOL>_PROBE` overrides the built-in; `off` declares the check unsupported and refuses an unattended launch).
+- **Selected-model probe (opt-in)**: `AGENTFLOW_<TOOL>_MODEL_PROBE=on` runs a bounded built-in inference check of the task's selected model — it may cost tokens, only the audited built-ins count, and account access alone never proves model entitlement.
+- **Observed limits and capacity**: no live `<tool>`/`<tool>:<group>` quota hold, and the machine slot/PORT lease is free (see [F. Machine resources](#f-machine-resources-opt-in)).
+
+Every managed worker runs **non-interactively** under a launcher-enforced wall clock: `AGENTFLOW_WORKER_TIMEOUT` seconds (default 1200; invalid or missing keeps the default — a managed worker is never unbounded). `--watchdog` (run by the conductor every round) stops an overdue attempt from outside through the same guarded path as `--stop`. Further autonomy bounds, each refusing a new attempt with a recorded reason: `AGENTFLOW_MAX_ATTEMPTS` (8), `AGENTFLOW_TASK_TIMEOUT` (4h from attempt 1), `AGENTFLOW_MAX_IDENTICAL_FAILURES` (3), `AGENTFLOW_MAX_TOOL_SWITCHES` (3). A launch inside a running worker's checkout is a nested helper and is refused unless a Preflight rule says `- delegate: on`. On Windows a bounded worker also holds an execution request against automatic idle sleep (`power_guard.py`, a no-op on POSIX). Interactive work is a `--manual` attempt in the human's own session and untouched by the watchdog.
+
+The single completion check is `python .agentflow/tools/gate.py done T-NNN` (`agentflow done`): required criteria at `pass`, the `## Checks` passing on the artifact and on a trial merge onto the current base — a still-bound PASS is reused, not re-measured. An optional Codex Stop-hook adapter (`python .agentflow/tools/hooks.py enable codex`, then with `--write`) runs the same check when a Codex session ends; it validates the installed Codex version first, stays advisory, and is inert inside a managed worker.
+
+Status is derived from records, never duplicated by hand: `--status`, `tick.py status` and the dashboard read the attempt/ledger files; `handoff.md` stays an authored note written by the session.
 
 ## Watching progress
 
@@ -189,7 +211,7 @@ The dashboard is read-only for the human and invents nothing: statuses, roles an
 
 ## Recovery
 
-- A dead or errored attempt is recorded per task in `.agentflow/tasks/.runtime/T-NNN.json`; the ledger stays `in progress` until the Orchestrator decides. Do not repeat a failed path recorded in `.agentflow/state/known-issues.md`.
+- A dead or errored attempt is recorded per task in `.agentflow/tasks/.runtime/T-NNN.json`; the ledger stays `in progress` until the Orchestrator decides. Every attempt ends with a classified `stopReason` (`completed`, `limit`, `timeout`, `stopped`, `dead`, `environment`, `verification`, `implementation`), and an attempt that did not complete also carries a bounded `recovery` record per checkout — branch, HEAD, tracked modifications and untracked paths (paths and status only, never file contents) — so a successor launched on the same Task File continues from the preserved draft. `Resume: <sha>` keeps the worktree and its drafts; `Resume: start fresh` discards them. Do not repeat a failed path recorded in `.agentflow/state/known-issues.md`.
 - `gate.py verify` failing on a `completed` Result means the task is rejected: the Orchestrator writes a successor Task File with the findings — it never edits the worker's code itself.
 - A `blocked` Result goes back to the Orchestrator with the worker's question.
 - Review isolation: a Tester works in a disposable checkout of the `Verifies` commit and changes nothing; after its attempt the launcher checks that branch, worktree and Task File are untouched.
@@ -203,7 +225,8 @@ The dashboard is read-only for the human and invents nothing: statuses, roles an
   { "permissions": { "allow": [ "PowerShell(.\\.agentflow\\tools\\run-task.ps1:*)", "Bash(python .agentflow/tools/run_task.py:*)" ] } }
   ```
 
-- Isolation is by git worktree and by post-attempt checks, not by a universal sandbox: Codex runs sandboxed, Claude on Windows is checked after the attempt. Do not rely on the launcher alone to prevent writes outside `Allowed files` — verify with the end check.
+- Worker argv is fixed per tool and role — an unlisted combination refuses the launch rather than downgrading silently: Codex `exec --sandbox danger-full-access` (developer) or `--sandbox workspace-write` with network (tester); Claude `-p` with `--dangerously-skip-permissions` (developer) or `--allowedTools Read,Grep,Glob,Bash,Edit` (tester); `agy -p --output-format stream-json`, with `--dangerously-skip-permissions` added for a developer — every managed agy worker, the tester included, is non-interactive print mode, not a chat waiting on `/exit`; Devin `-p --permission-mode dangerous --respect-workspace-trust false` for both roles — a fresh worktree is untrusted and no worker answers approval prompts, while the opt-in model probe uses the weaker `--permission-mode auto` (a probe writes nothing). Only the Antigravity IDE stays human-driven, as a `--manual` attempt.
+- Isolation is by git worktree and by post-attempt checks, not by a universal sandbox: Codex runs sandboxed (`danger-full-access` for a developer, `workspace-write` for a tester), every other tool is checked after the attempt. On Windows the Codex sandbox can deny the writes a worker legitimately needs — a Result file outside the checkout, temp directories for Python — and make Codex unusable for worker tasks on that machine; give the task another tool. Do not rely on the launcher alone to prevent writes outside `Allowed files` — verify with the end check.
 - No tool may push, merge to main, or deploy: merges belong to the Orchestrator's `accept.py`, deployment to a Deployer session that starts only after the human's explicit yes.
 
 ## If something goes wrong

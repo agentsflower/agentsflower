@@ -2,6 +2,9 @@
 
 Prepared locally on 2026-10-17. **Not yet published.** Push, CI verification,
 tagging and the GitHub Release are human steps; see *Publish (human steps)*.
+Status update (2026-10-21): no `v2.12.0` tag or GitHub Release was ever created;
+the repository has since moved through 2.15.x — see [CHANGELOG.md](CHANGELOG.md).
+These notes stay as the record of the 2.12.0 release preparation.
 
 ## What is in this release
 
@@ -34,8 +37,11 @@ Details per version: [CHANGELOG.md](CHANGELOG.md).
 - Local evidence: Windows development machine and Linux (Docker,
   python:3.12-slim) full-suite runs; recorded in
   `.agentflow/docs/release-validation.md` and `.agentflow/state/known-issues.md`.
-- **No remote CI run yet**: the nine-job matrix has never executed on
-  GitHub-hosted runners; there is no green macOS result. The macOS
+- Remote CI: one run has executed (run `39026298541`, 2026-10-17, `main@50adf65`).
+  The `ubuntu-latest` test jobs and both `package` jobs were green; the
+  `windows-latest` and `macos-latest` test jobs failed (the unit-test command
+  exited 1 — environment-specific, under investigation); the `mcp` jobs were
+  skipped by dependency. There is still no green macOS result, and the macOS
   (Darwin) `ps`-based process-tree fallback remains unverified.
 - Production figures in README are maintainer-attested (October 2026):
   NotebookLM AI Sidebar 80k+ users, 4.7/5 (111 ratings, Featured);
@@ -64,7 +70,7 @@ After final review and acceptance of the release tasks:
 
 1. Push the merge / main:
    `git push origin main`
-2. Confirm the nine-job CI run is green: repository → Actions → "CI"
+2. Confirm the thirteen-job CI run is green: repository → Actions → "CI"
    (also runnable manually via "Run workflow"). Record results in
    `.agentflow/docs/release-validation.md` — only a completed remote run
    closes the macOS evidence gap.
