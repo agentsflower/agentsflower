@@ -100,3 +100,23 @@ put `evidence:` markers at line end followed only by intended claim paths
 are mentions.
 
 ## Result
+Outcome: completed
+Change: 04773311aafce6c3f98831a5f862c8c745566da6 on t-094-fixed-clock-test-repair
+Files:
+- .agentflow/tests/test_routing_scheduler.py - the two recorded backup holds in test_a_held_backup_group_stays_scoped_and_refused now use datetime.now(timezone.utc) + timedelta(hours=1) instead of the fixed AT + timedelta(hours=1); the staged delta of 0b82f61 applied verbatim and committed as [T-094]
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_tick.py` -> pass (52 passed / 0 failed, exit 0). evidence: .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_tick.txt
+- `python -m unittest discover -s .agentflow/tests -p test_routing_scheduler.py` -> pass (11 passed / 0 failed, exit 0). evidence: .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_routing_scheduler.txt
+- `python -m unittest discover -s .agentflow/tests -p test_routing_core.py` -> pass (25 passed / 0 failed, exit 0). evidence: .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_routing_core.txt
+- `python -m unittest discover -s .agentflow/tests` -> pass on branch HEAD 0477331, verbatim tail "Ran 424 tests in 338.978s / OK (skipped=3)", exit 0. evidence: .agentflow/tasks/.runtime/T-094.full-suite.txt
+Criteria outcomes:
+- R-01: pass - the branch was moved onto 0bf4ac09fa08ef2c7cd77f6591993460511ebe07 once (git reset --hard from the launcher-created main-lineage start) and holds exactly one commit, 0477331, whose parent is 0bf4ac0; the delta vs 0bf4ac0 is only the hold-time repair (identical to the delta of 0b82f61); `git diff main...HEAD` lists the same 16 files as at 0bf4ac0, all inside this contract's Allowed files. evidence: .agentflow/tests/test_routing_scheduler.py
+- R-02: pass - test_a_held_backup_group_stays_scoped_and_refused was reproduced failing at 0bf4ac0 (switched=True: the hold recorded at fixed AT+1h was already expired) and passes at the current wall-clock time after the repair; the same repair was applied to both record_limit calls in that test (the devin hold at line ~242 and the agy hold at line ~247). evidence: .agentflow/tests/test_routing_scheduler.py .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_routing_scheduler.txt
+- R-03: pass - the three scoped Checks pass verbatim on branch HEAD (52/11/25, all OK, recorded above); the one required full-suite run on branch HEAD is recorded verbatim: "Ran 424 tests in 338.978s / OK (skipped=3)", exit 0, well after 2026-10-18T13:00Z. evidence: .agentflow/tasks/.runtime/T-094.full-suite.txt .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_tick.txt .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_routing_scheduler.txt .agentflow/tasks/.runtime/T-094.evidence/T-094.check-test_routing_core.txt
+- R-04: pass - .agentflow/VERSION reads 2.15.4, the AGENTS.md version block reads 2.15.4 and the CHANGELOG 2.15.4 entry (2026-10-18) is unchanged by this task (the delta vs 0bf4ac0 touches only the test file); T-040 is not claimed complete. evidence: .agentflow/VERSION CHANGELOG.md AGENTS.md
+Question or reason: -
+Found, not fixed:
+- none
+Proposed memory updates:
+- known-issues.md, 2026-10-21: T-094 closed the fixed-AT hold defect diagnosed by T-092 V-03; on commit 0477331 (t-094-fixed-clock-test-repair) the holds in test_a_held_backup_group_stays_scoped_and_refused derive from now()+1h and the suite stays green after 2026-10-18T13:00Z.
+- session-log.md, 2026-10-21: T-094 commit 0477331 on t-094-fixed-clock-test-repair; scoped checks 52+11+25 green; full suite 424 green in 339s; Result written; awaits orchestrator review (Independent check: none).

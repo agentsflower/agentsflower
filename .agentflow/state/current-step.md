@@ -1,22 +1,24 @@
 # Current Step
 
-2026-10-21 (8th update, background devin): T-093 resolved as rejected - its
-manual attempt was stopped with no Result and a raced-in managed attempt 2
-was stopped after committing the correct repair 0b82f61 onto 0bf4ac0 (kept
-on branch t-093-fixed-clock-test-repair). Successor T-094 (identical
-contract, carries 0b82f61, swe-2-high assessment ok) launched as managed
-devin attempt 1. T-036/T-066 Depends on repointed to T-094 in ledger and
-Task File headers.
+2026-10-21 (9th update, background devin): T-094 rejected - its `Allowed
+files` used comma-separated bullet lines, which gate.py never parses
+(first whitespace token only), so verify flagged five inherited-base files
+and acceptance could never pass. Orchestrator authoring defect, not a product
+defect; artifact 0477331 complete+green. Carrier T-095 (same scope, Allowed
+files one path per line, carries 0477331 via `git reset --hard`, Jev ok
+0.81 band medium, devin-swe-2 swe-2-high confirmed) launched as managed devin
+attempt 1 (pid 29976, deadline ~08:3xZ, log .runtime/T-095.1.log).
 
-Next: when T-094's Result lands, `gate.py verify T-094` then `accept.py`
+Next: when T-095's Result lands, `gate.py verify T-095` then `accept.py`
 (Independent check: none per contract) -> T-036 (refresh assessment before
-launch) -> T-038 -> T-044 -> T-046 -> T-048; T-066 also unblocks on T-094.
-Expect merge conflicts on VERSION/CHANGELOG/route.py vs main 2.15.5 -
+launch) -> T-038 -> T-044 -> T-046 -> T-048; T-066 also unblocks on T-095.
+Expect merge conflicts on VERSION/CHANGELOG/AGENTS.md vs main 2.15.5 -
 resolve via the standard merge-fix successor if the trial merge fails.
 Rejected draft branches kept for the human's cleanup: t-076, t-082, t-087
-(+ worktrees); the T-091 worktree/branch 0bf4ac0 is T-094's base - keep it
-until T-094 merges; keep branch t-093-fixed-clock-test-repair too (holds
-carry commit 0b82f61).
+(+ worktrees); keep branch t-094-fixed-clock-test-repair (holds carried
+0477331) and t-093-fixed-clock-test-repair (carry commit 0b82f61) until the
+carrier merges; the T-091 worktree/branch 0bf4ac0 is the stack's base - keep
+it until T-095 merges.
 
 Human (2026-10-18) prefers Devin for development, testing and orchestration,
 reports no Devin usage limits until 2026-11-01 (no exact cutoff time). This is

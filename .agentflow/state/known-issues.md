@@ -112,3 +112,10 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
 - 2026-10-18 - devin CLI authentication is restored (`devin auth status`:
   logged in, Vladimir Chernetsov); the 21:27 launch block is resolved and
   managed devin launches are usable again.
+- 2026-10-21 - gate.py `paths()` parses only the FIRST whitespace token of each
+  `Allowed files` bullet: comma-separated path lists silently fail (a trailing
+  comma breaks the first path and the rest never register), so `verify` flags
+  genuinely-allowed inherited files as out of scope (cost T-094 an otherwise
+  green artifact). Authoring rule: one path per bullet in `Allowed files` and
+  `Do not touch`. Re-check: if a verify reports "changed file outside Allowed
+  files" for files visibly listed in the section, check the line format first.

@@ -353,3 +353,19 @@ Recorded gate.py endcheck crash-on-deleted-worktree defect in known-issues.
 Note for the human: the T-093 attempt-2 launch was not mine - if it was
 yours, the concurrent launch raced the rejection; the fix commit survived
 and is being carried forward.
+
+## 2026-10-21 (2): T-094 verify-fail is an Orchestrator authoring defect; carrier T-095 launched
+
+Background session devin (devin-background). tick need: T-094 accept stopped at
+`gate.py verify` - five inherited-base files flagged "outside Allowed files".
+Root cause is the contract, not the product: T-094's `Allowed files` listed
+several paths comma-separated per bullet, but gate.py `paths()` keeps only the
+first whitespace token of each bullet (a trailing comma breaks the match and
+the rest of the line never registers). The artifact at 0477331 on
+t-094-fixed-clock-test-repair is complete and green (R-01..R-04, scoped checks
+52+11+25, full suite 424/0/3 on that SHA). Per the T-052->T-056 / T-082->T-084
+precedent: rejected T-094, authored carrier T-095 with Allowed files one path
+per line over the full inherited set. Jev assessed ok (req_01a15d82, band
+medium 0.81 after a leaner contract; devin-swe-2 0.95, floor resolves effort
+to swe-2-high) - Orchestrator confirmed. Launched managed devin attempt 1
+(pid 29976, log .runtime/T-095.1.log). T-036/T-066 still wait on the carrier.
