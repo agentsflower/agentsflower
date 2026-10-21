@@ -7,17 +7,16 @@ re-authored one-path-per-line) and landed via merge successor T-096 @
 verbatim 2.15.5 + 2.15.4 entries; full suite 424/0/3 on the merge SHA).
 T-036/T-066 `Depends on` repointed T-094 -> T-096.
 
-Blocked on the human (questions.md 2026-10-21): T-036 and T-066 launches -
-Jev selects devin-swe-2 -> swe-2-max for both but effort-xhigh confidence
-sits at ~0.42-0.45 on all four assessments (complexity ~1.9/2), so the
-admission gate refuses; only a human `Routing exception:` line or a
-re-scope decision opens them.
+2026-10-21 (12th update): human confirmed Option C (re-scope T-036 into
+smaller subtasks T-097 -> T-098 -> T-099) and full Devin CLI model availability
+(devin models list). T-036 cancelled as superseded; T-097 (entry points,
+instruction hierarchy, Result examples) authored, Jev assessed ok at complexity
+1.25 (confidence 0.54, swe-2-high, 0.94 probability), launched as Devin attempt 1
+(pid 73516 / devin pid 104952). T-038 repointed to T-099.
 
-Next after the human answers: launch T-036 -> (its tester) -> T-038 ->
-T-044 -> T-046 -> T-048; T-066 after T-036 (Allowed-files overlap, deliberate
-queue). Rejected draft branches kept for the human's cleanup: t-076, t-082,
-t-087, t-093, t-094, t-095 (+ their worktrees); the T-091 worktree/branch
-0bf4ac0 is merged history now - cleanup is safe but stays the human's call.
+Next: when T-097's Result lands, independent verification -> T-098 -> T-099 ->
+T-038 -> T-044 -> T-046 -> T-048; T-066 follows. Rejected draft branches kept
+for human cleanup: t-076, t-082, t-087, t-093, t-094, t-095.
 
 Human (2026-10-18) prefers Devin for development, testing and orchestration,
 reports no Devin usage limits until 2026-11-01 (no exact cutoff time). This is
