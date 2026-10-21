@@ -30,6 +30,8 @@ the release metadata for the documentation-alignment train.
 - README.md
 - RELEASE_NOTES.md
 - .agentflow/README.md
+- .agentflow/docs/release-validation.md (only if parity reveals a drift)
+- .agentflow/roles/tool-routing.md (only the stale agy-tester claim below)
 - .agentflow/VERSION
 - AGENTS.md, CLAUDE.md (AgentFlow version block only)
 - CHANGELOG.md
@@ -63,6 +65,7 @@ the release metadata for the documentation-alignment train.
 - [ ] G-02: Explicit Single/Team mode choice, user concurrency restrictions and commit rules are preserved in text; nothing automatically relaxes them.
 - [ ] G-03: Release metadata agrees with the merged T-097/T-098 state: .agentflow/VERSION, the AGENTS.md/CLAUDE.md version blocks, and CHANGELOG.md migration notes describe the documentation-alignment train as one coherent release step, saying what an installed project must do.
 - [ ] G-04: Full suite passes verbatim. Propose dated decisions.md text in the Result.
+- [ ] G-05: Leftover from the T-036 re-scope (reported by the T-098 worker): `.agentflow/roles/tool-routing.md` ~line 46 still claims the Antigravity CLI Tester "stays interactive (-i) and needs a human /exit" - stale vs `run_task.py` tool_argv, which launches agy non-interactively (`-p --output-format stream-json`). Correct that line only; the IDE stays -Manual. GUIDE.ru.md carries the same stale wording - fix under G-01.
 
 ## Checks
 
