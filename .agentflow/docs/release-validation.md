@@ -72,6 +72,23 @@ proof. What that work actually verified, and what it did not:
   above (run `39026298541`) is an open evidence gap, unchanged by the local
   additions — local green never substitutes for those cells.
 
+## Dashboard integration evidence (2.15.10, T-048)
+
+- **Locally verified (this machine, Windows 10 / Python 3.13):** the wheel and
+  the sdist-built package carry the roadmap dashboard assets
+  (`dashboard/roadmap_template.html`, `roadmap.css`, `roadmap.js`) and no
+  `dashboard/mockups/`; both install paths then install a disposable project
+  and build `out/index.html`, `graph.html` and `roadmap.html` offline
+  (`check_package.py`). `install.py --update` onto a fixture holding open
+  tasks and a legacy `State:`/`Exit criteria:` plan preserves project-owned
+  files byte-for-byte and the delivered `build.py` still parses the plan
+  (`test_scenarios.py`); a fresh fixture install builds all three pages once
+  the ledger exists (`test_install.py`). The full suite and
+  `check_package.py` pass locally.
+- **Not covered here:** browser review of the built pages (that evidence is
+  T-109's), remote CI on the new suite size, and any macOS run - the recorded
+  CI gap above is unchanged.
+
 ## How to obtain a green remote run (human steps)
 
 1. Push a branch containing `.github/workflows/ci.yml` to

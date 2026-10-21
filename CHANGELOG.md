@@ -2,6 +2,45 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.10 - 2026-10-21
+
+Dashboard rollout integration (T-048, planning draft section 7): the packaged
+distribution and `install.py --update` now provably carry the roadmap view
+shipped in 2.15.8-2.15.9, the design mockups are excluded from what projects
+receive, and the shipped documentation describes the behavior as it is.
+
+- `.agentflow/dashboard/mockups/` (the T-042 layout studies, synthetic data)
+  is no longer installed or packaged: it stays committed in the template
+  repository as the design record, but `install.py` now skips it - the same
+  set drives `install.py --update` and the `agentflow-sdlc` wheel/sdist
+  bundle. A `mockups/` folder an earlier update delivered is left in place.
+- `check_package.py` now asserts the wheel carries
+  `dashboard/roadmap_template.html`, `roadmap.css` and `roadmap.js`, ships no
+  `dashboard/mockups/`, and that the installed `agentflow` CLI builds the
+  full page set (`index.html`, `graph.html`, `roadmap.html`) on a disposable
+  project outside the source checkout - on both the wheel and the sdist-built
+  install paths. Still zero core runtime dependencies.
+- `test_scenarios.py` proves `--update` delivers the roadmap assets onto a
+  project whose `project-plan.md` uses the pre-roadmap `State:`/`Exit
+  criteria:` prose: the plan is preserved byte-for-byte and the delivered
+  `build.py` still parses it into stage records - the authored
+  `evidence:`/`Recurring:`/`References:` syntax stays opt-in, never required.
+  `test_install.py` proves a fresh fixture builds all three pages offline
+  once the ledger exists (`ledger.py show`, per the install guide).
+- Documentation synchronized: the protocol's Dashboard section names all
+  three pages and the runtime/plan sources; `README.md`, `GUIDE.md` and
+  `GUIDE.ru.md` describe the roadmap view, the build/open commands and
+  `snapshot.py` rollback; `dashboard/README.md` records that `mockups/` is
+  repository-only and lists which sources `snapshot.py` covers (it does not
+  cover the roadmap assets); `UI-RULES.md` names the three-way header.
+
+Migration: `install.py --update` replaces the template files; no plan or
+state changes are needed - existing `project-plan.md` files parse unchanged
+and the authored roadmap metadata stays opt-in. If an earlier update
+delivered `.agentflow/dashboard/mockups/`, the files are kept and may simply
+be deleted. Rebuild the dashboard (`python .agentflow/dashboard/build.py`) to
+regenerate the pages.
+
 ## 2.15.9 - 2026-10-21
 
 Roadmap view UI for the dashboard (T-046, per the planning draft sections 3-4

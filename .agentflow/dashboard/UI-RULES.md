@@ -29,7 +29,7 @@ Source: every owner request about the `.agentflow/dashboard/` and how it is impl
 16. **No horizontal scroll**, including 4K and narrow screens (extra columns hide by width).
 17. **Page scale does not jump.** Switching pages does not change element sizes or header position at 100%.
 18. **No stray scrollbars.** Long fields are collapsible with bounded inner height.
-19. **Identical headers:** "Tasks <project>" title (project = folder name), "Overview / Gantt & timeline" switch, "Built …" top right, theme as a ☀/🌙 icon (not a word). A demo build carries a clearly visible DEMO DATA badge.
+19. **Identical headers:** "Tasks <project>" title (project = folder name), "Overview / Gantt & timeline / Roadmap" navigation, "Built …" top right, theme as a ☀/🌙 icon (not a word). A demo build carries a clearly visible DEMO DATA badge.
 20. **Rarely needed is removed** (legend on the Timing tab) when not needed for understanding.
 
 ### A4. Filters

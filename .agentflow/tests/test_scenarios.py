@@ -438,7 +438,9 @@ class OpenTaskMigrationTests(unittest.TestCase):
             "state/current-step.md": "# Current step\n\n- launch T-009\n",
             "state/questions.md": "# Questions\n",
             "docs/project-rules.md": "# Project rules\n\n- Main branch: master.\n- talk in English\n",
-            "docs/project-plan.md": "# Roadmap\n\n## Stage 1: ours\n",
+            "docs/project-plan.md": ("# Roadmap\n\n## Stage 1: ours\n\nState: current\n\n"
+                                     "Exit criteria:\n- <checkable criterion>\n\n"
+                                     "## Stage 2: done already\n\nState: closed\n"),
             "docs/model-options.json": '{"policy": "devin only", "options": {"devin": {"tool": "devin"}}}\n',
             "template-source.json": '{"template": "C:/old/template", "version": "' + OLD_VERSION + '"}\n',
         }.items():
@@ -509,6 +511,7 @@ class OpenTaskMigrationTests(unittest.TestCase):
                     "tools/gate.py", "tools/ledger.py", "tools/install.py", "tools/run_task.py",
                     "tools/route.py", "tools/tick.py", "tools/accept.py", "tools/limit_detection.py",
                     "tools/quota_groups.py", "tools/hooks.py", "dashboard/build.py",
+                    "dashboard/roadmap_template.html", "dashboard/roadmap.css", "dashboard/roadmap.js",
                     "tests/test_install.py", "tests/test_scenarios.py"):
             self.assertEqual((self.repo / ".agentflow" / rel).read_bytes(),
                              (FLOW / rel).read_bytes(), f"template-owned {rel} not updated")
@@ -552,6 +555,29 @@ class OpenTaskMigrationTests(unittest.TestCase):
         parsed = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual((parsed["role"], parsed["branch"]), ("developer", "t-007-open-bugfix"))
         self.assertEqual(parsed["criteria"], ["P-01"])
+
+    def test_update_delivers_roadmap_assets_and_the_legacy_plan_still_builds(self):
+        """T-048 I-02/I-04: --update delivers the roadmap assets; the preserved
+        old-format plan (State:/Exit criteria: prose) parses with no migration, and
+        the delivered build.py produces the full page set offline."""
+        install.install(self.repo, update=True, dry=False)
+        flow = self.repo / ".agentflow"
+        self.assertFalse((flow / "dashboard" / "mockups").exists(),
+                         "dashboard mockups are repository-only and never installed")
+        self.assertEqual((flow / "docs/project-plan.md").read_bytes(),
+                         self.snapshot[".agentflow/docs/project-plan.md"],
+                         "the legacy plan survives the update byte-for-byte")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env["PYTHONUTF8"] = "1"
+        build = subprocess.run([sys.executable, str(flow / "dashboard" / "build.py")],
+                               cwd=self.repo, env=env, capture_output=True, text=True)
+        self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+        for page in ("index.html", "graph.html", "roadmap.html"):
+            self.assertTrue((flow / "dashboard" / "out" / page).is_file(), page)
+        roadmap = (flow / "dashboard" / "out" / "roadmap.html").read_text(encoding="utf-8")
+        self.assertIn('"schemaVersion": 1', roadmap)
+        for stage_id in ('"id": "1"', '"id": "2"'):
+            self.assertIn(stage_id, roadmap)
 
     def test_stage5_changelog_entries_carry_migration_notes(self):
         """Every Stage 5 release (2.12.1 .. current, the improvement-plan releases) records what
