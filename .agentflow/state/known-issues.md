@@ -99,7 +99,16 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   module constant AT (2026-10-18T12:00Z) + 1h; after 13:00Z the hold is
   permanently expired and test_a_held_backup_group_stays_scoped_and_refused
   fails deterministically (T-092 V-03). Lesson: "future" test data must derive
-  from the run time, never a fixed wall-clock constant. Repair: T-093.
+  from the run time, never a fixed wall-clock constant. Repair: T-094
+  (T-093 consumed its duration budget on stopped attempts; its attempt 2
+  committed the fix as 0b82f61, preserved on branch
+  t-093-fixed-clock-test-repair for T-094 to carry).
+- 2026-10-21 - gate.py endcheck crashes when the task worktree is already
+  deleted at attempt end: worktree_copy_problems() -> commits.splitlines() on
+  None (observed stopping T-093 attempt 2 after its worktree folder was
+  removed first). The attempt still records stopped/error, but the crash hides
+  the real endcheck outcome. Fix: tolerate a missing worktree in endcheck;
+  recheck on the next stale-worktree stop.
 - 2026-10-18 - devin CLI authentication is restored (`devin auth status`:
   logged in, Vladimir Chernetsov); the 21:27 launch block is resolved and
   managed devin launches are usable again.

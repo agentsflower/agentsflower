@@ -334,3 +334,22 @@ pass (3 skipped). Pending: human will paste `devin models list` to verify
 the concrete model ids (CLI was unauthenticated at change time); 2.15.4 from
 the T-093 line lands after this - merge keeps both CHANGELOG sections,
 VERSION stays 2.15.5.
+
+## 2026-10-21: T-093 decided; successor T-094 launched (background devin)
+
+Tick need "T-093 developer Outcome missing (attempt error): decide".
+Findings: manual attempt 1 was --stop'ed at 07:44Z with no Result and no
+draft; a managed attempt 2 (launched 07:48:32Z, most likely human-side)
+raced the review and committed the contract repair 0b82f61 (2-line hold fix
+on base 0bf4ac0) before being stopped; the worktree was deleted during the
+overlap and the ledger row was already rejected (final), so the Result path
+closed. Preserved 0b82f61 on branch t-093-fixed-clock-test-repair. Successor
+T-094 authored with the identical contract plus a carry note, assessed ok
+(Jev req_01a15d7, devin-swe-2 swe-2-high, medium band), launched as managed
+devin attempt 1 (pid 64840, deadline ~08:3xZ). T-036/T-066 Depends on moved
+to T-094 in ledger and Task File headers (headers still read T-091 - the
+2026-10-18 repoint had touched the ledger only; preflight reads headers).
+Recorded gate.py endcheck crash-on-deleted-worktree defect in known-issues.
+Note for the human: the T-093 attempt-2 launch was not mine - if it was
+yours, the concurrent launch raced the rejection; the fix commit survived
+and is being carried forward.
