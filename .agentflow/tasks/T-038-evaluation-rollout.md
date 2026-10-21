@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-high
 Stage: 5
-Depends on: T-036
+Depends on: T-099
 Branch: t-038-evaluation-rollout
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-038-evaluation-rollout
 Independent check: tester
