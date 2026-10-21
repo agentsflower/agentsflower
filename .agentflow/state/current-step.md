@@ -1,22 +1,23 @@
 # Current Step
 
-2026-10-21 (10th update, background devin): the T-095 carrier verified PASS
-on 0477331, but the trial merge conflicts on release metadata (branch 2.15.4
-vs main 2.15.5) - the anticipated stale-branch case. T-095 rejected ->
-T-096 merge-only successor launched as managed devin attempt 1 (pid 3092,
-deadline ~08:4xZ, log .runtime/T-096.1.log): merge t-095-fixed-clock-carrier
-into a branch from main, resolution pinned (VERSION/AGENTS block = 2.15.5,
-CHANGELOG = verbatim 2.15.5 + 2.15.4 entries), full suite on the merge SHA.
-Jev ok 0.86 band medium, devin-swe-2 swe-2-high confirmed.
+2026-10-21 (11th update, background devin): the routing chain is fully
+merged - T-094's verified artifact 0477331 was carried by T-095 (contract
+re-authored one-path-per-line) and landed via merge successor T-096 @
+6754959 / merge 8b588f9 (resolution: VERSION/AGENTS = 2.15.5, CHANGELOG =
+verbatim 2.15.5 + 2.15.4 entries; full suite 424/0/3 on the merge SHA).
+T-036/T-066 `Depends on` repointed T-094 -> T-096.
 
-Next: when T-096's Result lands, `gate.py verify T-096` then `accept.py`
-(Independent check: none per contract) -> T-036 (refresh assessment before
-launch) -> T-038 -> T-044 -> T-046 -> T-048; T-066 also unblocks on T-096.
-Rejected draft branches kept for the human's cleanup: t-076, t-082, t-087
-(+ worktrees); keep branches t-094-fixed-clock-test-repair and
-t-093-fixed-clock-test-repair and the T-091 worktree/branch 0bf4ac0 until
-T-096 merges; t-095-fixed-clock-carrier is the merge source - accept.py
-cleans it.
+Blocked on the human (questions.md 2026-10-21): T-036 and T-066 launches -
+Jev selects devin-swe-2 -> swe-2-max for both but effort-xhigh confidence
+sits at ~0.42-0.45 on all four assessments (complexity ~1.9/2), so the
+admission gate refuses; only a human `Routing exception:` line or a
+re-scope decision opens them.
+
+Next after the human answers: launch T-036 -> (its tester) -> T-038 ->
+T-044 -> T-046 -> T-048; T-066 after T-036 (Allowed-files overlap, deliberate
+queue). Rejected draft branches kept for the human's cleanup: t-076, t-082,
+t-087, t-093, t-094, t-095 (+ their worktrees); the T-091 worktree/branch
+0bf4ac0 is merged history now - cleanup is safe but stays the human's call.
 
 Human (2026-10-18) prefers Devin for development, testing and orchestration,
 reports no Devin usage limits until 2026-11-01 (no exact cutoff time). This is

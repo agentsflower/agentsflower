@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-max
 Stage: 5
-Depends on: T-094
+Depends on: T-096
 Branch: t-066-hidden-background-processes
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-066-hidden-background-processes
 Independent check: tester

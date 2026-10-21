@@ -94,3 +94,25 @@ include explicit `- M-01: pass - <evidence>` outcome lines for M-01..M-04;
 put `evidence:` markers at line end followed only by intended claim paths
 (`.runtime` evidence basenames must start `T-096.`); path names inside prose
 are mentions.
+
+## Result
+Outcome: completed
+Change: 67549594f049f1df2293acd9f9902c7090ddcf8a on t-096-merge-fixed-clock-stack
+Files:
+- .agentflow/VERSION - hand-resolved to 2.15.5 (the file was a single-line conflict)
+- AGENTS.md - hand-resolved: version block line kept at 2.15.5 (the only conflicted line)
+- CHANGELOG.md - hand-resolved: kept both entries verbatim in version order (2.15.5 entry first, then 2.15.4)
+- .agentflow/docs/ai-handoff-protocol.md, .agentflow/docs/typesafe.md, .agentflow/tasks/_template.md, .agentflow/tests/test_approval.py, .agentflow/tests/test_parallel.py, .agentflow/tests/test_quota_groups.py, .agentflow/tests/test_route_report.py, .agentflow/tests/test_routing_core.py, .agentflow/tests/test_routing_scheduler.py (new), .agentflow/tests/test_tick.py, .agentflow/tools/route.py, .agentflow/tools/route_report.py, .agentflow/tools/tick.py - clean auto-merge of both lines, no manual edits
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_tick.py` -> pass (52 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_routing_scheduler.py` -> pass (11 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_routing_core.py` -> pass (25 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests` (required pre-commit check, run once on the merge SHA) -> pass (424 passed / 0 failed / 3 skipped; verbatim tail `Ran 424 tests in 339.692s` / `OK (skipped=3)`) evidence: .agentflow/tasks/.runtime/T-096.full-suite.txt
+- M-01: pass - HEAD is the single merge commit 6754959; `git log -1 --format=%P` shows parents 478fa110b74075617141d1f5aea2266d017a9194 (launcher-created mainline start) then 04773311aafce6c3f98831a5f862c8c745566da6. `git merge-tree --write-tree 478fa11 0477331` reproduced exactly the three pinned conflicts, and `git diff --name-only <auto-merge tree de00b49d> HEAD` lists only .agentflow/VERSION, AGENTS.md, CHANGELOG.md - so every other path equals the clean auto-merge result. Resolutions verified: VERSION = 2.15.5; AGENTS.md version block = 2.15.5; CHANGELOG.md = verbatim `## 2.15.5 - 2026-10-20` entry (line 5) followed by the verbatim `## 2.15.4 - 2026-10-18` entry (line 43).
+- M-02: pass - merged tree contains both lines of work unchanged: `recommended` map and `devin-gemini-4-argon` pool entry present in .agentflow/docs/model-options.json (2.15.5 line), and both datetime.now(timezone.utc)+timedelta(hours=1) holds present in test_a_held_backup_group_stays_scoped_and_refused in .agentflow/tests/test_routing_scheduler.py; `git diff --name-only main...HEAD` lists 14 paths, all inside Allowed files (_template.md delta is only the `Routing exception:` routing field; the merge adds no model-options.json delta vs main).
+- M-03: pass - the three scoped Checks above pass verbatim on merge SHA 6754959; the full suite ran once on the merge SHA: `Ran 424 tests in 339.692s` / `OK (skipped=3)` evidence: .agentflow/tasks/.runtime/T-096.full-suite.txt
+- M-04: pass - .agentflow/VERSION = 2.15.5, AGENTS.md version block = 2.15.5, both changelog entries present verbatim; T-040 is not claimed complete.
+Found, not fixed:
+- none
+Proposed memory updates:
+- none (merge-only resolution; T-095 Result and the 2.15.5 changelog entry already carry the context)

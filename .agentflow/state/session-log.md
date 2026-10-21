@@ -386,3 +386,16 @@ Jev assessed ok after a leaner contract wording (req_01a15d89a, band medium
 confirmed. Launched managed devin attempt 1 (pid 3092, deadline ~08:4xZ, log
 .runtime/T-096.1.log). Lesson recorded: comma-separated `Allowed files`
 bullets silently fail the scope gate - one path per line (known-issues).
+
+## 2026-10-21 (4): routing stack merged via T-096; T-036/T-066 gated on human routing call
+
+Background session devin (devin-background), final. T-096 merge commit 6754959
+accepted and merged (main 8b588f9): the full T-078+T-091+T-094 routing stack is
+on main at 2.15.5 with both changelog entries verbatim; verify PASS, integrated
+check green, suite 424/0/3 on the merge SHA. Ledger T-096 done; worktree+branch
+cleaned. T-036/T-066 `Depends on` repointed T-094 -> T-096 (headers+ledger).
+Fresh Jev assessments for both heavy tasks land stable low-confidence
+(devin-swe-2 -> swe-2-max selected; effort-xhigh confidence ~0.42-0.45) - the
+admission gate refuses, a human `Routing exception:` or re-scope decision is
+recorded in questions.md 2026-10-21; both set `blocked`. Whole remaining chain
+(T-038->T-044->T-046->T-048, then T-066) waits on that answer.
