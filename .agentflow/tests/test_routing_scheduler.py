@@ -239,12 +239,12 @@ class SchedulerBackupTests(unittest.TestCase):
         """A live hold on the backup's quota group refuses it; a hold on another group does not."""
         path, text = self.backup_task("T-1")
         rec = assessment(text, "T-1")
-        tick.machine_capacity.record_limit("devin", AT + timedelta(hours=1), "devin")
+        tick.machine_capacity.record_limit("devin", datetime.now(timezone.utc) + timedelta(hours=1), "devin")
         switched, why = self.run_backup("T-1", path, rec)
         self.assertFalse(switched)
         self.assertIn("limited", why)
         self.assertEqual(path.read_text(encoding="utf-8"), text)
-        tick.machine_capacity.record_limit("agy", AT + timedelta(hours=1), "agy-claude-gpt")
+        tick.machine_capacity.record_limit("agy", datetime.now(timezone.utc) + timedelta(hours=1), "agy-claude-gpt")
         # the unrelated group hold does not change the devin refusal - scoping is preserved
         switched, why = self.run_backup("T-1", path, rec)
         self.assertFalse(switched)
