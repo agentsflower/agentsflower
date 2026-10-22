@@ -1,8 +1,8 @@
-# AgentFlow
+# AgentsFlower
 
-[![CI](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml)
+[![CI](https://github.com/agentsflower/agentsflower/actions/workflows/ci.yml/badge.svg)](https://github.com/agentsflower/agentsflower/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.15.10-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.15.11-blue.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MCP ready](https://img.shields.io/badge/MCP-optional%20server-green.svg)](#mcp-server-optional)
 
@@ -10,13 +10,13 @@ Project memory and four agent roles for running one software project with severa
 
 ## Why
 
-Multi-agent coding fails in predictable ways: context drifts between sessions, parallel workers collide on the same files, and "done" gets reported without evidence. AgentFlow answers each failure with a small mechanism instead of a big framework:
+Multi-agent coding fails in predictable ways: context drifts between sessions, parallel workers collide on the same files, and "done" gets reported without evidence. AgentsFlower answers each failure with a small mechanism instead of a big framework:
 
 - **Context drift** → one canonical project memory with a single writer. All rules live in one file, [.agentflow/docs/ai-handoff-protocol.md](.agentflow/docs/ai-handoff-protocol.md); everything else points there.
 - **File collisions** → each task is one Task File, one branch, one isolated git worktree, one fresh session.
 - **Hallucinated done** → acceptance runs the task's own `## Checks` verbatim through `gate.py`; only then does `accept.py` merge and update the Task Ledger.
 
-Everything AgentFlow puts into a project lives in one folder, `.agentflow/`, so it never collides with the project's own `docs/`, `tasks/` or `tools/`. The project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`; existing files keep their content. The core is Python 3.10+ stdlib only — no third-party runtime dependencies.
+Everything AgentsFlower puts into a project lives in one folder, `.agentflow/`, so it never collides with the project's own `docs/`, `tasks/` or `tools/`. The project root gets only small entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`) and a marked block in `.gitignore`; existing files keep their content. The core is Python 3.10+ stdlib only — no third-party runtime dependencies.
 
 ## How it works
 
@@ -44,7 +44,7 @@ agentflow dashboard --open                    # packaged CLI: build and open in 
 
 A read-only view for the human: task table, filters, Gantt, timeline, a roadmap page showing every `### Stage` of `docs/project-plan.md` (declared status, local task counts and exit-criteria evidence kept as three separate facts), and evidence metrics (first-pass gate rate, lead time, verdict counts). Missing telemetry is shown as N/A — never a zero or an invented saving. Local source snapshots: `python .agentflow/dashboard/snapshot.py save <what>` / `restore vN`.
 
-![AgentFlow dashboard](.agentflow/docs/assets/dashboard.png)
+![AgentsFlower dashboard](.agentflow/docs/assets/dashboard.png)
 
 *Screenshot: this repository's own development dashboard — real task data, captured locally.*
 
@@ -65,15 +65,15 @@ A read-only view for the human: task table, filters, Gantt, timeline, a roadmap 
 | `CHANGELOG.md`, `RELEASE_NOTES.md` | what changed in each version; latest release notes |
 | `.github/workflows/ci.yml` | CI matrix: ubuntu/macos/windows × Python 3.10–3.12, plus package and MCP integration jobs |
 
-The template's own memory (`.agentflow/state/`, `.agentflow/docs/project-plan.md`) describes the development of AgentFlow itself and is never copied into a project.
+The template's own memory (`.agentflow/state/`, `.agentflow/docs/project-plan.md`) describes the development of AgentsFlower itself and is never copied into a project.
 
 Requirements: git, Python 3.10+, and the CLIs of the tools you use. PowerShell is needed only on Windows, for the compatibility wrapper and the optional conductor (7 verified; 5.1 unverified). The conductor/autostart helpers are Windows-only.
 
 ## Quick start
 
 ```bash
-python <AgentFlow>/.agentflow/tools/install.py <project> --dry-run   # see what would change
-python <AgentFlow>/.agentflow/tools/install.py <project>             # install (later: --update)
+python <AgentsFlower>/.agentflow/tools/install.py <project> --dry-run   # see what would change
+python <AgentsFlower>/.agentflow/tools/install.py <project>             # install (later: --update)
 ```
 
 Or build the local package for the `agentflow` command (source install, not on PyPI):
