@@ -650,3 +650,7 @@ previously prose-only Claude exclusion deterministic. Devin-hosted families
 (devin quota group, incl. devin-claude-opus-5.5) are unaffected; observed
 agy holds remain honored. Restore by removing the "until" fields when the
 human reports resources back.
+
+## 2026-10-21: T-048 (2.15.10) roadmap dashboard assets and installer integration accepted
+
+The wheel/sdist and install.py --update provably carry the roadmap dashboard assets and exclude dashboard/mockups/; documentation synchronized with shipped behavior; independently verified by T-111 on 051e7cf (all Checks and the full suite green; the required decisions.md proposal was supplied by the tester).

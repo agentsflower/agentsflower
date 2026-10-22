@@ -8,7 +8,7 @@ Depends on: T-110
 Branch: t-048-dashboard-integration
 Worktree: E:\Projects\AgentFlow\worktrees\agentflow-t-048-dashboard-integration
 Independent check: tester
-Resume: none
+Resume: d417c4e0bbcf3140986089209101ad4175d369f1
 
 ## Goal
 
@@ -82,3 +82,33 @@ the shipped behavior.
 - `python -m unittest discover -s .agentflow/tests` - mandatory full regression suite.
 
 ## Result
+Outcome: completed
+Change: 051e7cf on t-048-dashboard-integration
+Files:
+- .agentflow/VERSION - 2.15.9 -> 2.15.10
+- .agentflow/dashboard/README.md - documented roadmap data contract
+- .agentflow/dashboard/UI-RULES.md - data-contract/rule deltas
+- .agentflow/docs/ai-handoff-protocol.md - dashboard section updated
+- .agentflow/docs/release-validation.md - release validation status
+- .agentflow/tests/check_package.py - check roadmap assets in wheel/sdist outside checkout
+- .agentflow/tests/test_install.py - test roadmap asset delivery and plan preservation
+- .agentflow/tests/test_scenarios.py - package scenario assertions
+- .agentflow/tools/install.py - asset delivery includes roadmap files
+- AGENTS.md - AgentFlow version block synced to 2.15.10
+- CHANGELOG.md - 2.15.10 release entry
+- GUIDE.md - roadmap view and dashboard commands documentation
+- GUIDE.ru.md - Russian guide parity for dashboard features
+- README.md - tools and features table updated
+- RELEASE_NOTES.md - Stage 5 roadmap dashboard release
+Checks:
+- `python -m unittest discover -s .agentflow/tests -p test_install.py` -> pass (16 passed / 0 failed)
+- `python -m unittest discover -s .agentflow/tests -p test_layout.py` -> pass (6 passed / 0 failed)
+- `python .agentflow/tests/check_package.py` -> pass (all package checks passed)
+- `python -m unittest discover -s .agentflow/tests` -> pass (recorded full suite)
+Criteria:
+- I-01: pass - wheel and sdist carry every roadmap dashboard asset without repository-only mockups; zero new runtime dependencies; sdist-installed CLI reproduces full page set outside checkout. evidence: .agentflow/tests/check_package.py
+- I-02: pass - install.py --update delivers new dashboard files while preserving project plans, state, task files and settings; tested against disposable fixture carrying old-format plan. evidence: .agentflow/tests/test_install.py
+- I-03: pass - documentation synchronized and truthful across README, GUIDE, GUIDE.ru, protocol and release notes; exact verification status recorded. evidence: README.md GUIDE.md GUIDE.ru.md
+- I-04: pass - build.py produces full page set (index/graph/roadmap) offline outside source checkout; CLI dashboard command exposes roadmap page. evidence: .agentflow/tests/check_package.py
+- I-05: pass - VERSION 2.15.10, AGENTS block and CHANGELOG aligned with migration notes for installed projects; proposed decisions.md entry: 2026-10-21 - T-048 (2.15.10): the wheel/sdist and install.py --update provably carry the roadmap dashboard assets and exclude dashboard/mockups/; documentation synchronized with shipped behavior; independently verified by T-111 on 051e7cf (all Checks and the full suite green). evidence: .agentflow/VERSION AGENTS.md CHANGELOG.md
+- I-06: pass - full regression suite and check_package pass verbatim. evidence: .agentflow/tests/check_package.py
