@@ -437,6 +437,45 @@ class RunTaskTests(unittest.TestCase):
         self.assertFalse(run_task.alive(a["pid"]), "worker survived --stop")
         self.assertFalse(run_task.alive(child_pid), "managed descendant survived --stop")
 
+    @unittest.skipUnless(os.name == "nt", "window evidence is a Windows property")
+    def test_worker_and_tool_own_no_window(self):
+        """T-066 A-01/A-02: a managed worker and the tool it spawns run on headless consoles
+        (CREATE_NO_WINDOW) - no window flash, taskbar button or focus theft. While the fake tool
+        lives, MainWindowHandle of both recorded pids must be 0; stdin is DEVNULL so no prompt hangs."""
+        self.fake_devin('if "%~1"=="auth" exit /b 0\r\n'
+                        'set /p X=prompt: \r\necho stdin-read:%X%\r\n'
+                        "ping -n 8 127.0.0.1 >nul\r\nexit /b 0",
+                        'if [ "$1" = "auth" ]; then exit 0; fi\n'
+                        'read -t 0.1 X <&0 || true\necho "stdin-read:$X"\nsleep 6\nexit 0')
+        r = self.launch("T-001", "devin")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        session = self.flow / "tasks" / ".runtime" / "T-001.toolsession.json"
+        tpid, a = None, None
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            a = self.attempt()
+            if a["status"] == "running" and a.get("pid") and session.exists():
+                try:
+                    tpid = json.loads(session.read_text(encoding="utf-8"))["pid"]
+                except (OSError, ValueError, KeyError):
+                    tpid = None
+                if tpid:
+                    break
+            if a["status"] not in ("running", "starting"):
+                break
+            time.sleep(0.2)
+        self.assertIsNotNone(tpid, f"tool session not recorded: {self.attempt()}")
+        for name, pid in (("worker", a["pid"]), ("tool", tpid)):
+            if not run_task.alive(pid):
+                continue  # the process already finished: nothing left to observe
+            hwnd = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                   f"(Get-Process -Id {pid} -ErrorAction Stop).MainWindowHandle.ToString()"],
+                                  capture_output=True, text=True, timeout=30).stdout.strip()
+            self.assertEqual(hwnd, "0", f"{name} pid {pid} owns a visible window (handle {hwnd})")
+        fin = self.wait_state("exited", timeout=30)
+        log = Path(fin["log"]).read_text(encoding="utf-8", errors="replace")
+        self.assertIn("stdin-read:", log, "set /p did not return - a prompt would hang the launch")
+
     def test_stop_with_unconfirmed_pid_identity_keeps_the_lock(self):
         """Regression (T-029): a live process on the recorded pid whose start identity cannot be confirmed
         may be a reused pid. --stop must refuse instead of closing the attempt and freeing the lock, and

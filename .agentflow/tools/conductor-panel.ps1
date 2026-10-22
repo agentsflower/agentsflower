@@ -6,7 +6,7 @@
   .agentflow\tools\conductor-panel.ps1             # the window (also what the desktop shortcut opens)
   .agentflow\tools\conductor-panel.ps1 -Install    # autostart at logon + desktop shortcut + start the conductor now
   .agentflow\tools\conductor-panel.ps1 -Status     # one line each; exit 0 when the conductor runs
-  .agentflow\tools\conductor-panel.ps1 -Start      # start the conductor (minimized window) unless it runs
+  .agentflow\tools\conductor-panel.ps1 -Start      # start the conductor (hidden, no window) unless it runs
   .agentflow\tools\conductor-panel.ps1 -Register | -Unregister | -Shortcut | -Stop
 
 .DESCRIPTION
@@ -69,7 +69,7 @@ function Get-Autostart { Get-ScheduledTask -TaskPath $taskPath -TaskName $taskNa
 function Invoke-Register {
   $user = "$env:USERDOMAIN\$env:USERNAME"
   $action = New-ScheduledTaskAction -Execute $pwsh -WorkingDirectory $root `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File `"$conductor`""
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$conductor`""
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
@@ -80,19 +80,19 @@ function Invoke-Register {
 }
 function Invoke-Unregister {
   if (Get-Autostart) { Unregister-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Confirm:$false }
-  return 'Автозапуск выключен (сторож, если работает, продолжает до закрытия окна)'
+  return 'Автозапуск выключен (сторож, если работает, продолжает до остановки)'
 }
 function Invoke-Start {
   if (Test-Running) { return 'Сторож уже работает' }
-  Start-Process $pwsh -WorkingDirectory $root -WindowStyle Minimized `
+  Start-Process $pwsh -WorkingDirectory $root -WindowStyle Hidden `
     -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$conductor`"" | Out-Null
-  return 'Сторож запущен (свёрнутое окно на панели задач)'
+  return 'Сторож запущен скрыто: без окна и кнопки на панели задач'
 }
 function Invoke-Stop {
   $c = (Read-Json 'conductor.json').conductor
   if ($c -and (Test-ProcessIs $c.pid $c.pidStart)) {
     Stop-Process -Id $c.pid -Force
-    return 'Сторож остановлен. Фоновая сессия оркестратора, если идёт, доработает в своём окне'
+    return 'Сторож остановлен. Фоновая сессия оркестратора, если идёт, доработает скрыто (её pid - в строке «Фоновая сессия»)'
   }
   return 'Сторож не работает'
 }
@@ -128,7 +128,7 @@ function Get-Rows {
   else { $rows += , @('Оркестратор', 'нет', 'none') }
   $s = $cs.session
   if ($s -and -not $s.finishedAt -and (Test-ProcessIs $s.pid $s.pidStart)) {
-    $rows += , @('Фоновая сессия', "$($s.tool) работает с $(Format-Time $s.startedAt)", 'ok')
+    $rows += , @('Фоновая сессия', "$($s.tool) работает с $(Format-Time $s.startedAt), pid $($s.pid)", 'ok')
   } elseif ($s) {
     $end = if ($s.limitHit) { 'упёрлась в лимит' } else { "код $($s.exitCode)" }
     $rows += , @('Фоновая сессия', "последняя: $($s.tool), $(Format-Time $s.startedAt) - $(Format-Time $s.finishedAt), $end", 'none')

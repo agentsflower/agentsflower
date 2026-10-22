@@ -2,6 +2,57 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.15.11 - 2026-10-22
+
+Hidden background processes on Windows (T-066): the conductor, its automatic
+background Orchestrator sessions and every AgentFlow-managed launch now run
+without a console window, taskbar button or focus theft, while logs, panel
+status, pid/start identity, leases, stop and timeout tree cleanup keep their
+behavior. Managed workers were already created with `CREATE_NO_WINDOW`; the
+visible flashes came from the PowerShell launch boundaries.
+
+- `conductor.ps1` spawns the background Orchestrator session with
+  `Start-Process -WindowStyle Hidden` (a console created hidden via
+  `STARTUPINFO.wShowWindow` - no window flash, taskbar button or focus
+  theft, verified on the real desktop) and the session itself moves its
+  stdin to an anonymous pipe already at EOF (`SetStdHandle` on an
+  inheritable handle), so a tool that prompts reads end-of-input at once
+  instead of hanging the unattended session silently. `CreateNoWindow` was
+  evaluated and rejected for this boundary: it would need
+  `UseShellExecute=false`, whose `bInheritHandles` leaks every inheritable
+  handle of the conductor into the session - a pipe-capturing caller of
+  `-Once` would then wait for the session's whole lifetime.
+  `-WindowStyle Hidden` is also now used for `-Start` and the
+  scheduled-task action.
+- `conductor-panel.ps1`: `-WindowStyle Minimized` is gone - `Minimized`
+  still takes a taskbar slot. `-Start` and `-Register`/`-Install` now launch
+  and register the conductor with `-WindowStyle Hidden`, the panel UI no
+  longer promises a window, and the live session row shows the session pid
+  (the way to stop a windowless session, since it has no close button).
+- `run_task.py` passes `CREATE_NO_WINDOW` explicitly when spawning the tool
+  CLI inside a managed worker: a fresh headless console for the tool even if
+  the worker's own console arrangement ever changes, instead of relying on
+  console inheritance. POSIX behavior (`start_new_session`) is untouched.
+- The protocol, `GUIDE.md` and `GUIDE.ru.md` describe the hidden behavior;
+  the stale `conductor.env.json` mention (removed with the DPAPI in-memory
+  environment handover) is gone.
+- Regression coverage: `test_conductor.py` now proves on a live desktop that
+  the background session and a panel-started conductor own no window
+  (`MainWindowHandle` 0) and that closed stdin reaches the tool, audits the
+  registered Task Scheduler action, and statically guards the creation flags;
+  `test_run_task.py` proves the managed worker and its tool own no window and
+  that a `set /p` prompt cannot hang them.
+
+Migration: `install.py --update` replaces the template files. Refresh an
+existing conductor autostart registration so its action carries
+`-WindowStyle Hidden`: run `conductor-panel.ps1 -Unregister` then `-Register`
+(or once `-Install`); the already-registered task keeps the old `Minimized`
+action until then. Restart the conductor at a quiet moment
+(`conductor-panel.ps1 -Stop`, then `-Start`): stopping the conductor never
+interrupts a running background Orchestrator session or an in-flight worker
+- the session finishes in its own process and workers are launcher-owned -
+it only stops spawning new rounds until started again.
+
 ## 2.15.10 - 2026-10-21
 
 Dashboard rollout integration (T-048, planning draft section 7): the packaged
