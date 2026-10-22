@@ -29,6 +29,9 @@ Needs Python 3 and git. Run it after the Orchestrator updates the ledger, or whe
 | `filterbar.css`, `filterbar.js` | the filter panel (inlined into both pages) |
 | `snapshot.py` | local versions of the dashboard sources, rollback |
 | `UI-RULES.md` | interface rules this dashboard follows; read before changing it |
+| `mockups/` | the T-042 layout studies (synthetic data): committed here as the design record, but never installed into projects or packaged - `install.py` skips it |
+
+`snapshot.py` covers the sources listed in its own `SOURCES`/`PAGES` (`build.py`, `template.html`, `graph_template.html`, `common.*`, `filterbar.*` and the built `index.html`/`graph.html`); it does not cover the roadmap assets (`roadmap_template.html`, `roadmap.css`, `roadmap.js`).
 
 ## Data contract (`build.py` -> pages)
 

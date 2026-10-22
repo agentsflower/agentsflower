@@ -53,7 +53,7 @@ TEMPLATE_FLOW = Path(__file__).resolve().parent.parent  # <template>/.agentflow
 OWNED = ["README.md", "VERSION", "docs/ai-handoff-protocol.md", "docs/typesafe.md", "roles", "commands", "tasks/_template.md",
          "tools", "dashboard", "tests"]
 OWNED_DIRS = ("roles", "commands", "tools", "dashboard", "tests")
-SKIP = {"__pycache__", "out", "versions", ".runtime"}
+SKIP = {"__pycache__", "out", "versions", ".runtime", "mockups"}
 
 # project-owned files created once from a stub, never overwritten
 STUBS = {

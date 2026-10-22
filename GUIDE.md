@@ -202,12 +202,14 @@ Status is derived from records, never duplicated by hand: `--status`, `tick.py s
 ## Watching progress
 
 ```bash
-python .agentflow/dashboard/build.py          # writes .agentflow/dashboard/out/index.html and graph.html
+python .agentflow/dashboard/build.py          # writes .agentflow/dashboard/out/index.html, graph.html and roadmap.html
 python .agentflow/dashboard/build.py --demo   # same pages from a deterministic fixture, marked DEMO DATA
-agentflow dashboard --open                    # build and open in a browser
+agentflow dashboard --open                    # build and open index.html; the header links the other pages
 ```
 
 The dashboard is read-only for the human and invents nothing: statuses, roles and verdicts come from the ledger and Task Files; the metrics panel (first-pass gate rate, lead time, verdict counts) is computed only from recorded evidence — missing history, runtime or cost is shown as N/A, never zero or an invented saving. `--demo` exists for screenshots and layout review: it reads no project memory and writes only into `out/`.
+
+The roadmap page (`out/roadmap.html`) shows every `### Stage` of `.agentflow/docs/project-plan.md` in source order — declared status, local task counts and exit-criteria evidence as three separate facts — plus a diagnostics card. Your existing plan needs no changes; optional authored `evidence:`/`Recurring:`/`References:` syntax for per-criterion coverage is documented in `.agentflow/dashboard/README.md`. Before changing the dashboard sources, save a local version with `python .agentflow/dashboard/snapshot.py save "<what>"` and roll back with `snapshot.py restore vN` (the set of covered sources is listed in that README).
 
 ## Recovery
 

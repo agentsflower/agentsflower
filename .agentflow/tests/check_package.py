@@ -74,8 +74,8 @@ def git(proj: Path, *args):
     run(["git", "-C", proj, *args])
 
 
-def make_project(tmp: Path) -> Path:
-    proj = tmp / "disposable proj"  # a path with a space (P-04)
+def make_project(tmp: Path, name="disposable proj") -> Path:
+    proj = tmp / name  # a path with a space (P-04)
     proj.mkdir()
     git(proj, "init", "-q", "-b", "main")
     git(proj, "config", "user.email", "t@example.invalid")
@@ -113,6 +113,13 @@ def exercise_cli(af: Path, proj: Path, where: Path):
     check(p.returncode == 0 and "dry run" in p.stdout, "install --update --dry-run prints the plan")
     p = run([af, "--project", str(proj), "ledger", "show"], cwd=where)
     check(p.returncode == 0, "agentflow --project <proj> ledger show on the installed project")
+    check(not (flow / "dashboard" / "mockups").exists(),
+          "the installer ships no dashboard mockups (repository-only design studies)")
+    p = run([af, "--project", str(proj), "dashboard"], cwd=where)
+    out = flow / "dashboard" / "out"
+    check(p.returncode == 0 and all((out / pg).is_file()
+                                    for pg in ("index.html", "graph.html", "roadmap.html")),
+          "agentflow dashboard builds the full page set (index/graph/roadmap) outside the source")
 
 
 def main() -> int:
@@ -140,6 +147,10 @@ def main() -> int:
         check(any(n.startswith("agentflow/template/tests/test_") for n in names)
               and any(n.startswith("agentflow/template/dashboard/") for n in names),
               "wheel carries template tests and dashboard")
+        for asset in ("dashboard/roadmap_template.html", "dashboard/roadmap.css", "dashboard/roadmap.js"):
+            check(f"agentflow/template/{asset}" in names, f"wheel carries the roadmap asset {asset}")
+        check(not any(n.startswith("agentflow/template/dashboard/mockups/") for n in names),
+              "wheel ships no dashboard mockups (repository-only design studies)")
         tn = tarfile.open(sdist).getnames()
         check(any(n.endswith("src/agentflow/template/VERSION") for n in tn),
               "sdist embeds the generated template tree")
@@ -161,6 +172,15 @@ def main() -> int:
         p = run([venv_exe(tmp / "venv sdist", "agentflow"), "--version"], cwd=tmp)
         check(p.returncode == 0 and VERSION in p.stdout,
               "sdist-installed CLI runs with bundled resources")
+        proj2 = make_project(tmp, "sdist proj")
+        af2 = venv_exe(tmp / "venv sdist", "agentflow")
+        run([af2, "install", str(proj2)], cwd=tmp)
+        run([af2, "--project", str(proj2), "ledger", "show"], cwd=tmp)
+        p = run([af2, "--project", str(proj2), "dashboard"], cwd=tmp)
+        out2 = proj2 / ".agentflow" / "dashboard" / "out"
+        check(p.returncode == 0 and all((out2 / pg).is_file()
+                                        for pg in ("index.html", "graph.html", "roadmap.html")),
+              "sdist-built package reproduces the full dashboard page set outside the checkout")
     finally:
         if os.environ.get("AGENTFLOW_PKG_KEEP") != "1":
             shutil.rmtree(tmp, ignore_errors=True)

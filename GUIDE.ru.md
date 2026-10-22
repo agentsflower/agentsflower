@@ -202,12 +202,14 @@ python .agentflow/tools/run_task.py --watchdog        # остановить к�
 ## Наблюдение за ходом работ
 
 ```bash
-python .agentflow/dashboard/build.py          # пишет .agentflow/dashboard/out/index.html и graph.html
+python .agentflow/dashboard/build.py          # пишет .agentflow/dashboard/out/index.html, graph.html и roadmap.html
 python .agentflow/dashboard/build.py --demo   # те же страницы из детерминированной фикстуры, помечено DEMO DATA
-agentflow dashboard --open                    # собрать и открыть в браузере
+agentflow dashboard --open                    # собрать и открыть index.html; остальные страницы связаны в шапке
 ```
 
 Дашборд только для чтения и ничего не выдумывает: статусы, роли и вердикты берутся из реестра и Task Files; панель метрик (first-pass gate rate, lead time, счёт вердиктов) считается только по записанным данным — отсутствующая история, время или стоимость показываются как N/A, никогда как ноль или выдуманная выгода. `--demo` существует для скриншотов и проверки вёрстки: он не читает память проекта и пишет только в `out/`. Интерфейс дашборда английский.
+
+Страница roadmap (`out/roadmap.html`) показывает каждый `### Stage` файла `.agentflow/docs/project-plan.md` в исходном порядке — объявленный статус, счётчики локальных задач и доказательства критериев как три отдельных факта — плюс карточку диагностики. Существующий план менять не нужно; необязательный авторский синтаксис `evidence:`/`Recurring:`/`References:` для покрытия по критериям описан в `.agentflow/dashboard/README.md`. Перед изменением исходников дашборда сохрани локальную версию: `python .agentflow/dashboard/snapshot.py save "<что>"`, откат — `snapshot.py restore vN` (какие исходники покрываются, перечислено в том же README).
 
 ## Восстановление
 

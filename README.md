@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/vcherstar/AgentFlow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.15.6-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.15.10-blue.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MCP ready](https://img.shields.io/badge/MCP-optional%20server-green.svg)](#mcp-server-optional)
 
@@ -52,9 +52,10 @@ The combined "85,000+ users" headline is an aggregate snapshot across these list
 ```bash
 python .agentflow/dashboard/build.py          # real view -> .agentflow/dashboard/out/
 python .agentflow/dashboard/build.py --demo   # deterministic fixture, marked DEMO DATA
+agentflow dashboard --open                    # packaged CLI: build and open in a browser
 ```
 
-A read-only view for the human: task table, filters, Gantt, timeline, and evidence metrics (first-pass gate rate, lead time, verdict counts). Missing telemetry is shown as N/A — never a zero or an invented saving.
+A read-only view for the human: task table, filters, Gantt, timeline, a roadmap page showing every `### Stage` of `docs/project-plan.md` (declared status, local task counts and exit-criteria evidence kept as three separate facts), and evidence metrics (first-pass gate rate, lead time, verdict counts). Missing telemetry is shown as N/A — never a zero or an invented saving. Local source snapshots: `python .agentflow/dashboard/snapshot.py save <what>` / `restore vN`.
 
 ![AgentFlow dashboard](.agentflow/docs/assets/dashboard.png)
 

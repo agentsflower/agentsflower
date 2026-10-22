@@ -84,6 +84,30 @@ class InstallTests(unittest.TestCase):
             self.run_install()
         self.assertEqual(self.run_install(update=True).actions, [])
 
+    def test_install_delivers_dashboard_assets_and_builds_every_page(self):
+        """T-048: the roadmap assets are installed, the repository-only mockups are
+        not, and the installed build.py produces the full page set offline once the
+        ledger exists (`ledger.py show` - the documented setup step)."""
+        self.run_install()
+        flow = self.repo / ".agentflow"
+        for rel in ("dashboard/roadmap_template.html", "dashboard/roadmap.css", "dashboard/roadmap.js"):
+            self.assertTrue((flow / rel).is_file(), rel)
+        self.assertFalse((flow / "dashboard" / "mockups").exists(),
+                         "mockups stay in the template repository; they are not installed")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env["PYTHONUTF8"] = "1"
+        show = subprocess.run([sys.executable, str(flow / "tools" / "ledger.py"), "show"],
+                              cwd=self.repo, env=env, capture_output=True, text=True)
+        self.assertEqual(show.returncode, 0, show.stdout + show.stderr)
+        build = subprocess.run([sys.executable, str(flow / "dashboard" / "build.py")],
+                               cwd=self.repo, env=env, capture_output=True, text=True)
+        self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+        for page in ("index.html", "graph.html", "roadmap.html"):
+            self.assertTrue((flow / "dashboard" / "out" / page).is_file(), page)
+        roadmap = (flow / "dashboard" / "out" / "roadmap.html").read_text(encoding="utf-8")
+        self.assertIn('"schemaVersion": 1', roadmap)
+        self.assertIn('"id": "1"', roadmap)  # the stub plan's stage parsed without migration
+
     def test_update_refuses_uncommitted_template_file_and_keeps_project_additions(self):
         self.run_install()
         (self.repo / ".agentflow" / "tools" / "launch.ps1").write_text("# machine wrapper\n", encoding="utf-8")

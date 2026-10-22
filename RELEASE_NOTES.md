@@ -1,10 +1,10 @@
-# Release notes — AgentFlow 2.15.6
+# Release notes — AgentFlow 2.15.10
 
 Prepared locally on 2026-10-21. **Not yet published.** Push, CI verification,
 tagging and the GitHub Release are human steps; see *Publish (human steps)*.
 These notes supersede the never-published 2.12.0 preparation record: no tag or
 GitHub Release has ever been created, so the first published release carries
-everything that landed through 2.15.6 — details per version in
+everything that landed through 2.15.10 — details per version in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## What is in this release
@@ -50,6 +50,15 @@ changelog entry of the version that shipped it:
   `GUIDE.ru.md` reaches section-by-section parity with `GUIDE.md` in Russian;
   the `tool-routing.md` Antigravity CLI note matches the non-interactive
   worker argv.
+- Roadmap dashboard (2.15.8–2.15.10): a third dashboard page
+  (`out/roadmap.html`) renders every `### Stage` of `project-plan.md` in
+  source order — declared status, local task counts and exit-criteria
+  evidence as three separate facts — with allowlisted
+  attempt/routing/verify drill-down and build diagnostics, in cards,
+  journey and matrix layouts. Optional authored plan syntax (`evidence:`,
+  `Recurring:`, `References:`) stays opt-in — existing plans need no
+  migration. The packaged distribution and `install.py --update` carry the
+  assets; `dashboard/mockups/` stays repository-only.
 
 ## Evidence status and limits
 
@@ -96,7 +105,7 @@ After final review and acceptance of the release tasks:
 3. Tag (only after the remote run is verified — do not tag a state that
    still lacks CI evidence if the tag is meant to represent a verified
    release):
-   `git tag -a v2.15.6 -m "AgentFlow 2.15.6: project-memory template, cross-platform CLI, optional MCP, evidence dashboard, trustworthy lifecycle and enforced routing"`
-   `git push origin v2.15.6`
-4. Create the GitHub Release for `v2.15.6`, using this file's *What is in
+   `git tag -a v2.15.10 -m "AgentFlow 2.15.10: project-memory template, cross-platform CLI, optional MCP, evidence and roadmap dashboard, trustworthy lifecycle and enforced routing"`
+   `git push origin v2.15.10`
+4. Create the GitHub Release for `v2.15.10`, using this file's *What is in
    this release* and *Evidence status and limits* sections as the notes.
