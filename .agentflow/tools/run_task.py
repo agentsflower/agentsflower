@@ -1502,8 +1502,11 @@ def run_logged(argv, log, cwd, env, timeout=None, on_spawn=None):
     for takeover checks."""
     with open(log, "a", encoding="utf-8", errors="replace") as fh:
         # On POSIX the tool leads its own session/group: a wall-clock kill of its tree cannot SIGTERM
-        # the worker itself (it would die before recording the error attempt).
-        kw = {} if os.name == "nt" else {"start_new_session": True}
+        # the worker itself (it would die before recording the error attempt). On Windows the tool gets
+        # its own headless console (CREATE_NO_WINDOW): no window flash even if the worker's own console
+        # arrangement ever changes; taskkill /T reaches the tree regardless of console attachment.
+        kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" \
+            else {"start_new_session": True}
         p = subprocess.Popen(cmd_argv(argv), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)

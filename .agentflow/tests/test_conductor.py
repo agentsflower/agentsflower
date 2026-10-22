@@ -1,5 +1,6 @@
 """conductor.ps1 end to end in real PowerShell, with a fake tick.py and fake tools (skipped where pwsh is missing).
-A real round opens a short-lived window: the fake tool prints a usage limit and exits."""
+A real round spawns a short-lived hidden session: the fake tool prints a usage limit and exits."""
+import ctypes
 import hashlib
 import json
 import os
@@ -97,6 +98,124 @@ class ConductorTests(unittest.TestCase):
     def calls(self):
         p = self.rt / "calls.txt"
         return p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+
+    @staticmethod
+    def nt_alive(pid):
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(k.GetExitCodeProcess(h, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            k.CloseHandle(h)
+
+    @staticmethod
+    def main_window(pid):
+        """The process's main window handle; 0 for a hidden or headless console (conhost/CREATE_NO_WINDOW)."""
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            f"(Get-Process -Id {int(pid)} -ErrorAction Stop).MainWindowHandle.ToString()"],
+                           capture_output=True, text=True, timeout=30)
+        return r.stdout.strip()
+
+    def test_background_session_is_hidden_and_cannot_hang_on_stdin(self):
+        """A-01/A-03: the spawned Orchestrator session owns no visible window (MainWindowHandle 0),
+        and its stdin is closed - the fake tool's `set /p` gets EOF at once instead of blocking
+        forever on console input, so an interactive prompt can never hang the session silently."""
+        (self.root / "fake-codex.cmd").write_text(
+            "@echo off\r\nset /p X=prompt: \r\necho stdin-read:%X%\r\n"
+            "ping -n 6 127.0.0.1 >nul\r\nexit /b 0\r\n", encoding="ascii")
+        self.report(needs=[NEED])
+        self.conduct()
+        s = {}
+        for _ in range(60):
+            s = self.state().get("session") or {}
+            if s.get("finishedAt") or (s.get("pid") and self.nt_alive(s["pid"])):
+                break
+            time.sleep(0.25)
+        self.assertTrue(s.get("pid"), f"no session pid recorded: {self.state()}")
+        hwnd = self.main_window(s["pid"]) if not s.get("finishedAt") else "0"
+        self.assertEqual(hwnd, "0", f"session pid {s['pid']} owns a visible window (handle {hwnd})")
+        fin = self.wait_finished(1)
+        self.assertEqual(fin["tool"], "codex")
+        self.assertFalse(fin["limitHit"])
+        self.assertEqual(fin["exitCode"], 0)
+        log = Path(fin["log"]).read_text(encoding="utf-8", errors="replace")
+        self.assertIn("stdin-read:", log, "set /p never returned - closed stdin did not reach the tool")
+
+    def test_panel_start_runs_the_conductor_hidden_and_status_sees_it(self):
+        """A-01/A-03: -Start launches the conductor with no window (not a minimized one), the panel
+        still reports it running, and -Stop still stops it."""
+        self.report()
+        panel = self.root / ".agentflow" / "tools" / "conductor-panel.ps1"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env.update({"AGENTFLOW_PYTHON": sys.executable,
+                    "AGENTFLOW_MACHINE_STATE_DIR": str(self.root / "machine")})
+        r = subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(panel),
+                            "-Start"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=env, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("свёрнут", r.stdout + r.stderr)  # the UI may no longer promise a taskbar entry
+        try:
+            c = {}
+            for _ in range(60):
+                c = self.state().get("conductor") or {}
+                if c.get("pid") and self.nt_alive(c["pid"]):
+                    break
+                time.sleep(0.25)
+            self.assertTrue(c.get("pid") and self.nt_alive(c["pid"]),
+                            f"conductor did not start: {self.state()}")
+            self.assertEqual(self.main_window(c["pid"]), "0",
+                             f"conductor pid {c['pid']} owns a visible window")
+            code, text = self.panel_status(PWSH)
+            self.assertEqual(code, 0, text)
+            self.assertIn("Сторож: работает", text)
+        finally:
+            subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(panel),
+                            "-Stop"], capture_output=True, text=True, env=env, timeout=60)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and self.nt_alive(c["pid"]):
+            time.sleep(0.2)
+        self.assertFalse(self.nt_alive(c["pid"]), "-Stop did not stop the conductor")
+
+    def test_autostart_registration_runs_hidden_not_minimized(self):
+        """A-01/A-04: the registered Task Scheduler action must carry `-WindowStyle Hidden` (a
+        minimized console still takes a taskbar slot); register/unregister roundtrip on the
+        fixture's own task name."""
+        panel = self.root / ".agentflow" / "tools" / "conductor-panel.ps1"
+        r = subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(panel),
+                            "-Register"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60)
+        if r.returncode:
+            self.skipTest(f"Task Scheduler registration unavailable here: {(r.stdout + r.stderr).strip()}")
+        try:
+            q = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                "(Get-ScheduledTask -TaskPath '\\AgentFlow\\' | Where-Object "
+                                f"{{ $_.Actions[0].Arguments -like '*{self.root}*' }})"
+                                ".Actions[0].Arguments"],
+                               capture_output=True, text=True, timeout=30)
+            self.assertEqual(q.returncode, 0, q.stdout + q.stderr)
+            self.assertIn("-WindowStyle Hidden", q.stdout)
+            self.assertNotIn("Minimized", q.stdout)
+        finally:
+            subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(panel),
+                            "-Unregister"], capture_output=True, text=True, timeout=60)
+
+    def test_launch_boundaries_carry_creation_controls(self):
+        """A-02 static guard: the spawn boundaries hold real process-creation controls, not just
+        quiet flags - a console created hidden for the session and the conductor starts, and the
+        session moves stdin to an EOF'd pipe so no tool prompt can hang it."""
+        src = (FLOW / "tools" / "conductor.ps1").read_text(encoding="utf-8")
+        spawn = src[src.index("function Start-Orchestrator"):src.index("# --- one conductor per project")]
+        self.assertIn("-WindowStyle Hidden", spawn)
+        self.assertNotIn("Minimized", spawn)
+        session = src[src.index("if ($Orchestrate) {"):src.index("function Start-Orchestrator")]
+        self.assertIn("SetStdHandle(-10", session)             # stdin is moved, not merely unread
+        self.assertIn("[IO.HandleInheritability]::Inheritable", session)  # the EOF pipe must reach the tools
+        panel = (FLOW / "tools" / "conductor-panel.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn("WindowStyle Minimized", panel)
+        self.assertIn("-WindowStyle Hidden", panel)
 
     def test_dry_run_only_says_what_it_would_do(self):
         self.report(needs=[NEED])

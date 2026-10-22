@@ -4,7 +4,7 @@
   session on the first tool that is not limited when a step needs judgment.
 
 .EXAMPLE
-  .agentflow\tools\conductor.ps1                 # every 3 minutes until the window is closed
+  .agentflow\tools\conductor.ps1                 # every 3 minutes until stopped (a hidden console unless you run it in your own terminal)
   .agentflow\tools\conductor.ps1 -Once -DryRun   # one look: what would it do now? changes nothing
   .agentflow\tools\conductor.ps1 -IntervalMinutes 5 -CooldownMinutes 90
   .agentflow\tools\conductor-panel.ps1           # status window; autostart at logon, desktop shortcut
@@ -18,9 +18,11 @@
    2. A background Orchestrator session started earlier is still running: wait for it.
    3. python .agentflow/tools/tick.py run - accepts and launches what needs no judgment (report only while an
       Orchestrator heartbeat is fresh: the human's session or a background one owns the project then).
-   4. tick.json lists needs and no Orchestrator is live: start a background Orchestrator session in a visible window,
-      on the first tool of AGENTFLOW_ORCHESTRATORS (default claude,codex,devin,agy) that tick.py does not know as
-      limited. The same needs are not handed over again before -CooldownMinutes, unless the last session hit a limit.
+   4. tick.json lists needs and no Orchestrator is live: start a background Orchestrator session in a hidden
+      console process (no window, taskbar entry or focus theft; its stdin is closed so a prompt could never
+      hang it), on the first tool of AGENTFLOW_ORCHESTRATORS (default claude,codex,devin,agy) that tick.py does
+      not know as limited. The same needs are not handed over again before -CooldownMinutes, unless the last
+      session hit a limit.
    5. A Windows notification for: acceptances and launches, a background session started or finished, every tool
       limited, a change in .agentflow/state/questions.md.
   Tool command lines are the developer ones of run-task.ps1 (the Orchestrator merges and writes memory). Machine
@@ -35,7 +37,7 @@ param(
   [switch]$Once,
   [switch]$DryRun,
   [switch]$NoNotify,
-  [ValidateSet('', 'codex', 'claude', 'agy', 'devin')][string]$Orchestrate,   # internal: inside the session window
+  [ValidateSet('', 'codex', 'claude', 'agy', 'devin')][string]$Orchestrate,   # internal: inside the hidden session process
   [string]$Handover = ''                                                    # internal: DPAPI-encrypted environment
 )
 $ErrorActionPreference = 'Stop'
@@ -151,21 +153,27 @@ function Get-OrchestratorArgv([string]$tool, [string]$prompt) {   # developer co
   }
 }
 
-# --- -Orchestrate: one background Orchestrator session, inside its own window --------------------------------------
+# --- -Orchestrate: one background Orchestrator session, inside its own headless console ------------------------------
 if ($Orchestrate) {
   [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+  $s = Read-State; $log = $s.session.log
   try {   # QuickEdit off: a click in the console would pause the session (same as run-task.ps1)
     Add-Type -Namespace AgentFlow -Name Console -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern System.IntPtr GetStdHandle(int h);
 [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(System.IntPtr h, out uint m);
 [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(System.IntPtr h, uint m);
+[DllImport("kernel32.dll")] public static extern bool SetStdHandle(int h, System.IntPtr v);
 '@
     $hIn = [AgentFlow.Console]::GetStdHandle(-10); $mode = 0
     if ([AgentFlow.Console]::GetConsoleMode($hIn, [ref]$mode)) { [void][AgentFlow.Console]::SetConsoleMode($hIn, ($mode -band (-bnot 0x40)) -bor 0x80) }
-  } catch {}
+    # stdin -> an inheritable anonymous pipe already at EOF: every tool this session launches reads
+    # end-of-input at once, so an interactive prompt can never hang the unattended session silently.
+    $stdinPipe = [IO.Pipes.AnonymousPipeServerStream]::new([IO.Pipes.PipeDirection]::In, [IO.HandleInheritability]::Inheritable)
+    [IO.Pipes.AnonymousPipeClientStream]::new([IO.Pipes.PipeDirection]::Out, $stdinPipe.ClientSafePipeHandle).Dispose()
+    [void][AgentFlow.Console]::SetStdHandle(-10, $stdinPipe.SafePipeHandle.DangerousGetHandle())
+  } catch { if ($log) { "console setup skipped: $($_.Exception.Message)" | Out-File -FilePath $log -Append -Encoding utf8 } }
   $ErrorActionPreference = 'Continue'   # native stderr must not abort the session
   $holder = "$Orchestrate-background"
-  $s = Read-State; $log = $s.session.log
   $prompt = "You are the Orchestrator in background mode, holder name '$holder'. Your role: .agentflow/roles/orchestrator.md. " +
     "First read .agentflow/docs/ai-handoff-protocol.md, section 'Autonomous orchestration': its limits override everything else. " +
     "The conductor started you because no Orchestrator was live; the open needs are in .agentflow/tasks/.runtime/tick.json."
@@ -191,7 +199,7 @@ if ($Orchestrate) {
   Write-State $s
   if ($s.session.machineLease) { [void](Invoke-Machine @('release', $s.session.machineLease)) }
   Write-Host "`nbackground Orchestrator ($Orchestrate) finished, exit $code$(if ($limit) { ', usage limit' })."
-  return   # the window closes here
+  return   # the hidden session process exits here
 }
 
 function Start-Orchestrator([string]$tool, $state, [string]$why) {
@@ -217,7 +225,10 @@ function Start-Orchestrator([string]$tool, $state, [string]$why) {
   Set-Prop $state 'session' $session; Set-Prop $state 'sessions' $n
   Write-State $state
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
-  $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Orchestrate', $tool, '-Handover', $blob
+  # -WindowStyle Hidden: the session's console is created hidden (wShowWindow at creation) - no window flash,
+  # taskbar button or focus theft. A console app has no other "start hidden" switch; the session itself moves
+  # its own stdin to an EOF'd pipe (see the -Orchestrate block) so a prompt can never hang it.
+  $p = Start-Process $ps -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Orchestrate', $tool, '-Handover', $blob
   $wp = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
   $state = Read-State
   if ($wp -and -not $state.session.finishedAt) {
@@ -231,7 +242,7 @@ function Start-Orchestrator([string]$tool, $state, [string]$why) {
   }
 }
 
-# --- one conductor per project: a second one (the logon task, another window) exits at once. The name is shared with
+# --- one conductor per project: a second one (the logon task, another start) exits at once. The name is shared with
 # conductor-panel.ps1, which reads it to tell whether the conductor runs. A dry run only looks and needs no lock.
 if (-not $DryRun) {
   $mutex = [Threading.Mutex]::new($false, "Local\AgentFlow-Conductor-$(Get-Hash $root.ToLowerInvariant())")
@@ -245,7 +256,7 @@ if (-not $DryRun) {
 }
 
 # --- the loop --------------------------------------------------------------------------------------------------------
-Write-Host "conductor: $root, every $IntervalMinutes min$(if ($DryRun) { ', dry run' }). Close the window to stop."
+Write-Host "conductor: $root, every $IntervalMinutes min$(if ($DryRun) { ', dry run' }). Stop it from the panel (or close this console if you see one)."
 while ($true) {
   try {
     if (-not $DryRun -and (Test-Path (Join-Path $flowRoot 'tools\run_task.py'))) {
