@@ -665,7 +665,7 @@ $("cDep").textContent=cnt.dep; $("cDead").textContent=cnt.dead; $("cSucc").textC
 $("legend").innerHTML=ST_ORDER.map(s=>`<span><i style="background:${col(s)}"></i>${s}</span>`).join("")
   +`<span><i style="background:none;border-left:2px solid var(--ink);height:10px;width:0;border-radius:0"></i>tick on a bar — worker commit</span>`;
 $("statusHelp").innerHTML="<b>Rejected</b> — work was delivered but acceptance failed (a check failed or the report was untrusted); a successor task is issued. <b>Cancelled</b> — the task was stopped by decision before acceptance: no longer needed, replaced, or a duplicate; nothing to accept. <b>Ready</b> — the Task File is written, the worker is not launched yet. Status order left to right / top to bottom runs from failures to acceptance (<b>Done</b> = merged into main).";
-C.initHeader("gantt", DATA.generated, DATA.project, DATA.demo);
+C.initHeader("gantt", DATA.generated, DATA.projectName || DATA.project, DATA.demo, DATA.projectPath);
 window.addEventListener("resize",()=>draw());
 fb.render(); syncZoom(); syncGroup(); syncUnit(); setMode("act"); setAsof(pts.length-1);
 </script>

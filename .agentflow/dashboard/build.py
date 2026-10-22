@@ -26,6 +26,8 @@ TASKS_REL = TASKS.relative_to(ROOT).as_posix()
 PLAN_REL = PLAN.relative_to(ROOT).as_posix()
 RUNTIME_REL = RUNTIME.relative_to(ROOT).as_posix()
 PROJECT = ROOT.name
+PROJECT_NAME = "AgentsFlower"
+PROJECT_PATH = str(ROOT.resolve())
 SCHEMA_VERSION = 1
 
 STATUS_EN = {  # ledger machine status -> English display label
@@ -384,7 +386,8 @@ def finish_graph(tasks, goal_text, dep_edges, commits, pings, succ, metrics=None
         t.setdefault("attempts", None)
         t.setdefault("routing", None)
         t.setdefault("verifications", None)
-    graph = {"project": PROJECT, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    graph = {"project": PROJECT, "projectName": PROJECT_NAME, "projectPath": PROJECT_PATH,
+             "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
              "now": datetime.now().astimezone().isoformat(timespec="seconds"),
              "schemaVersion": SCHEMA_VERSION,
              "tasks": list(tasks.values()), "edges": dep_edges + succ + check_edges(tasks),

@@ -271,7 +271,7 @@ document.querySelectorAll("#views .btn").forEach(b => b.onclick = () => {
 
 function render(){ fb.render(); paintViewBtns(); VIEWS[view](); if (selTask) select(selTask); }
 $("diag").innerHTML = R.diagCard(DATA) + "<hr style='border:0;border-top:1px solid var(--line)'>" + R.provenanceCard(DATA);
-C.initHeader("roadmap", DATA.generated, DATA.project, DATA.demo);
+C.initHeader("roadmap", DATA.generated, DATA.projectName || DATA.project, DATA.demo, DATA.projectPath);
 render();
 </script>
 </body>

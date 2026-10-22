@@ -68,12 +68,14 @@ const C=(function(){
   // ---- header and theme ----
   const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
   const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
-  function initHeader(active,generated,project,demo){
+  function initHeader(active,generated,project,demo,path){
     let saved=null; try{ saved=localStorage.getItem("dash-theme"); }catch(e){}
     if(saved) document.documentElement.dataset.theme=saved;
     const hdr=document.getElementById("hdr");
     hdr.className="topbar";
-    hdr.innerHTML=`<h1>Tasks${project?" · "+esc(project):""}</h1><nav class="nav"><a href="index.html"${active==="over"?' class="on"':""}>Overview</a><a href="graph.html"${active==="gantt"?' class="on"':""}>Gantt & timeline</a><a href="roadmap.html"${active==="roadmap"?' class="on"':""}>Roadmap</a></nav><span class="sp"></span>${demo?'<span class="demobadge">DEMO DATA — not real project evidence</span>':""}<span class="gen">Built ${esc(generated)}</span><button class="iconbtn" id="theme" type="button" aria-label="Toggle theme"></button>`;
+    const pName = (project && project !== "code") ? esc(project) : "AgentsFlower";
+    const pSub = path ? `<span style="font-size:12px;color:var(--mut);font-weight:400;margin-left:6px" title="${esc(path)}">(${esc(path)})</span>` : (project === "code" ? `<span style="font-size:12px;color:var(--mut);font-weight:400;margin-left:6px">(E:\\Projects\\AgentFlow\\code)</span>` : "");
+    hdr.innerHTML=`<h1>${pName} · Tasks${pSub}</h1><nav class="nav"><a href="index.html"${active==="over"?' class="on"':""}>Overview</a><a href="graph.html"${active==="gantt"?' class="on"':""}>Gantt & timeline</a><a href="roadmap.html"${active==="roadmap"?' class="on"':""}>Roadmap</a></nav><span class="sp"></span>${demo?'<span class="demobadge">DEMO DATA — not real project evidence</span>':""}<span class="gen">Built ${esc(generated)}</span><button class="iconbtn" id="theme" type="button" aria-label="Toggle theme"></button>`;
     const btn=document.getElementById("theme");
     const isDark=()=>{ const t=document.documentElement.dataset.theme; return t?t==="dark":matchMedia("(prefers-color-scheme:dark)").matches; };
     const paint=()=>{ btn.innerHTML=isDark()?SUN:MOON; btn.title=isDark()?"Light theme":"Dark theme"; };

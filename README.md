@@ -34,19 +34,6 @@ flowchart LR
 
 The Orchestrator splits the goal into task contracts, launches workers and accepts results on evidence; it is the only writer of project memory. Developers and Testers each work on an isolated artifact (worktree / disposable checkout); the Deployer consumes only an accepted SHA and starts manually after human approval. Isolation is by git worktree plus post-attempt checks — not a universal sandbox guarantee for every tool.
 
-## Battle-tested in production
-
-AgentFlow was built and is used to maintain real AI products. Maintainer-attested figures, October 2026:
-
-| Product | Scale | Store rating |
-|---|---|---|
-| [NotebookLM AI Sidebar](https://aisidebar.app) | 80,000+ users | 4.7/5 · 111 ratings · Google Featured |
-| Export Chat from Gemini to Word | 4,000+ users | 4.8/5 · 38 ratings · Google Featured |
-| YouTube Transcript extension | 1,600+ users | — |
-| AI Home Design | full-stack Generative AI SaaS in production | — |
-
-The combined "85,000+ users" headline is an aggregate snapshot across these listings, not a count of deduplicated unique people. Store listing links are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md); figures not independently re-measured are labeled as attested.
-
 ## Dashboard
 
 ```bash

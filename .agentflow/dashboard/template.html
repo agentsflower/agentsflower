@@ -265,7 +265,7 @@ function render(){
   renderDays(); renderAttn(); renderTable();
 }
 
-C.initHeader("over", DATA.generated, DATA.project, DATA.demo);
+C.initHeader("over", DATA.generated, DATA.projectName || DATA.project, DATA.demo, DATA.projectPath);
 render();
 </script>
 </body>
