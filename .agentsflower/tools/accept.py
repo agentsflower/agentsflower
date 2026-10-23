@@ -126,7 +126,7 @@ def dirty(repo):
         code, path = e[:2], e[3:].rstrip("/")
         if code[0] in "RC":  # a rename or copy carries its source path as the next entry
             i += 1
-        if code == "??" or (repo == "" and (path.startswith(".agentflow/") or path in own)):
+        if code == "??" or (repo == "" and (path.startswith(".agentsflower/") or path.startswith(".agentflow/") or path in own)):
             continue
         out.append(f"{code} {path}")
     return out

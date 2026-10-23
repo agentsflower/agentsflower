@@ -12,6 +12,8 @@ Full architectural rebranding to AgentsFlower (T-114, T-115):
 - Remote repository authority established at https://github.com/agentsflower/agentsflower.
 - Tasks T-116, T-117, T-118 added to the roadmap for Graft Codebase Knowledge Graph integration.
 
+Migration: run `python .agentflow/tools/install.py --update` or `install.py .` to migrate to the `.agentsflower/` directory structure. Projects with existing `.agentflow/` folders are automatically detected and upgraded.
+
 ## 2.15.11 - 2026-10-22
 
 Hidden background processes on Windows (T-066): the conductor, its automatic
