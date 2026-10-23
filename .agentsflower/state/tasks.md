@@ -102,4 +102,6 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-112 | Independently verify hidden background process consoles | 5 | tester | devin | done | T-066 | 3c8d9e6db30f2da718acbfca524650f4360977ee | Tester for T-066 @ 3c8d9e6; real Windows desktop and regression checks | 2026-10-22 22:24 |
 | T-113 | Research and map best-in-class open-source agent skills ecosystem | 6 | developer | devin | done |  | 025e696fce64ab3eab93730a0eed9c47813c8e79 | Research spike: 8 domains (UI/UX, algorithms, arch, chrome extension, backend, frontend, devops, product discovery) | 2026-10-22 23:17 |
 | T-116 | Graft AST codebase knowledge graph spike | 6 | developer | devin | done |  | 9fcc34e5d25c0228caacfec7f251e9ad1ba9b9c9 | Routing confirmed by human; devin swe-2-max assessed by Jev | 2026-10-23 20:22 |
+| T-117 | Graft MCP adapter and tooling integration | 6 | developer | devin | done | T-116 | 47f33956173e430f0dff9c1eda35d34161591b29 |  | 2026-10-23 21:17 |
+| T-118 | Independently verify Graft integration and tooling | 6 | tester | codex | done | T-117 | 47f33956173e430f0dff9c1eda35d34161591b29 |  | 2026-10-23 21:17 |
 
