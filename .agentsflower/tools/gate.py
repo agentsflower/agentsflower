@@ -626,7 +626,7 @@ def evidence_problems(t, outcomes):
             rel = re.sub(r"^\./", "", tok.replace("\\", "/"))
             if re.match(r"^([a-zA-Z]:[\\/]|/|~)", tok) or rel == ".." or rel.startswith("../"):
                 bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope")
-            elif rel.lower().startswith(".agentflow/tasks/.runtime/"):
+            elif rel.lower().startswith((".agentflow/tasks/.runtime/", ".agentsflower/tasks/.runtime/")):
                 name = rel.rsplit("/", 1)[-1]
                 if not name.startswith(t["id"] + "."):
                     bad.append(f"criterion {cid}: evidence '{tok}' is outside the task's scope "
@@ -1013,3 +1013,14 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def graft_blast_radius(t: dict) -> list[str]:
+    """Calculate blast radius files for a task using Graft."""
+    try:
+        import graft
+        repo = ROOT
+        allowed = t.get("allowed", [])
+        return graft.graft_blast_radius(repo, allowed)
+    except Exception:
+        return []

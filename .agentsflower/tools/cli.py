@@ -51,11 +51,19 @@ def version():
     return v.read_text(encoding="utf-8").strip() if v.exists() else "?"
 
 
+def flow_dir(root: Path) -> Path:
+    if (root / ".agentsflower").is_dir():
+        return root / ".agentsflower"
+    return root / ".agentflow"
+
+
 def is_project_root(d: Path) -> bool:
-    flow = d / ".agentflow"
-    if not (flow / "docs" / "ai-handoff-protocol.md").is_file():
-        return False
-    return (flow / "state").is_dir() or (flow / "template-source.json").is_file()
+    for name in (".agentsflower", ".agentflow"):
+        flow = d / name
+        if (flow / "docs" / "ai-handoff-protocol.md").is_file():
+            if (flow / "state").is_dir() or (flow / "template-source.json").is_file():
+                return True
+    return False
 
 
 def find_root(start: Path) -> Path | None:
@@ -69,7 +77,7 @@ def find_root(start: Path) -> Path | None:
 
 
 def task_file(root: Path, tid: str) -> Path | None:
-    tasks = root / ".agentflow" / "tasks"
+    tasks = flow_dir(root) / "tasks"
     for f in sorted(tasks.glob(f"{tid}*.md")):
         if f.stem == tid or f.stem.startswith(tid + "-"):
             return f
@@ -82,7 +90,7 @@ def task_field(text: str, name: str) -> str:
 
 
 def run_tool(root: Path, script: str, args, cwd=None) -> int:
-    path = root / ".agentflow" / "tools" / script if root else TOOLS_DIR / script
+    path = flow_dir(root) / "tools" / script if root else TOOLS_DIR / script
     if not path.is_file():
         print(f"agentflow: missing tool script {path}", file=sys.stderr)
         return 2
@@ -147,9 +155,9 @@ def cmd_dashboard(a) -> int:
     if not root:
         print(f"agentflow: no installed AgentFlow project found at or above {a.project}", file=sys.stderr)
         return 2
-    code = subprocess.call([sys.executable, str(root / ".agentflow" / "dashboard" / "build.py")], cwd=root)
+    code = subprocess.call([sys.executable, str(flow_dir(root) / "dashboard" / "build.py")], cwd=root)
     if code == 0 and a.open:
-        page = root / ".agentflow" / "dashboard" / "out" / "index.html"
+        page = flow_dir(root) / "dashboard" / "out" / "index.html"
         if page.is_file():
             webbrowser.open(page.as_uri())
     return code
@@ -176,7 +184,7 @@ def main(argv=None) -> int:
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
 
     for name, script in (("gate", "gate.py"), ("accept", "accept.py"), ("ledger", "ledger.py"),
-                         ("mcp", "mcp_server.py"), ("hooks", "hooks.py")):
+                         ("mcp", "mcp_server.py"), ("hooks", "hooks.py"), ("graft", "graft.py")):
         p = sub.add_parser(name, help=f"pass arguments to .agentflow/tools/{script}")
         p.add_argument("args", nargs=argparse.REMAINDER, help=f"arguments of {script} (see its --help)")
         p.set_defaults(script=script)

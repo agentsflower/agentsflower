@@ -33,6 +33,7 @@ TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 import ledger  # noqa: E402
+import graft  # noqa: E402
 
 TASK_ID = re.compile(r"T-\d{1,4}")
 GATE_CHECKS = ("verify", "preflight", "endcheck", "task")  # gate.py subcommands that take a task id
@@ -141,6 +142,27 @@ def query_ledger(limit=50, filter_role="") -> dict:
     return {"ok": True, "count": min(limit, len(rows)), "tasks": rows[-limit:]}
 
 
+
+def graft_query(question: str, path_scope: str = "") -> dict:
+    """Ask a question or locate code in the codebase knowledge graph via Graft."""
+    if not question:
+        return _err("question cannot be empty")
+    return graft.graft_query(REPO_ROOT, question, path_scope=path_scope)
+
+
+def graft_impact(symbol_or_path: str) -> dict:
+    """Calculate blast radius: transitive callers closure for symbols, or diff blast for files."""
+    if not symbol_or_path:
+        return _err("symbol_or_path cannot be empty")
+    return graft.graft_impact(REPO_ROOT, symbol_or_path)
+
+
+def graft_symbols(file: str) -> dict:
+    """Extract symbol and API signatures from a file using Graft."""
+    if not file:
+        return _err("file cannot be empty")
+    return graft.graft_symbols(REPO_ROOT, file)
+
 def accept_task(task_id) -> dict:
     """Orchestrator tool (only exposed with --enable-orchestrator-tools): invoke
     accept.py verbatim - verify, merge, ledger, cleanup."""
@@ -150,7 +172,7 @@ def accept_task(task_id) -> dict:
     return {"ok": code == 0, "exit_code": code, "task_id": task_id, "log": log}
 
 
-def build_server(enable_orchestrator: bool = False):
+def build_server(enable_orchestrator: bool = False, enable_graft: bool = False):
     """Create the MCPServer and register the tools. Raises SdkMissing when the
     optional `mcp` package is not installed."""
     try:
@@ -202,12 +224,13 @@ def build_server(enable_orchestrator: bool = False):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--enable-graft-tools", action="store_true", help="also expose graft tools (graft_query, graft_impact, graft_symbols)")
     ap.add_argument("--enable-orchestrator-tools", action="store_true",
                     help="also expose agentflow_accept_task (accept.py). This is an operator "
                          "control of the server surface, not proof of the caller's role.")
     a = ap.parse_args(argv)
     try:
-        server = build_server(a.enable_orchestrator_tools)
+        server = build_server(a.enable_orchestrator_tools, a.enable_graft_tools)
     except SdkMissing as e:
         print(f"agentflow mcp: {e}", file=sys.stderr)
         return 2
