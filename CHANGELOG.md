@@ -1,6 +1,16 @@
 # Changelog
 
-What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
+What changed in each AgentsFlower version. Why it changed: `.agentsflower/state/decisions.md`. The version of an installed project: `.agentsflower/VERSION` (2.1.x: `AgentsFlower version:` in its `AGENTS.md`).
+
+## 2.16.0 - 2026-10-23
+
+Full architectural rebranding to AgentsFlower (T-114, T-115):
+- The template folder is migrated from `.agentflow/` to `.agentsflower/`.
+- Python package distribution rebranded to `agentsflower-sdlc` (`pyproject.toml`, `setup.py`), providing the primary CLI command `agentsflower` alongside backwards-compatible `agentflow` alias.
+- Core tools (`install.py`, `gate.py`, `ledger.py`, `accept.py`, `cli.py`, `build.py`) upgraded to operate directly on `.agentsflower/` while retaining transparent fallback and upgrade path for projects with existing `.agentflow/` installations.
+- Entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`, `README.md`, `GUIDE.md`, `GUIDE.ru.md`) updated with `<!-- agentsflower:begin -->` markers.
+- Remote repository authority established at https://github.com/agentsflower/agentsflower.
+- Tasks T-116, T-117, T-118 added to the roadmap for Graft Codebase Knowledge Graph integration.
 
 ## 2.15.11 - 2026-10-22
 

@@ -1,10 +1,10 @@
 # Claude instructions
 
-<!-- agentflow:begin -->
-## AgentFlow
+<!-- agentsflower:begin -->
+## AgentsFlower
 
 @AGENTS.md
 
-Slash commands (plain Markdown in `.agentflow/commands/`, pointers in `.claude/commands/`): `/start-role <role> [task file]`,
+Slash commands (plain Markdown in `.agentsflower/commands/`, pointers in `.claude/commands/`): `/start-role <role> [task file]`,
 `/start-session`, `/update-memory`, `/handoff-cmd`, `/update-runbook`.
-<!-- agentflow:end -->
+<!-- agentsflower:end -->

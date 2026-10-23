@@ -2,9 +2,9 @@
 # local FPF spec copy, not part of the template
 FPF-Spec/
 
-# agentflow:begin
-.agentflow/tasks/.runtime/
-.agentflow/dashboard/out/
-.agentflow/dashboard/versions/
+# agentsflower:begin
+.agentsflower/tasks/.runtime/
+.agentsflower/dashboard/out/
+.agentsflower/dashboard/versions/
 __pycache__/
-# agentflow:end
+# agentsflower:end

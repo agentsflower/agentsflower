@@ -57,15 +57,15 @@ class InstallTests(unittest.TestCase):
         agents = (self.repo / "AGENTS.md").read_text(encoding="utf-8")
         self.assertTrue(agents.startswith(OWN_AGENTS.rstrip("\n")), "own rules must stay first and unchanged")
         self.assertIn(install.BEGIN, agents)
-        self.assertIn(f"AgentFlow version: {install.version()}", agents)
+        self.assertIn(f"AgentsFlower version: {install.version()}", agents)
         self.assertTrue((self.repo / ".gitignore").read_text(encoding="utf-8").startswith("/graft/"))
         self.assertEqual((self.repo / "tasks" / "plan.md").read_text(encoding="utf-8"), "own task notes\n")
         self.assertEqual((self.repo / "tools" / "verify.ps1").read_text(encoding="utf-8"), "# own script\n")
         for rel in ("docs/ai-handoff-protocol.md", "tools/gate.py", "tools/run-task.ps1", "VERSION",
                     "state/handoff.md", "docs/project-rules.md"):
-            self.assertTrue((self.repo / ".agentflow" / rel).exists(), rel)
-        self.assertFalse((self.repo / ".agentflow" / "state" / "tasks.md").exists(), "ledger is created by ledger.py")
-        self.assertFalse(any(p.name == "__pycache__" for p in (self.repo / ".agentflow").rglob("*")))
+            self.assertTrue((self.repo / ".agentsflower" / rel).exists(), rel)
+        self.assertFalse((self.repo / ".agentsflower" / "state" / "tasks.md").exists(), "ledger is created by ledger.py")
+        self.assertFalse(any(p.name == "__pycache__" for p in (self.repo / ".agentsflower").rglob("*")))
         self.assertEqual((self.repo / ".claude" / "commands" / "start-role.md").read_text(encoding="utf-8"),
                          install.command_pointer("start-role"))
 
@@ -79,7 +79,7 @@ class InstallTests(unittest.TestCase):
     def test_second_install_refused_and_update_is_idempotent(self):
         self.run_install()
         sh(self.repo, "git", "add", "-A")
-        sh(self.repo, "git", "commit", "-qm", "agentflow")
+        sh(self.repo, "git", "commit", "-qm", "agentsflower")
         with self.assertRaises(SystemExit):
             self.run_install()
         self.assertEqual(self.run_install(update=True).actions, [])
@@ -89,12 +89,12 @@ class InstallTests(unittest.TestCase):
         not, and the installed build.py produces the full page set offline once the
         ledger exists (`ledger.py show` - the documented setup step)."""
         self.run_install()
-        flow = self.repo / ".agentflow"
+        flow = self.repo / ".agentsflower"
         for rel in ("dashboard/roadmap_template.html", "dashboard/roadmap.css", "dashboard/roadmap.js"):
             self.assertTrue((flow / rel).is_file(), rel)
         self.assertFalse((flow / "dashboard" / "mockups").exists(),
                          "mockups stay in the template repository; they are not installed")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTSFLOWER_") and not k.startswith("AGENTFLOW_")}
         env["PYTHONUTF8"] = "1"
         show = subprocess.run([sys.executable, str(flow / "tools" / "ledger.py"), "show"],
                               cwd=self.repo, env=env, capture_output=True, text=True)
@@ -110,29 +110,32 @@ class InstallTests(unittest.TestCase):
 
     def test_update_refuses_uncommitted_template_file_and_keeps_project_additions(self):
         self.run_install()
-        (self.repo / ".agentflow" / "tools" / "launch.ps1").write_text("# machine wrapper\n", encoding="utf-8")
-        (self.repo / ".agentflow" / "state" / "decisions.md").write_text("# Decisions\n\nmine\n", encoding="utf-8")
+        (self.repo / ".agentsflower" / "tools" / "launch.ps1").write_text("# machine wrapper\n", encoding="utf-8")
+        (self.repo / ".agentsflower" / "state" / "decisions.md").write_text("# Decisions\n\nmine\n", encoding="utf-8")
         sh(self.repo, "git", "add", "-A")
-        sh(self.repo, "git", "commit", "-qm", "agentflow")
-        gate = self.repo / ".agentflow" / "tools" / "gate.py"
+        sh(self.repo, "git", "commit", "-qm", "agentsflower")
+        gate = self.repo / ".agentsflower" / "tools" / "gate.py"
         gate.write_text(gate.read_text(encoding="utf-8") + "\n# local edit\n", encoding="utf-8")
         with self.assertRaises(SystemExit) as stop:
             self.run_install(update=True)
-        self.assertIn(".agentflow/tools/gate.py", str(stop.exception))
-        sh(self.repo, "git", "checkout", "--", ".agentflow/tools/gate.py")
+        self.assertIn(".agentsflower/tools/gate.py", str(stop.exception))
+        sh(self.repo, "git", "checkout", "--", ".agentsflower/tools/gate.py")
         plan = self.run_install(update=True)
         self.assertTrue(any("launch.ps1" in n for n in plan.notes))
-        self.assertTrue((self.repo / ".agentflow" / "tools" / "launch.ps1").exists())
-        self.assertIn("mine", (self.repo / ".agentflow" / "state" / "decisions.md").read_text(encoding="utf-8"))
+        self.assertTrue((self.repo / ".agentsflower" / "tools" / "launch.ps1").exists())
+        self.assertIn("mine", (self.repo / ".agentsflower" / "state" / "decisions.md").read_text(encoding="utf-8"))
 
     def test_block_is_replaced_not_duplicated(self):
         self.run_install()
         p = self.repo / "AGENTS.md"
-        p.write_text(p.read_text(encoding="utf-8").replace("AgentFlow version:", "AgentFlow version: OLD"), encoding="utf-8")
+        p.write_text(p.read_text(encoding="utf-8").replace("AgentsFlower version:", "AgentsFlower version: OLD"), encoding="utf-8")
         sh(self.repo, "git", "add", "-A")
-        sh(self.repo, "git", "commit", "-qm", "agentflow")
+        sh(self.repo, "git", "commit", "-qm", "agentsflower")
         self.run_install(update=True)
         text = p.read_text(encoding="utf-8")
+        self.assertEqual(text.count(install.BEGIN), 1)
+        self.assertNotIn("OLD", text)
+        self.assertTrue(text.startswith(OWN_AGENTS.rstrip("\n")))
         self.assertEqual(text.count(install.BEGIN), 1)
         self.assertNotIn("OLD", text)
         self.assertTrue(text.startswith(OWN_AGENTS.rstrip("\n")))
@@ -157,9 +160,9 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.repo / ".mcp.json").exists(), "dry-run writes nothing")
         install.install(self.repo, False, False, mcp=True)
         data = json.loads((self.repo / ".mcp.json").read_text(encoding="utf-8"))
-        entry = data["mcpServers"]["agentflow"]
+        entry = data["mcpServers"]["agentsflower"]
         self.assertEqual(entry["args"],
-                         [str(self.repo.resolve() / ".agentflow" / "tools" / "mcp_server.py")])
+                         [str(self.repo.resolve() / ".agentsflower" / "tools" / "mcp_server.py")])
         self.assertNotIn("env", entry, "no credentials are persisted")
         self.assertNotIn("--enable-orchestrator-tools", entry["args"], "privileged tools stay off")
 
@@ -171,7 +174,7 @@ class InstallTests(unittest.TestCase):
         data = json.loads(cfg.read_text(encoding="utf-8"))
         self.assertEqual(data["note"], "keep me")
         self.assertEqual(data["mcpServers"]["other"], foreign["mcpServers"]["other"])
-        self.assertIn("agentflow", data["mcpServers"])
+        self.assertIn("agentsflower", data["mcpServers"])
         self.assertEqual(self.plan_mcp().actions, [], "merging the same entry is a no-op")
 
     def test_mcp_refuses_malformed_json_and_conflicting_entry(self):
@@ -180,23 +183,23 @@ class InstallTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.plan_mcp()
         self.assertEqual(cfg.read_text(encoding="utf-8"), "{not json")
-        cfg.write_text(json.dumps({"mcpServers": {"agentflow": {"command": "other", "args": []}}}),
+        cfg.write_text(json.dumps({"mcpServers": {"agentsflower": {"command": "other", "args": []}}}),
                        encoding="utf-8")
         with self.assertRaises(SystemExit) as stop:
             self.plan_mcp()
-        self.assertIn("agentflow", str(stop.exception))
-        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["mcpServers"]["agentflow"]["command"],
+        self.assertIn("agentsflower", str(stop.exception))
+        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["mcpServers"]["agentsflower"]["command"],
                          "other", "the unmanaged entry is left untouched")
         cfg.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
         with self.assertRaises(SystemExit):
             self.plan_mcp()
 
     def test_mcp_cursor_path_and_dry_run(self):
-        self.assertEqual(self.plan_mcp(client="cursor", dry=True).actions, ["merge AgentFlow MCP server into cursor config: " + str(self.repo / ".cursor" / "mcp.json")])
+        self.assertEqual(self.plan_mcp(client="cursor", dry=True).actions, ["merge AgentsFlower MCP server into cursor config: " + str(self.repo / ".cursor" / "mcp.json")])
         self.assertFalse((self.repo / ".cursor").exists(), "dry-run creates nothing")
         self.plan_mcp(client="cursor")
         data = json.loads((self.repo / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
-        self.assertIn("agentflow", data["mcpServers"])
+        self.assertIn("agentsflower", data["mcpServers"])
         self.assertFalse((self.repo / ".mcp.json").exists(), "cursor writes its own config path")
 
     def test_refusals(self):
@@ -261,13 +264,13 @@ class WorkspaceInstallTests(unittest.TestCase):
         plan = self.run_install(workspace=True, git_init=True, dry=True)
         self.assertTrue(any("git init" in a for a in plan.actions))
         self.assertFalse((self.ws / ".git").exists())
-        self.assertFalse((self.ws / ".agentflow").exists())
+        self.assertFalse((self.ws / ".agentsflower").exists())
 
     def test_install_and_update(self):
         heads = {r: sh(self.ws / r, "git", "rev-parse", "HEAD").stdout for r in ("api", "web")}
         self.run_install(workspace=True, git_init=True)
         self.assertTrue((self.ws / ".git").exists())
-        self.assertEqual(json.loads((self.ws / ".agentflow" / "workspace.json").read_text(encoding="utf-8")),
+        self.assertEqual(json.loads((self.ws / ".agentsflower" / "workspace.json").read_text(encoding="utf-8")),
                          {"repos": ["api", "web"]})
         ignore = (self.ws / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("/api/", ignore)
@@ -277,14 +280,14 @@ class WorkspaceInstallTests(unittest.TestCase):
         for r in ("api", "web"):
             self.assertEqual((self.ws / r / "AGENTS.md").read_text(encoding="utf-8"), f"{r} rules\n")
             self.assertEqual(sh(self.ws / r, "git", "rev-parse", "HEAD").stdout, heads[r])
-            self.assertFalse((self.ws / r / ".agentflow").exists())
+            self.assertFalse((self.ws / r / ".agentsflower").exists())
         sh(self.ws, "git", "config", "user.email", "t@example.invalid")
         sh(self.ws, "git", "config", "user.name", "t")
         sh(self.ws, "git", "add", "-A")
-        sh(self.ws, "git", "commit", "-qm", "agentflow")
+        sh(self.ws, "git", "commit", "-qm", "agentsflower")
         tracked = sorted(set(p.split("/")[0] for p in sh(self.ws, "git", "ls-files").stdout.split()))
-        self.assertEqual(tracked, [".agentflow", ".claude", ".gitignore", "AGENTS.md", "CLAUDE.md"],
-                         "the memory repository tracks AgentFlow files only, not tools/ or the repositories")
+        self.assertEqual(tracked, [".agentsflower", ".claude", ".gitignore", "AGENTS.md", "CLAUDE.md"],
+                         "the memory repository tracks AgentsFlower files only, not tools/ or the repositories")
         self.assertEqual(self.run_install(update=True).actions, [])
 
 

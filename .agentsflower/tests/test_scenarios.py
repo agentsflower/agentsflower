@@ -523,7 +523,7 @@ class OpenTaskMigrationTests(unittest.TestCase):
         # entry points: own text preserved, the block carries the new version
         agents = (self.repo / "AGENTS.md").read_text(encoding="utf-8")
         self.assertTrue(agents.startswith("# Own rules"))
-        self.assertIn(f"AgentFlow version: {install.version()}", agents)
+        self.assertIn(f"AgentsFlower version: {install.version()}", agents)
         self.assertNotIn("old block text", agents)
         self.assertIn("Keep this line.", agents)
         claude = (self.repo / "CLAUDE.md").read_text(encoding="utf-8")

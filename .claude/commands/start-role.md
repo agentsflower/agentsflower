@@ -1,2 +1,2 @@
-Read `.agentflow/commands/start-role.md` and follow its instructions.
+Read `.agentsflower/commands/start-role.md` and follow its instructions.
 Arguments: $ARGUMENTS

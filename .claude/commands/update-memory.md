@@ -1,2 +1,2 @@
-Read `.agentflow/commands/update-memory.md` and follow its instructions.
+Read `.agentsflower/commands/update-memory.md` and follow its instructions.
 Arguments: $ARGUMENTS

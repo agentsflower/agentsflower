@@ -1,5 +1,19 @@
 # Decision Log
 
+## 2026-10-23: Full architectural rebranding to AgentsFlower and Graft evaluation
+
+1. **Rebranding to AgentsFlower (T-114, T-115):**
+   - Human instruction: complete transition to AgentsFlower.
+   - Migrated repository workflow folder from `.agentflow/` to `.agentsflower/`.
+   - Rebranded package to `agentsflower-sdlc` (`pyproject.toml`, `setup.py`), primary CLI command to `agentsflower` while keeping `agentflow` as backwards-compatible alias.
+   - Updated installer `install.py` to target `.agentsflower/` by default while gracefully upgrading legacy `.agentflow/` targets and upgrading markers (`<!-- agentsflower:begin -->`).
+   - Established `https://github.com/agentsflower/agentsflower` as the official remote authority.
+
+2. **Integration of Graft Codebase Knowledge Graph (T-116, T-117, T-118):**
+   - Human inquiry on Graft value: analyzed AST/Tree-sitter knowledge graph engine (`@nanonets/graft` / `trailhq/Graft`).
+   - Identified major value: (a) 60-80% token savings for worker sessions in isolated worktrees via local symbol queries instead of blind greps; (b) automatic blast-radius impact analysis for Orchestrators populating `## Files` in Task Files; (c) multi-project indexing for AgentsFlower Studio.
+   - Added roadmap tasks T-116 (Spike), T-117 (MCP/CLI Integration), T-118 (Verification).
+
 ## 2026-10-21: Mandatory dynamic platform and model rotation based on live availability
 
 Human instruction: waiting for external platform limit resets (such as Antigravity quota hold until 22:09Z) is rejected. The project must implement and rely on automatic rotation of platforms and models based on availability and capacity.

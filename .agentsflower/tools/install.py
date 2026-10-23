@@ -84,10 +84,12 @@ STUBS = {
 
 COMMANDS = ["handoff-cmd", "start-role", "start-session", "update-memory", "update-runbook"]
 MCP_CONFIGS = {"claude": ".mcp.json", "cursor": ".cursor/mcp.json"}
-GITIGNORE = [".agentflow/tasks/.runtime/", ".agentflow/dashboard/out/", ".agentflow/dashboard/versions/", "__pycache__/"]
-NOT_REPOS = {".git", ".agentflow", ".claude", "node_modules", ".worktrees"}
-BEGIN, END = "<!-- agentflow:begin -->", "<!-- agentflow:end -->"
-GBEGIN, GEND = "# agentflow:begin", "# agentflow:end"
+GITIGNORE = [".agentsflower/tasks/.runtime/", ".agentsflower/dashboard/out/", ".agentsflower/dashboard/versions/", "__pycache__/"]
+NOT_REPOS = {".git", ".agentsflower", ".agentflow", ".claude", "node_modules", ".worktrees"}
+BEGIN, END = "<!-- agentsflower:begin -->", "<!-- agentsflower:end -->"
+LEGACY_BEGIN, LEGACY_END = "<!-- agentflow:begin -->", "<!-- agentflow:end -->"
+GBEGIN, GEND = "# agentsflower:begin", "# agentsflower:end"
+LEGACY_GBEGIN, LEGACY_GEND = "# agentflow:begin", "# agentflow:end"
 
 
 def version():
@@ -96,14 +98,14 @@ def version():
 
 def agents_block():
     return f"""{BEGIN}
-## AgentFlow
+## AgentsFlower
 
-AgentFlow version: {version()}. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
+AgentsFlower version: {version()}. Workflow files live in `.agentsflower/`; this block is template-owned and replaced on update.
 
-Workflow and instruction authority: `.agentflow/docs/ai-handoff-protocol.md`. Start with the applicable session section below. Project settings:
-`.agentflow/docs/project-rules.md` (and any rules in this file outside this block).
+Workflow and instruction authority: `.agentsflower/docs/ai-handoff-protocol.md`. Start with the applicable session section below. Project settings:
+`.agentsflower/docs/project-rules.md` (and any rules in this file outside this block).
 
-- With a role (`.agentflow/roles/<role>.md`, or `/start-role <role> ...`): protocol section "Starting a role session".
+- With a role (`.agentsflower/roles/<role>.md`, or `/start-role <role> ...`): protocol section "Starting a role session".
   Workers (developer, tester, deployer) do not update project memory.
 - Without a role (Single Mode): protocol section "Starting a new AI session" before substantial work; "Updating memory"
   before ending a long session.
@@ -112,20 +114,20 @@ Workflow and instruction authority: `.agentflow/docs/ai-handoff-protocol.md`. St
 
 def claude_block():
     return f"""{BEGIN}
-## AgentFlow
+## AgentsFlower
 
 @AGENTS.md
 
-Slash commands (plain Markdown in `.agentflow/commands/`, pointers in `.claude/commands/`): `/start-role <role> [task file]`,
+Slash commands (plain Markdown in `.agentsflower/commands/`, pointers in `.claude/commands/`): `/start-role <role> [task file]`,
 `/start-session`, `/update-memory`, `/handoff-cmd`, `/update-runbook`.
 {END}"""
 
 
 def command_pointer(name):
-    return f"Read `.agentflow/commands/{name}.md` and follow its instructions.\nArguments: $ARGUMENTS\n"
+    return f"Read `.agentsflower/commands/{name}.md` and follow its instructions.\nArguments: $ARGUMENTS\n"
 
 
-WORKSPACE_ONLY = ["/*", "!/.agentflow/", "!/AGENTS.md", "!/CLAUDE.md", "!/.claude/", "!/.gitignore",
+WORKSPACE_ONLY = ["/*", "!/.agentsflower/", "!/AGENTS.md", "!/CLAUDE.md", "!/.claude/", "!/.gitignore",
                   "/.claude/settings.local.json"]
 
 
@@ -177,25 +179,31 @@ def owned_files():
     return out
 
 
-def merge_block(existing: str | None, block: str, begin: str, end: str, new_file_head: str) -> str:
+def merge_block(existing: str | None, block: str, begin: str, end: str, new_file_head: str,
+                legacy_begin: str | None = None, legacy_end: str | None = None) -> str:
     if existing is None:
         return new_file_head + block + "\n"
     if begin in existing and end in existing:
         a, rest = existing.split(begin, 1)
         _, b = rest.split(end, 1)
         return a + block + b
+    if legacy_begin and legacy_end and legacy_begin in existing and legacy_end in existing:
+        a, rest = existing.split(legacy_begin, 1)
+        _, b = rest.split(legacy_end, 1)
+        return a + block + b
     return existing.rstrip("\n") + "\n\n" + block + "\n"
 
 
 def mcp_entry(target: Path) -> dict:
     """The MCP client config entry: run the target's own installed server, no credentials."""
+    flow = target / ".agentsflower" if (target / ".agentsflower").exists() else target / ".agentflow"
     return {"command": sys.executable,
-            "args": [str(target / ".agentflow" / "tools" / "mcp_server.py")]}
+            "args": [str(flow / "tools" / "mcp_server.py")]}
 
 
 def plan_mcp_config(plan: Plan, target: Path, client: str):
-    """Merge the `agentflow` server into the client's project MCP config, preserving
-    unrelated keys and servers. Refuses malformed JSON and an `agentflow` entry this
+    """Merge the `agentsflower` server into the client's project MCP config, preserving
+    unrelated keys and servers. Refuses malformed JSON and an entry this
     installer did not write - before anything is written."""
     cfg = target / MCP_CONFIGS[client]
     entry = mcp_entry(target)
@@ -207,14 +215,14 @@ def plan_mcp_config(plan: Plan, target: Path, client: str):
             raise SystemExit(f"STOP: {cfg} is not valid JSON ({e}); fix or remove it, then run --mcp again")
         if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
             raise SystemExit(f"STOP: {cfg} must hold a JSON object with an 'mcpServers' object; refusing to change it")
-        existing = data["mcpServers"].get("agentflow") if data.get("mcpServers") else None
+        existing = data["mcpServers"].get("agentsflower") or data["mcpServers"].get("agentflow") if data.get("mcpServers") else None
         if existing is not None and existing != entry:
-            raise SystemExit(f"STOP: {cfg} holds an 'agentflow' MCP server this installer did not write "
+            raise SystemExit(f"STOP: {cfg} holds an 'agentsflower' MCP server this installer did not write "
                              f"({existing}); refusing to overwrite it")
-    merged = {**data, "mcpServers": {**data.get("mcpServers", {}), "agentflow": entry}}
+    merged = {**data, "mcpServers": {**data.get("mcpServers", {}), "agentsflower": entry}}
     want = json.dumps(merged, indent=2) + "\n"
     if not cfg.exists() or cfg.read_text(encoding="utf-8-sig") != want:
-        plan.write(cfg, want, f"merge AgentFlow MCP server into {client} config")
+        plan.write(cfg, want, f"merge AgentsFlower MCP server into {client} config")
 
 
 def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
@@ -226,7 +234,9 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
         raise SystemExit(f"STOP: {target} is not a folder")
     if target == TEMPLATE_FLOW.parent:
         raise SystemExit("STOP: the target is the template itself")
-    ws_file = target / ".agentflow" / "workspace.json"
+    ws_file = target / ".agentsflower" / "workspace.json"
+    if not ws_file.exists() and (target / ".agentflow" / "workspace.json").exists():
+        ws_file = target / ".agentflow" / "workspace.json"
     if update and ws_file.exists():
         workspace = True
         repos = repos or json.loads(ws_file.read_text(encoding="utf-8-sig")).get("repos", [])
@@ -240,8 +250,8 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
     code, top = git(target, "rev-parse", "--show-toplevel")
     if workspace and (code or Path(top).resolve() != target):
         if not git_init:
-            raise SystemExit(f"STOP: the workspace root {target} is not a git repository of its own. AgentFlow keeps the "
-                             "workspace memory in a small repository there that tracks only AgentFlow files; run again "
+            raise SystemExit(f"STOP: the workspace root {target} is not a git repository of its own. AgentsFlower keeps the "
+                             "workspace memory in a small repository there that tracks only AgentsFlower files; run again "
                              "with --git-init to create it (the product repositories stay untouched).")
         plan.actions.append(f"git init (memory repository): {target}")
         if not dry:
@@ -251,35 +261,37 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
         code, top = 0, str(target)
     if code:
         nested = nested_repos(target)
-        raise SystemExit(f"STOP: {target} is not a git work tree. AgentFlow tools need git (branches, worktrees, "
-                         "verify). Install into the root of a git repository"
-                         + (f"; this folder holds repositories ({', '.join(nested)}): install it as a workspace with "
-                            "--workspace --git-init" if nested else "") + ".")
+        raise SystemExit(f"STOP: {target} is not a git work tree. AgentsFlower tools need git (branches, worktrees, "
+                          "verify). Install into the root of a git repository"
+                          + (f"; this folder holds repositories ({', '.join(nested)}): install it as a workspace with "
+                             "--workspace --git-init" if nested else "") + ".")
     if Path(top).resolve() != target:
         if not inside_repo:
             nested = nested_repos(target)
             raise SystemExit(f"STOP: {target} is not the root of its git repository ({top}). Install into the "
-                             "repository root, or pass --inside-repo if this subfolder is meant to hold AgentFlow"
+                             "repository root, or pass --inside-repo if this subfolder is meant to hold AgentsFlower"
                              + (f"; this folder holds repositories ({', '.join(nested)}): install it as a workspace "
                                 "with --workspace --git-init" if nested else "") + ".")
-        plan.notes.append(f"note: {target} is inside the repository {top}; .agentflow/ will be created here, "
+        plan.notes.append(f"note: {target} is inside the repository {top}; .agentsflower/ will be created here, "
                           "and git commands run against that repository")
     if (target / "tools" / "gate.py").exists() and (target / "docs" / "ai-handoff-protocol.md").exists():
-        raise SystemExit("STOP: an AgentFlow 2.1 root layout (tools/, docs/ at the project root) is installed. "
-                         "Move it into .agentflow/ first (GUIDE.md, \"Migration from the root layout\").")
+        raise SystemExit("STOP: an AgentsFlower 2.1 root layout (tools/, docs/ at the project root) is installed. "
+                         "Move it into .agentsflower/ first (GUIDE.md, \"Migration from the root layout\").")
 
-    flow = target / ".agentflow"
+    flow = target / ".agentsflower"
+    if update and not (flow / "docs" / "ai-handoff-protocol.md").exists() and (target / ".agentflow" / "docs" / "ai-handoff-protocol.md").exists():
+        flow = target / ".agentflow"
     installed = (flow / "docs" / "ai-handoff-protocol.md").exists()
     if installed and not update:
-        raise SystemExit(f"STOP: {flow} already holds AgentFlow; run again with --update")
+        raise SystemExit(f"STOP: {flow} already holds AgentsFlower; run again with --update")
     if update and not installed:
-        raise SystemExit(f"STOP: {flow} has no AgentFlow to update; run without --update")
+        raise SystemExit(f"STOP: {flow} has no AgentsFlower to update; run without --update")
 
     files = owned_files()
     if update:
         changed = []
         for rel, _ in files:
-            p = f".agentflow/{rel}"
+            p = f"{flow.name}/{rel}"
             if (flow / rel).exists():
                 _, st = git(target, "status", "--porcelain", "--", p)
                 if st:
@@ -339,15 +351,15 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
                               ("CLAUDE.md", claude_block(), "# Claude instructions\n\n")):
         p = target / name
         old = p.read_text(encoding="utf-8") if p.exists() else None
-        new = merge_block(old, block, BEGIN, END, head)
+        new = merge_block(old, block, BEGIN, END, head, LEGACY_BEGIN, LEGACY_END)
         if new != old:
-            plan.write(p, new, "create" if old is None else "add/replace AgentFlow block in")
+            plan.write(p, new, "create" if old is None else "add/replace AgentsFlower block in")
 
     gi = target / ".gitignore"
     old = gi.read_text(encoding="utf-8") if gi.exists() else None
-    new = merge_block(old, gitignore_block(repos if workspace else ()), GBEGIN, GEND, "")
+    new = merge_block(old, gitignore_block(repos if workspace else ()), GBEGIN, GEND, "", LEGACY_GBEGIN, LEGACY_GEND)
     if new != old:
-        plan.write(gi, new, "create" if old is None else "add/replace AgentFlow block in")
+        plan.write(gi, new, "create" if old is None else "add/replace AgentsFlower block in")
 
     for name in COMMANDS:
         p = target / ".claude" / "commands" / f"{name}.md"
@@ -356,10 +368,10 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
             plan.write(p, want, "create")
         elif p.read_text(encoding="utf-8") != want:
             text = p.read_text(encoding="utf-8")
-            if "ai-handoff-protocol.md" in text or ".agentflow/commands/" in text:
-                plan.write(p, want, "replace AgentFlow pointer")
+            if "ai-handoff-protocol.md" in text or ".agentsflower/commands/" in text or ".agentflow/commands/" in text:
+                plan.write(p, want, "replace AgentsFlower pointer")
             else:
-                plan.notes.append(f"kept (not an AgentFlow file): {p}")
+                plan.notes.append(f"kept (not an AgentsFlower file): {p}")
 
     if mcp:
         if mcp_client not in MCP_CONFIGS:

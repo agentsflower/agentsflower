@@ -257,7 +257,7 @@ class PlanParserTests(unittest.TestCase):
         self.assertTrue(s6["exitCriteria"].startswith("Exit criteria: packaged CLI"))
         self.assertIn("publication is done by the human.", s6["exitCriteria"])  # multiline verbatim
         self.assertGreater(s6["line"], 0)
-        self.assertEqual(s6["source"], ".agentflow/docs/project-plan.md")
+        self.assertEqual(s6["source"], dashboard.PLAN_REL)
 
     def test_fenced_code_and_heading_boundaries(self):
         stages, _ = dashboard.parse_plan(PLAN_FIXTURE)

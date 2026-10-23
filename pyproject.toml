@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 # Local project distribution name: the package is built from this repository
 # (python -m build); it is not published on PyPI under this name.
-name = "agentflow-sdlc"
+name = "agentsflower-sdlc"
 dynamic = ["version"]
-description = "AgentFlow: task-contract workflow template (.agentflow/) with a unified CLI"
+description = "AgentsFlower: task-contract workflow template (.agentsflower/) with a unified CLI"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -17,13 +17,14 @@ dependencies = []
 
 [project.optional-dependencies]
 build = ["build>=1.2", "setuptools>=68"]
-# Official MCP SDK for .agentflow/tools/mcp_server.py; bounded to the released
+# Official MCP SDK for .agentsflower/tools/mcp_server.py; bounded to the released
 # 2.x major line (2.3.0 declares Python >=3.10 and MCPServer). Core stays free
 # of third-party runtime dependencies.
 mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
-agentflow = "agentflow.cli:main"
+agentsflower = "agentsflower.cli:main"
+agentflow = "agentsflower.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -32,4 +33,4 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# version is `dynamic` and supplied by setup.py from .agentflow/VERSION (single source)
+# version is `dynamic` and supplied by setup.py from .agentsflower/VERSION (single source)

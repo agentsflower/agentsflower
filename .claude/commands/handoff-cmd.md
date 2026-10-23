@@ -1,2 +1,2 @@
-Read `.agentflow/commands/handoff-cmd.md` and follow its instructions.
+Read `.agentsflower/commands/handoff-cmd.md` and follow its instructions.
 Arguments: $ARGUMENTS

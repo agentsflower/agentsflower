@@ -31,7 +31,7 @@ class ValidationTests(unittest.TestCase):
     def test_get_task_reads_a_contract(self):
         r = mcp_server.get_task("T-005")
         self.assertTrue(r["ok"], r)
-        self.assertTrue(r["file"].startswith(".agentflow/tasks/T-005"))
+        self.assertTrue(r["file"].startswith(".agentsflower/tasks/T-005") or r["file"].startswith(".agentflow/tasks/T-005"))
         self.assertIn("T-005", r["content"])
 
     def test_get_task_missing(self):
