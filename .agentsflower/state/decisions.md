@@ -677,3 +677,9 @@ The wheel/sdist and install.py --update provably carry the roadmap dashboard ass
 - Dashboard topbar branded as AgentsFlower with active workspace path display.
 - External product portfolio mentions removed from README.md to maintain strict repository scope.
 
+## 2026-10-23: AgentsFlower 2.16.0 full rebranding (T-114, T-115) and Graft AST spike (T-116) accepted
+
+- Full architectural migration from `.agentflow/` to `.agentsflower/` completed across codebase, entry points, tools, and package setup (`agentsflower-sdlc` 2.16.0).
+- Backward compatibility preserved: existing `.agentflow/` project installations are detected and supported/upgraded transparently by `install.py`.
+- T-116 Graft codebase knowledge graph spike accepted on commit 9fcc34e. Full specification `.agentsflower/docs/graft-integration-spec.md` details Tree-sitter AST integration, measured 67–89% token savings, zero-runtime-dependency sidecar strategy, and worktree isolation via external directory graph placement.
+
