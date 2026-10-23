@@ -1,5 +1,24 @@
 # Decision Log
 
+## 2026-10-24: Stage 7 Studio Local Web UI, Graft On-Demand Auto-Installation and Specialized Skills Ecosystem
+
+1. **Graft On-Demand Global Installation via npm `--ignore-scripts` (T-117, T-118):**
+   - Human instruction: approved automatic installation of Graft directly from code on first invocation if missing.
+   - Decision: `graft.py` checks for `graft` CLI in PATH or local npm prefix. If absent, runs `npm i -g @nanonets/graft --ignore-scripts` with subprocess capture, automatically sets telemetry to disabled (`graft telemetry disable`), and uses WebAssembly bindings without requiring node-gyp, Python C++ build tools or administrator elevation.
+   - Verified across 10 deterministic unit tests in `test_graft.py`.
+
+2. **AgentsFlower Studio Local Web UI Architecture (Stage 7 / T-121):**
+   - Human instruction: approved modern Local Web UI with cutting-edge UX/UI design and modern frontend practices instead of WPF.
+   - Decision: Studio is implemented as a lightweight local server (`.agentsflower/tools/studio.py`) using Python standard library `http.server` with zero external pip dependencies.
+   - Frontend (`.agentsflower/studio/`) crafted with pure vanilla reactive components, dark mode aesthetic (`#080c14`), glassmorphism, responsive grid, visual Kanban task board, multi-project discovery (`machine_capacity.py`), task specification modal, and live AST knowledge graph query explorer.
+   - Launched with simple CLI: `agentsflower studio [--port 8888] [--open]`.
+
+3. **Specialized Skills Ecosystem & Domain 9 `geo-seo-audit` (Stage 7 / T-123, T-124):**
+   - Human instruction: proceed directly to Stage 7 and Specialized Skills Ecosystem.
+   - Decision: Created `.agentsflower/skills/` directory registered as template-owned (`install.py`), populated with 9-domain taxonomy (`INDEX.md`) from T-113 research.
+   - Built Domain 9 skill `geo-seo-audit`: comprehensive audit and scoring tool (`scripts/geo_audit.py`) assessing semantic HTML, Schema.org JSON-LD microdata, OpenGraph tags, llms.txt drift, and computing a 100-point AI Citability Index.
+   - Verified with unit tests in `test_skills.py`.
+
 ## 2026-10-23: Full architectural rebranding to AgentsFlower and Graft evaluation
 
 1. **Rebranding to AgentsFlower (T-114, T-115):**

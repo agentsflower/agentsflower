@@ -51,8 +51,8 @@ TEMPLATE_FLOW = Path(__file__).resolve().parent.parent  # <template>/.agentflow
 
 # template-owned paths inside .agentflow/ (directories are copied recursively, minus SKIP)
 OWNED = ["README.md", "VERSION", "docs/ai-handoff-protocol.md", "docs/typesafe.md", "roles", "commands", "tasks/_template.md",
-         "tools", "dashboard", "tests"]
-OWNED_DIRS = ("roles", "commands", "tools", "dashboard", "tests")
+         "tools", "dashboard", "studio", "skills", "tests"]
+OWNED_DIRS = ("roles", "commands", "tools", "dashboard", "studio", "skills", "tests")
 SKIP = {"__pycache__", "out", "versions", ".runtime", "mockups"}
 
 # project-owned files created once from a stub, never overwritten

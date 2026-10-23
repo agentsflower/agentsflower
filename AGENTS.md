@@ -5,7 +5,7 @@ This repository is the AgentsFlower template. Its product is `.agentsflower/` pl
 <!-- agentsflower:begin -->
 ## AgentsFlower
 
-AgentsFlower version: 2.16.0. Workflow files live in `.agentsflower/`; this block is template-owned and replaced on update.
+AgentsFlower version: 2.17.0. Workflow files live in `.agentsflower/`; this block is template-owned and replaced on update.
 
 Workflow and instruction authority: `.agentsflower/docs/ai-handoff-protocol.md`. Start with the applicable session section below. Project settings:
 `.agentsflower/docs/project-rules.md` (and any rules in this file outside this block).

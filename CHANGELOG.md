@@ -2,6 +2,27 @@
 
 What changed in each AgentsFlower version. Why it changed: `.agentsflower/state/decisions.md`. The version of an installed project: `.agentsflower/VERSION` (2.1.x: `AgentsFlower version:` in its `AGENTS.md`).
 
+## 2.17.0 - 2026-10-24
+
+Stage 7: AgentsFlower Studio Local Web UI, Graft AST Knowledge Graph and Specialized Skills Ecosystem (T-116, T-117, T-118, T-121, T-123, T-124):
+- **AgentsFlower Studio Local Web UI (T-121):**
+  - High-performance, zero-dependency local web cockpit launched via `agentsflower studio [--port 8888] [--open]`.
+  - Built with pure standard library `http.server` backend (`.agentsflower/tools/studio.py`) and a modern dark-mode glassmorphic frontend (`.agentsflower/studio/`).
+  - Interactive features: Multi-project discovery switcher (`machine_capacity.py`), Kanban board with live task status filtering, visual task spec creator modal, slide-out drawer contract inspector, real-time model quota tracking hub, and interactive AST knowledge graph query explorer.
+- **Graft AST Codebase Knowledge Graph (T-116, T-117, T-118):**
+  - Integrated AST semantic analysis via `@nanonets/graft` running in WebAssembly mode.
+  - Automatic on-demand global installation (`npm i -g @nanonets/graft --ignore-scripts`) directly from Python on first invocation.
+  - Telemetry automatically disabled.
+  - Full CLI tooling: `agentsflower graft build|query|impact|symbols|raw`.
+  - MCP tools exported: `graft_query`, `graft_impact`, `graft_symbols`.
+  - Blast Radius integration in gate preflight (`gate.py preflight`).
+- **Specialized Skills Ecosystem (T-123, T-124):**
+  - Dedicated `.agentsflower/skills/` directory packaged as template-owned files across child projects (`install.py`).
+  - 9-domain registry (`INDEX.md`) covering UI/UX, Algorithms, Architecture, Browser/Extension MV3, Backend APIs, Frontend Frameworks, DevOps CI/CD, Product Spec, and SEO/GEO Citability.
+  - Built-in Domain 9 Skill: `geo-seo-audit` with autonomous CLI tool `scripts/geo_audit.py` to calculate a 100-point AI Citability Index, audit schema.org JSON-LD microdata, detect llms.txt drift, and enforce semantic HTML hierarchies.
+
+Migration: run `agentsflower install --update` to deploy the new `.agentsflower/studio/` and `.agentsflower/skills/` suites to existing projects.
+
 ## 2.16.0 - 2026-10-23
 
 Full architectural rebranding to AgentsFlower (T-114, T-115):

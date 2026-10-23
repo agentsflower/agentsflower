@@ -10,9 +10,22 @@ Tasks are not listed here: they live in `state/tasks.md` with a `Stage` column. 
 
 ## Roadmap
 
-### Stage 6. Public release and production upgrade (2.12.0)
+### Stage 7. AgentsFlower Studio, Multi-Project Gateway and Specialized Skills Ecosystem (2.17.0)
 
 Status: current.
+
+Human approved the transition to Stage 7 and the Specialized Skills Ecosystem on 2026-10-23.
+Focus areas:
+- AgentsFlower Studio: modern Local Web UI (`.agentsflower/studio/`) with dark mode, glassmorphism, multi-project switching, Kanban task board, task creation wizard, and AST knowledge graph explorer.
+- Graft AST Semantic Knowledge Graph (`@nanonets/graft` via WASM with auto-install and blast radius analysis).
+- Specialized Skills Ecosystem: curated library in `.agentsflower/skills/` across 9 core engineering domains, starting with Domain 9 `geo-seo-audit`.
+- Multi-project gateway and local model protocol.
+
+Exit criteria: Studio local web server operates with zero pip dependencies; Graft auto-installs via npm --ignore-scripts without node-gyp; specialized skills pass deterministic validation suites; `install.py` deploys studio and skills to target workspaces.
+
+### Stage 6. Public release and production upgrade (2.12.0)
+
+Status: closed.
 
 Human approved the task sequence on 2026-10-15. Specification:
 [agentflow-production-roadmap.txt](agentflow-production-roadmap.txt).

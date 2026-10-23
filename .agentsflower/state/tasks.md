@@ -104,4 +104,10 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-116 | Graft AST codebase knowledge graph spike | 6 | developer | devin | done |  | 9fcc34e5d25c0228caacfec7f251e9ad1ba9b9c9 | Routing confirmed by human; devin swe-2-max assessed by Jev | 2026-10-23 20:22 |
 | T-117 | Graft MCP adapter and tooling integration | 6 | developer | devin | done | T-116 | 47f33956173e430f0dff9c1eda35d34161591b29 |  | 2026-10-23 21:17 |
 | T-118 | Independently verify Graft integration and tooling | 6 | tester | codex | done | T-117 | 47f33956173e430f0dff9c1eda35d34161591b29 |  | 2026-10-23 21:17 |
+| T-120 | Local Model Protocol & Adapter Architecture | 7 | developer | devin | ready | none |  | Ollama / LM Studio / local LLM zero-cost fallback adapter | 2026-10-24 00:00 |
+| T-121 | AgentsFlower Studio Local Web UI & Multi-Project Gateway | 7 | developer | devin | done | none |  | Zero-pip-dep http.server backend + modern dark glassmorphism web cockpit (`agentsflower studio`) | 2026-10-24 00:30 |
+| T-122 | Project Scaffolding CLI & Template Engine | 7 | developer | devin | ready | none |  | Project scaffolding CLI (`agentsflower project new`) | 2026-10-24 00:00 |
+| T-123 | Specialized Skills Ecosystem: 9-Domain Taxonomy & Packaging | 7 | developer | devin | done | T-113 |  | Template-owned `.agentsflower/skills/` registry across 9 high-impact domains | 2026-10-24 00:40 |
+| T-124 | Domain 9 Specialized Skill: geo-seo-audit & AI Citability | 7 | developer | devin | done | T-123 |  | Autonomous SEO/GEO auditor (`scripts/geo_audit.py`) with 100-pt AI Citability Index | 2026-10-24 00:45 |
+
 

@@ -163,6 +163,20 @@ def cmd_dashboard(a) -> int:
     return code
 
 
+def cmd_studio(a) -> int:
+    root = find_root(a.project)
+    if not root:
+        print(f"agentsflower: no installed AgentsFlower project found at or above {a.project}", file=sys.stderr)
+        return 2
+    args = []
+    if getattr(a, "port", None):
+        args.extend(["--port", str(a.port)])
+    if getattr(a, "open", False):
+        args.append("--open")
+    return run_tool(root, "studio.py", args)
+
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="agentflow", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -199,6 +213,11 @@ def main(argv=None) -> int:
     p.add_argument("--open", action="store_true", help="open out/index.html after a successful build")
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
 
+    p = sub.add_parser("studio", help="launch AgentsFlower Studio modern Local Web UI")
+    p.add_argument("--port", type=int, default=8888, help="port to bind (default: 8888)")
+    p.add_argument("--open", action="store_true", help="open Studio in a browser")
+    p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
+
     a = ap.parse_args(argv)
     a.project = a.project or Path.cwd()
     if a.cmd == "install":
@@ -209,6 +228,8 @@ def main(argv=None) -> int:
         return cmd_done(a)
     if a.cmd == "dashboard":
         return cmd_dashboard(a)
+    if a.cmd == "studio":
+        return cmd_studio(a)
     return cmd_passthrough(a, a.script)
 
 

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentsFlower Studio | Autonomous SDLC Cockpit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="studio.css?v=2">
+</head>
+<body>
+  <!-- Ambient backdrop lights -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Studio Shell Layout -->
+  <div class="studio-app">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand-header">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">AgentsFlower</span>
+          <span class="brand-subtitle">Studio Cockpit <span class="version-tag" id="appVersion">v2.16.0</span></span>
+        </div>
+      </div>
+
+      <!-- Project Switcher Selector -->
+      <div class="project-selector-card">
+        <label class="section-label">ACTIVE WORKSPACE</label>
+        <div class="project-select-wrapper">
+          <div class="active-dot"></div>
+          <select id="projectSelect" class="project-dropdown">
+            <option value="">Loading workspaces...</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Main Navigation Menu -->
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="kanban">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9"/>
+            <rect x="14" y="3" width="7" height="5"/>
+            <rect x="14" y="12" width="7" height="9"/>
+            <rect x="3" y="16" width="7" height="5"/>
+          </svg>
+          <span>Task Board</span>
+          <span class="badge" id="taskTotalBadge">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="graft">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          <span>Knowledge Graph</span>
+          <span class="badge badge-accent">AST</span>
+        </button>
+
+        <button class="nav-item" data-tab="capacity">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 20V10M12 20V4M6 20v-6"/>
+          </svg>
+          <span>Model Quota Hub</span>
+          <span class="pulse-indicator"></span>
+        </button>
+
+        <button class="nav-item" data-tab="creator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="16"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          <span>Task Contract Creator</span>
+        </button>
+      </nav>
+
+      <!-- Machine Capacity Mini Widget -->
+      <div class="sidebar-footer">
+        <div class="quota-mini-status">
+          <div class="quota-header">
+            <span class="status-indicator online"></span>
+            <span class="quota-title">Zero-Token Engine</span>
+          </div>
+          <div class="quota-detail">Graft AST sidecar active & local</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Content Area -->
+    <main class="main-content">
+      <!-- Top Bar Header -->
+      <header class="topbar">
+        <div class="breadcrumbs">
+          <span class="breadcrumb-root">Studio</span>
+          <span class="separator">/</span>
+          <span class="breadcrumb-active" id="activeTabTitle">Task Board</span>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="globalSearchInput" placeholder="Filter tasks, symbols, criteria...">
+          </div>
+
+          <button class="btn btn-primary" id="btnQuickCreate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>New Task</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- View Containers -->
+      <div class="views-wrapper">
+        <!-- 1. Kanban Task Board View -->
+        <section class="view-panel active" id="view-kanban">
+          <div class="board-header">
+            <div class="metrics-row">
+              <div class="metric-card">
+                <span class="metric-num" id="statTotal">0</span>
+                <span class="metric-label">Total Tasks</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num text-amber" id="statInProgress">0</span>
+                <span class="metric-label">In Progress</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num text-purple" id="statReview">0</span>
+                <span class="metric-label">In Review</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num text-emerald" id="statDone">0</span>
+                <span class="metric-label">Completed</span>
+              </div>
+            </div>
+
+            <div class="stage-filter-group" id="stageFilters">
+              <button class="pill-btn active" data-stage="all">All Stages</button>
+              <button class="pill-btn" data-stage="5">Stage 5</button>
+              <button class="pill-btn" data-stage="6">Stage 6</button>
+              <button class="pill-btn" data-stage="7">Stage 7</button>
+            </div>
+          </div>
+
+          <!-- Kanban Columns Grid -->
+          <div class="kanban-grid">
+            <!-- Ready Column -->
+            <div class="kanban-col" data-col="ready">
+              <div class="col-header">
+                <div class="col-title"><span class="col-dot ready"></span> Ready to Launch</div>
+                <span class="col-count" id="countReady">0</span>
+              </div>
+              <div class="cards-container" id="colReadyCards"></div>
+            </div>
+
+            <!-- In Progress Column -->
+            <div class="kanban-col" data-col="in progress">
+              <div class="col-header">
+                <div class="col-title"><span class="col-dot progress"></span> In Progress</div>
+                <span class="col-count" id="countProgress">0</span>
+              </div>
+              <div class="cards-container" id="colProgressCards"></div>
+            </div>
+
+            <!-- Review Column -->
+            <div class="kanban-col" data-col="review">
+              <div class="col-header">
+                <div class="col-title"><span class="col-dot review"></span> Verification / Review</div>
+                <span class="col-count" id="countReview">0</span>
+              </div>
+              <div class="cards-container" id="colReviewCards"></div>
+            </div>
+
+            <!-- Done Column -->
+            <div class="kanban-col" data-col="done">
+              <div class="col-header">
+                <div class="col-title"><span class="col-dot done"></span> Done & Merged</div>
+                <span class="col-count" id="countDone">0</span>
+              </div>
+              <div class="cards-container" id="colDoneCards"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Knowledge Graph (Graft) View -->
+        <section class="view-panel" id="view-graft">
+          <div class="graft-dashboard">
+            <div class="card glass-card graft-search-card">
+              <div class="card-header">
+                <div class="title-with-icon">
+                  <div class="icon-bubble purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                      <polyline points="2 17 12 22 22 17"/>
+                      <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3>Graft AST Knowledge Graph & Blast Radius</h3>
+                    <p class="subtitle">Deterministic symbol callers, file dependencies, and AST impact analysis.</p>
+                  </div>
+                </div>
+                <button class="btn btn-secondary" id="btnGraftRefresh">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Rebuild Graph
+                </button>
+              </div>
+
+              <div class="graft-query-box">
+                <div class="query-input-wrap">
+                  <input type="text" id="graftQueryInput" placeholder="Query symbol, function name, or natural language question...">
+                  <button class="btn btn-primary" id="btnRunGraftQuery">Search Codebase</button>
+                  <button class="btn btn-outline" id="btnRunGraftImpact">Calculate Blast Radius</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Graft Visual Output Area -->
+            <div class="graft-results-grid">
+              <div class="card glass-card graft-output-card">
+                <h4>Query Results / Blast Radius Matrix</h4>
+                <div id="graftResultsContainer" class="graft-results-body">
+                  <div class="empty-state">
+                    <p>Enter a symbol (e.g. <code>resolve_graft</code>, <code>run_task</code>, <code>gate</code>) to inspect callers and dependencies.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card glass-card graft-tokens-card">
+                <h4>Token Savings & Efficiency</h4>
+                <div class="savings-meter">
+                  <div class="savings-percentage">74%</div>
+                  <div class="savings-label">Average exploratory tokens saved vs reading full files</div>
+                </div>
+                <div class="savings-breakdown">
+                  <div class="metric-row">
+                    <span>File API (Skeleton):</span>
+                    <span class="value text-emerald">-67% tokens</span>
+                  </div>
+                  <div class="metric-row">
+                    <span>Callers Graph Closure:</span>
+                    <span class="value text-emerald">-89% tokens</span>
+                  </div>
+                  <div class="metric-row">
+                    <span>Blast Radius Scoping:</span>
+                    <span class="value text-emerald">-51% tokens</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Model Capacity & Quota Hub View -->
+        <section class="view-panel" id="view-capacity">
+          <div class="capacity-dashboard">
+            <div class="card glass-card">
+              <h3>Machine Dispatch Capacity & Model Health</h3>
+              <p class="subtitle">Automatic routing, tool holds, and failover policy state.</p>
+              
+              <div class="tools-capacity-grid" id="toolsCapacityGrid">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Task Contract Creator View -->
+        <section class="view-panel" id="view-creator">
+          <div class="creator-container">
+            <div class="card glass-card">
+              <h3>New Task Contract Generator</h3>
+              <p class="subtitle">Draft a formal, verifiable contract adhering to the AgentsFlower handoff protocol.</p>
+              
+              <form id="createTaskForm" class="creator-form">
+                <div class="form-row">
+                  <div class="form-group flex-1">
+                    <label>Task ID</label>
+                    <input type="text" id="newTaskTid" placeholder="T-119" required>
+                  </div>
+                  <div class="form-group flex-2">
+                    <label>Title</label>
+                    <input type="text" id="newTaskTitle" placeholder="Implement feature xyz" required>
+                  </div>
+                  <div class="form-group flex-1">
+                    <label>Stage</label>
+                    <select id="newTaskStage">
+                      <option value="6">Stage 6 (Knowledge Graph)</option>
+                      <option value="7" selected>Stage 7 (Studio & Gateway)</option>
+                      <option value="8">Stage 8 (Specialized Skills)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group flex-1">
+                    <label>Role</label>
+                    <select id="newTaskRole">
+                      <option value="developer" selected>developer</option>
+                      <option value="tester">tester</option>
+                      <option value="deployer">deployer</option>
+                    </select>
+                  </div>
+                  <div class="form-group flex-1">
+                    <label>Primary Tool</label>
+                    <select id="newTaskTool">
+                      <option value="devin" selected>Devin AI (swe-2-high)</option>
+                      <option value="claude">Claude Code (Sonnet 3.7)</option>
+                      <option value="codex">Codex / GPT-6.1</option>
+                      <option value="agy">Antigravity / Gemini</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Goal & Requirements</label>
+                  <textarea id="newTaskGoal" rows="4" placeholder="Detail the concrete objective, architectural boundaries, and deliverables..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label>Allowed Files (Comma-separated or lines)</label>
+                  <textarea id="newTaskAllowed" rows="2" placeholder=".agentsflower/tools/xyz.py, .agentsflower/tests/test_xyz.py"></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label>Acceptance Criteria (One per line)</label>
+                  <textarea id="newTaskCriteria" rows="3" placeholder="C-01: Feature works cleanly under all configurations.&#10;C-02: All unit tests pass."></textarea>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary" id="btnSubmitTask">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span>Generate Contract & Register in Ledger</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Task Detail Drawer / Modal -->
+    <div class="drawer-overlay" id="taskDrawerOverlay"></div>
+    <div class="task-drawer" id="taskDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="badge" id="drawerTaskId">T-000</span>
+          <h3 id="drawerTaskTitle">Task Title</h3>
+        </div>
+        <button class="btn-close" id="btnDrawerClose">&times;</button>
+      </div>
+      <div class="drawer-body" id="drawerBody">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script src="studio.js?v=2"></script>
+</body>
+</html>
