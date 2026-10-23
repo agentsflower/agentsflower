@@ -54,7 +54,7 @@ def version():
 def flow_dir(root: Path) -> Path:
     if (root / ".agentsflower").is_dir():
         return root / ".agentsflower"
-    return flow_dir(root)
+    return root / ".agentflow"
 
 
 def is_project_root(d: Path) -> bool:
