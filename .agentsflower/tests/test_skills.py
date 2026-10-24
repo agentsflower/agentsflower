@@ -11,6 +11,8 @@ FLOW = Path(__file__).resolve().parents[1]
 SKILLS = FLOW / "skills"
 GEO_AUDIT_SCRIPT = SKILLS / "geo-seo-audit" / "scripts" / "geo_audit.py"
 ART_DIRECTION = SKILLS / "frontend-art-direction"
+CHROME_MV3 = SKILLS / "chrome-extension-mv3"
+MV3_LINT_SCRIPT = CHROME_MV3 / "scripts" / "mv3_lint.py"
 
 
 class SkillsEcosystemTests(unittest.TestCase):
@@ -128,6 +130,129 @@ class FrontendArtDirectionSkillTests(unittest.TestCase):
         self.assertIn("Leonxlnx/taste-skill", attr, "ATTRIBUTION.md must pin taste-skill")
         self.assertIn("emilkowalski", attr, "ATTRIBUTION.md must credit emilkowalski")
         self.assertIn("MIT", attr, "ATTRIBUTION.md must record the MIT license")
+
+
+class ChromeExtensionMv3SkillTests(unittest.TestCase):
+    def _write_extension(self, root: Path, manifest: dict, files: dict = None):
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        for name, body in (files or {}).items():
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+
+    def _run_linter(self, target: Path):
+        return subprocess.run(
+            [sys.executable, str(MV3_LINT_SCRIPT), str(target), "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+    def test_skill_package_structure(self):
+        self.assertTrue(CHROME_MV3.is_dir(), "chrome-extension-mv3/ must exist")
+        skill_md = CHROME_MV3 / "SKILL.md"
+        self.assertTrue(skill_md.is_file(), "chrome-extension-mv3/SKILL.md must exist")
+        self.assertTrue((CHROME_MV3 / "references").is_dir(), "references/ must exist")
+        for name in ("manifest-v3-rules.md", "service-worker-lifecycle.md"):
+            self.assertTrue((CHROME_MV3 / "references" / name).is_file(), f"references/{name} must exist")
+        self.assertTrue(MV3_LINT_SCRIPT.is_file(), "scripts/mv3_lint.py must exist")
+        self.assertLessEqual(len(skill_md.read_text(encoding="utf-8").splitlines()), 500,
+                             "SKILL.md must stay a <= 500-line router")
+
+    def test_skill_frontmatter_conforms_to_spec(self):
+        content = (CHROME_MV3 / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---"), "SKILL.md must open with YAML frontmatter")
+        end = content.find("\n---", 3)
+        self.assertGreater(end, 0, "frontmatter block must be closed")
+        fm = content[3:end]
+        self.assertIn("name: chrome-extension-mv3", fm, "name must equal directory name")
+        self.assertRegex(fm, r"description:\s*\S", "description must be present and non-empty")
+        self.assertIn("domain: 4", fm, "metadata.domain must be 4")
+        self.assertIn("google/chrome-extensions-samples@main", fm, "metadata.source must pin chrome-extensions-samples")
+        self.assertIn("GoogleChrome/modern-web-guidance@main", fm, "metadata.source must pin modern-web-guidance")
+        self.assertIn("license: Apache-2.0", fm, "metadata.license must be Apache-2.0")
+
+    def test_skill_routes_to_existing_references(self):
+        content = (CHROME_MV3 / "SKILL.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\((references/[^)\s]+)\)", content)
+        self.assertTrue(links, "router SKILL.md must link its references/ files")
+        for link in links:
+            self.assertTrue((CHROME_MV3 / link).is_file(), f"broken reference link: {link}")
+
+    def test_references_provide_concrete_rules(self):
+        refs = CHROME_MV3 / "references"
+        rules = (refs / "manifest-v3-rules.md").read_text(encoding="utf-8").lower()
+        self.assertIn("manifest_version", rules, "rules must require manifest_version: 3")
+        self.assertIn("service_worker", rules, "rules must cover background.service_worker")
+        self.assertIn("chrome.action", rules, "rules must cover chrome.action")
+        self.assertIn("host_permissions", rules, "rules must require separate host_permissions")
+        self.assertIn("inline", rules, "rules must ban inline scripts/handlers")
+        lifecycle = (refs / "service-worker-lifecycle.md").read_text(encoding="utf-8").lower()
+        self.assertIn("chrome.storage.session", lifecycle, "lifecycle doc must cover chrome.storage.session")
+        self.assertIn("alarms", lifecycle, "lifecycle doc must mandate chrome.alarms over setInterval")
+        self.assertIn("onmessage", lifecycle, "lifecycle doc must cover message passing")
+
+    def test_mv3_lint_accepts_valid_mv3_manifest(self):
+        manifest = {
+            "manifest_version": 3,
+            "name": "Valid MV3 Extension",
+            "version": "1.0.0",
+            "action": {"default_popup": "popup.html"},
+            "background": {"service_worker": "sw.js"},
+            "permissions": ["storage", "alarms"],
+            "host_permissions": ["https://api.example.com/*"],
+            "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'"},
+            "web_accessible_resources": [{"resources": ["icon.png"], "matches": ["https://example.com/*"]}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._write_extension(root, manifest, {
+                "sw.js": "chrome.runtime.onInstalled.addListener(() => {});",
+                "popup.html": "<!DOCTYPE html><html><body><script src=\"popup.js\"></script></body></html>",
+                "popup.js": "console.log('ok');",
+                "icon.png": "x",
+            })
+            res = self._run_linter(root)
+            self.assertEqual(res.returncode, 0, f"valid MV3 manifest must pass, stderr: {res.stderr}")
+            data = json.loads(res.stdout)
+            self.assertEqual(data["verdict"], "MV3_COMPLIANT")
+            self.assertEqual(data["errors"], 0)
+
+    def test_mv3_lint_flags_mv2_antipatterns(self):
+        manifest = {
+            "manifest_version": 2,
+            "name": "Legacy MV2 Extension",
+            "version": "1.0.0",
+            "browser_action": {"default_popup": "popup.html"},
+            "background": {"scripts": ["bg.js"], "persistent": True},
+            "permissions": ["<all_urls>", "tabs", "webRequestBlocking"],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._write_extension(root, manifest, {
+                "bg.js": "eval('alert(1)'); setInterval(() => {}, 1000);",
+                "popup.html": "<!DOCTYPE html><html><body><button onclick=\"go()\">x</button>"
+                              "<script>var x = 1;</script></body></html>",
+            })
+            res = self._run_linter(root)
+            self.assertNotEqual(res.returncode, 0, "MV2 manifest must fail the linter")
+            data = json.loads(res.stdout)
+            self.assertEqual(data["verdict"], "NON_COMPLIANT")
+            self.assertGreater(data["errors"], 0)
+            report = json.dumps(data).lower()
+            for marker in ("manifest_version", "browser_action", "service_worker",
+                           "host_permissions", "eval", "content_security_policy"):
+                self.assertIn(marker, report, f"lint report must flag {marker}")
+
+    def test_registered_in_index_and_attribution(self):
+        index = (SKILLS / "INDEX.md").read_text(encoding="utf-8")
+        self.assertIn("chrome-extension-mv3", index, "INDEX.md must register the skill")
+        self.assertIn("chrome-extension-mv3/SKILL.md", index, "INDEX.md must link the SKILL.md")
+        attr = (SKILLS / "ATTRIBUTION.md").read_text(encoding="utf-8")
+        self.assertIn("chrome-extension-mv3", attr, "ATTRIBUTION.md must name the skill")
+        self.assertIn("chrome-extensions-samples", attr, "ATTRIBUTION.md must pin chrome-extensions-samples")
+        self.assertIn("modern-web-guidance", attr, "ATTRIBUTION.md must pin modern-web-guidance")
+        self.assertIn("Apache-2.0", attr, "ATTRIBUTION.md must record the Apache-2.0 license")
 
 
 if __name__ == "__main__":
