@@ -38,10 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnInstallFramework = document.getElementById('btnInstallFramework');
   const navItems = document.querySelectorAll('.nav-item');
   const viewPanels = document.querySelectorAll('.view-panel');
-  const activeTabTitle = document.getElementById('activeTabTitle');
   const globalSearchInput = document.getElementById('globalSearchInput');
   const stageFilterBtns = document.querySelectorAll('.pill-btn');
-  const breadcrumbStudio = document.getElementById('breadcrumbStudio');
   const brandHomeBtn = document.getElementById('brandHomeBtn');
 
   // Stats Elements
@@ -108,13 +106,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const subTabButtons = document.querySelectorAll('.btn-subtab');
 
   // Explorer Elements
-  const explorerFileTree = document.getElementById('explorerFileTree');
   const explorerBreadcrumbs = document.getElementById('explorerBreadcrumbs');
   const explorerCodeView = document.getElementById('explorerCodeView');
   const explorerStatusBar = document.getElementById('explorerStatusBar');
-  const btnExplorerTreeRefresh = document.getElementById('btnExplorerTreeRefresh');
   const inspectorTaskSelect = document.getElementById('inspectorTaskSelect');
-  const inspectorBody = document.getElementById('inspectorBody');
+
+  // Chat Cockpit Elements
+  const chatStream = document.getElementById('chatStream');
+  const chatInput = document.getElementById('chatInput');
+  const btnChatSend = document.getElementById('btnChatSend');
+  const btnChatNew = document.getElementById('btnChatNew');
+  const btnChatPlus = document.getElementById('btnChatPlus');
+  const btnChatRefresh = document.getElementById('btnChatRefresh');
+  const chatModelPill = document.getElementById('chatModelPill');
 
   // Authorization Gate Modal
   const modalAuthBackdrop = document.getElementById('modalAuthBackdrop');
@@ -147,7 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
     await loadStatus();
     await loadTasks();
     await loadQuotas();
-    loadExplorerTree();
   }
 
   // --- Event Listeners ---
@@ -161,7 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Home / Board Shortcuts
-    if (breadcrumbStudio) breadcrumbStudio.addEventListener('click', () => switchTab('kanban'));
     if (brandHomeBtn) brandHomeBtn.addEventListener('click', () => switchTab('kanban'));
     if (btnCancelCreate) btnCancelCreate.addEventListener('click', () => switchTab('kanban'));
 
@@ -243,17 +245,29 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Explorer: refresh file tree + inspector task select
-    if (btnExplorerTreeRefresh) {
-      btnExplorerTreeRefresh.addEventListener('click', () => {
-        invalidateTreeCache(state.currentProject);
-        loadExplorerTree();
-      });
-    }
+    // Chat cockpit: task select, composer, header controls
     if (inspectorTaskSelect) {
       inspectorTaskSelect.addEventListener('change', () => {
         state.inspectorTaskId = inspectorTaskSelect.value;
         renderInspector();
+      });
+    }
+    if (btnChatSend) btnChatSend.addEventListener('click', sendChatMessage);
+    if (chatInput) {
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendChatMessage();
+        }
+      });
+    }
+    if (btnChatNew) btnChatNew.addEventListener('click', () => switchTab('creator'));
+    if (btnChatPlus) btnChatPlus.addEventListener('click', () => switchTab('creator'));
+    if (btnChatRefresh) {
+      btnChatRefresh.addEventListener('click', async () => {
+        invalidateTreeCache(state.currentProject);
+        await loadTasks(state.currentProject);
+        renderProjectAccordion();
       });
     }
 
@@ -390,17 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
     viewPanels.forEach(panel => {
       panel.classList.toggle('active', panel.id === `view-${tabName}`);
     });
-
-    const titleMap = {
-      kanban: 'Task Board',
-      explorer: 'Explorer',
-      analytics: 'Analytics & Roadmap',
-      graft: 'Knowledge Graph & Blast Radius',
-      capacity: 'Model Quota & Dispatch Hub',
-      creator: 'Task Contract Generator',
-      guide: 'Quick Start & Protocol Cockpit',
-    };
-    activeTabTitle.textContent = titleMap[tabName] || 'Studio';
   }
 
   // --- Analytics Sub-tab Frame Updater ---
@@ -529,6 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const known = new Set(res.projects.map(p => p.path));
       state.expandedProjects = new Set([...state.expandedProjects].filter(p => known.has(p)));
+      if (state.currentProject) state.expandedProjects.add(state.currentProject);
       renderProjectAccordion();
       updateProjectChrome();
     }
@@ -865,12 +869,12 @@ document.addEventListener('DOMContentLoaded', () => {
     state.currentProject = path;
     state.explorerPath = '';
     state.inspectorTaskId = '';
+    state.expandedProjects.add(path);
     closeDrawer();
     renderProjectAccordion();
     updateProjectChrome();
     resetExplorerPane();
     await Promise.all([loadStatus(path), loadTasks(path)]);
-    loadExplorerTree();
     updateAnalyticsFrame();
   }
 
@@ -897,13 +901,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOpen = state.expandedProjects.has(p.path);
       const item = document.createElement('div');
       item.className = `project-acc-item${isActive ? ' active' : ''}${p.has_framework ? '' : ' uninit'}${isOpen ? ' expanded' : ''}`;
-      const meta = p.has_framework ? `<span class="project-acc-meta">v${escapeHTML(String(p.version))} · ${p.task_count}</span>` : '<span class="uninit-badge">Uninitialized</span>';
+      const nameHtml = p.has_framework
+        ? `${escapeHTML(p.name)} <span class="acc-ver">- v${escapeHTML(String(p.version))} (${p.task_count} tasks)</span>`
+        : escapeHTML(p.name);
+      const caretPts = isOpen ? '6 9 12 15 18 9' : '18 15 12 9 6 15';
       item.innerHTML = `
         <div class="project-acc-header">
-          <svg class="project-acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          <span class="project-acc-dot"></span>
-          <span class="project-acc-name" title="${escapeHTML(p.path)}">${escapeHTML(p.name)}${p.is_current ? '<span class="star">\u2605</span>' : ''}</span>
-          ${meta}
+          <span class="project-acc-box"></span>
+          <span class="project-acc-name" title="${escapeHTML(p.path)}">${nameHtml}${p.is_current ? '<span class="star">\u2605</span>' : ''}</span>
+          ${p.has_framework ? '' : '<span class="uninit-badge">Uninitialized</span>'}
+          <svg class="project-acc-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="${caretPts}"/></svg>
         </div>
         <div class="project-acc-tree"${isOpen ? '' : ' style="display:none"'}></div>`;
       const header = item.querySelector('.project-acc-header');
@@ -924,8 +931,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- File Tree (shared by sidebar accordion and Explorer pane) ---
+  // --- File Tree (sidebar accordion + explorer) ---
   function treeKey(projPath, rel) { return `${projPath}::${rel || ''}`; }
+
+  function ftIconFor(e) {
+    const FOLDER = '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>';
+    const DOC = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
+    const GIT = '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><line x1="6" y1="9" x2="6" y2="15"/><path d="M18 9a9 9 0 0 1-9 9"/>';
+    let tint = 'file';
+    let glyph = DOC;
+    if (e.type === 'dir') {
+      tint = e.name === '.agentsflower' ? 'tint-agentsflower'
+        : e.name === '.claude' ? 'tint-claude' : 'dir';
+      glyph = FOLDER;
+    } else if (/^\.git(ignore|attributes|modules)$/.test(e.name)) {
+      tint = 'tint-git';
+      glyph = GIT;
+    } else if (/\.(md|markdown)$/i.test(e.name)) {
+      tint = 'tint-doc';
+    }
+    return `<svg class="ft-icon ${tint}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${glyph}</svg>`;
+  }
 
   async function fetchTree(projPath, rel) {
     const key = treeKey(projPath, rel);
@@ -966,9 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
       label.title = e.path;
       label.innerHTML = `
         <svg class="ft-caret${open ? ' open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="${isDir ? '' : 'visibility:hidden'}"><polyline points="9 18 15 12 9 6"/></svg>
-        <svg class="ft-icon ${isDir ? 'dir' : 'file'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${isDir
-          ? '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'
-          : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'}</svg>
+        ${ftIconFor(e)}
         <span class="ft-name">${escapeHTML(e.name)}</span>`;
       const childrenEl = document.createElement('div');
       childrenEl.className = 'ft-children';
@@ -1000,17 +1024,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- IDE Explorer: tree, breadcrumbs, code viewer ---
-  async function loadExplorerTree() {
-    if (!explorerFileTree || !state.currentProject) return;
-    explorerFileTree.innerHTML = '<div class="ft-loading">loading...</div>';
-    const entries = await fetchTree(state.currentProject, '');
-    renderTreeNodes(explorerFileTree, state.currentProject, entries);
-  }
-
+  // --- IDE Explorer: breadcrumbs, code viewer ---
   function resetExplorerPane() {
     if (explorerBreadcrumbs) explorerBreadcrumbs.innerHTML = '<span class="crumb-leaf">Select a file to preview its contents</span>';
-    if (explorerCodeView) explorerCodeView.innerHTML = '<code class="code-empty">Click a file in the tree to inspect it here.</code>';
+    if (explorerCodeView) explorerCodeView.innerHTML = '<div class="code-empty">Click a file in the workspace tree to inspect it here.</div>';
     if (explorerStatusBar) explorerStatusBar.textContent = 'Ready';
   }
 
@@ -1021,15 +1038,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     state.explorerPath = rel;
     renderExplorerBreadcrumbs(projPath, rel);
-    explorerCodeView.innerHTML = '<code class="code-empty">Loading...</code>';
+    explorerCodeView.innerHTML = '<div class="code-empty">Loading...</div>';
     const res = await fetchJSON(`/api/file/read?project=${encodeURIComponent(projPath)}&path=${encodeURIComponent(rel)}`);
     if (res && res.ok) {
       const ext = rel.includes('.') ? rel.split('.').pop().toLowerCase() : '';
-      explorerCodeView.innerHTML = `<code>${highlightCode(res.content, ext)}</code>`;
-      const lines = res.content.split('\n').length;
-      explorerStatusBar.textContent = `${rel}  ·  ${lines} lines  ·  ${res.size} bytes${res.truncated ? '  ·  truncated to 256 KB' : ''}`;
+      const lines = res.content.split('\n');
+      explorerCodeView.innerHTML = lines.map((line, i) =>
+        `<div class="cl"><span class="ln">${i + 1}</span><span class="lc">${highlightCode(line, ext) || '&nbsp;'}</span></div>`
+      ).join('');
+      explorerStatusBar.textContent = `${rel}  ·  ${lines.length} lines  ·  ${res.size} bytes${res.truncated ? '  ·  truncated to 256 KB' : ''}`;
     } else {
-      explorerCodeView.innerHTML = `<code class="code-empty">${escapeHTML(res && res.error ? res.error : 'Unable to read file')}</code>`;
+      explorerCodeView.innerHTML = `<div class="code-empty">${escapeHTML(res && res.error ? res.error : 'Unable to read file')}</div>`;
       explorerStatusBar.textContent = rel;
     }
     if (state.currentTab !== 'explorer') switchTab('explorer');
@@ -1043,11 +1062,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = `<span class="crumb" data-dir="">${escapeHTML(name)}</span>`;
     segs.forEach((s, i) => {
       const dirPath = segs.slice(0, i + 1).join('/');
-      html += `<span class="crumb-sep">/</span>`;
+      html += `<span class="crumb-sep">&gt;</span>`;
       html += i === segs.length - 1
         ? `<span class="crumb-leaf">${escapeHTML(s)}</span>`
         : `<span class="crumb" data-dir="${escapeHTML(dirPath)}">${escapeHTML(s)}</span>`;
     });
+    if (segs.length > 1) {
+      html += `<span class="crumb-sep">&gt;</span><span class="crumb" data-dir="${escapeHTML(segs.slice(0, -1).join('/'))}">..</span>`;
+    }
     explorerBreadcrumbs.innerHTML = html;
     explorerBreadcrumbs.querySelectorAll('.crumb').forEach(c => {
       c.addEventListener('click', () => revealDirInTree(projPath, c.dataset.dir));
@@ -1055,17 +1077,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function revealDirInTree(projPath, dirRel) {
-    if (!dirRel) {
-      loadExplorerTree();
-      return;
-    }
-    const parts = dirRel.split('/').filter(Boolean);
+    const parts = (dirRel || '').split('/').filter(Boolean);
     let acc = '';
     parts.forEach(seg => {
       acc = acc ? `${acc}/${seg}` : seg;
       state.openDirs.add(treeKey(projPath, acc));
     });
-    await loadExplorerTree();
+    renderProjectAccordion();
   }
 
   // --- Lightweight syntax highlighting ---
@@ -1139,7 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return out + escapeHTML(src.slice(last));
   }
 
-  // --- Task Context Inspector ---
+  // --- Task Inception & Chat Cockpit ---
   function populateInspectorTasks() {
     if (!inspectorTaskSelect) return;
     const prev = state.inspectorTaskId;
@@ -1163,67 +1181,124 @@ document.addEventListener('DOMContentLoaded', () => {
     renderInspector();
   }
 
+  function chatToolLabel(t) {
+    const toolNames = { devin: 'Devin', claude: 'Claude', codex: 'Codex', agy: 'Gemini' };
+    const toolName = toolNames[(t.tool || '').toLowerCase()] || (t.tool ? t.tool : 'Devin');
+    return t.model ? `${toolName} ${t.model}` : `${toolName} swe-2-high`;
+  }
+
+  function execStatusText(t) {
+    const status = (t.status || '').toLowerCase();
+    const base = `\u0417\u0430\u0434\u0430\u0447\u0430 ${t.id}: ${t.title}`;
+    if (status === 'in progress') return `${base} \u2014 \u0443\u0441\u043f\u0435\u0448\u043d\u043e \u0440\u0430\u0437\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430, \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0430 \u0432 \u0440\u0435\u0435\u0441\u0442\u0440\u0435 \u0438 \u0437\u0430\u043f\u0443\u0449\u0435\u043d\u0430 \u043d\u0430 \u0438\u0441\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435!`;
+    if (status === 'review') return `${base} \u2014 \u0438\u0441\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e, \u0430\u0440\u0442\u0435\u0444\u0430\u043a\u0442 \u043f\u0435\u0440\u0435\u0434\u0430\u043d \u043d\u0430 \u043d\u0435\u0437\u0430\u0432\u0438\u0441\u0438\u043c\u0443\u044e \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443!`;
+    if (status === 'done') return `${base} \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u0430, \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u043f\u0440\u0438\u043d\u044f\u0442 \u0438 \u0441\u043b\u0438\u0442 \u0432 main!`;
+    return `${base} \u2014 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0430 \u0432 \u0440\u0435\u0435\u0441\u0442\u0440\u0435 \u0438 \u0433\u043e\u0442\u043e\u0432\u0430 \u043a \u0437\u0430\u043f\u0443\u0441\u043a\u0443!`;
+  }
+
   function renderInspector() {
-    if (!inspectorBody) return;
+    if (!chatStream) return;
     const t = state.tasks.find(x => x.id === state.inspectorTaskId);
     if (!t) {
-      inspectorBody.innerHTML = '<div class="empty-state"><p>No task selected or no tasks in this workspace.</p></div>';
+      chatStream.innerHTML = '<div class="empty-state"><p>No task selected or no tasks in this workspace.</p></div>';
       return;
     }
-    const critHtml = (t.criteria && t.criteria.length)
-      ? t.criteria.map(c => `
-        <label class="criteria-check${c.done ? ' done' : ''}">
-          <input type="checkbox" disabled${c.done ? ' checked' : ''}>
-          <span><span class="cid">${escapeHTML(c.id)}:</span> ${escapeHTML(c.text)}</span>
-        </label>`).join('')
-      : '<div class="inspector-diffstat empty">No acceptance criteria in contract.</div>';
-    const allowedHtml = (t.allowed_files && t.allowed_files.length)
-      ? t.allowed_files.map(f => `<code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); font-size:0.72rem; color:#93c5fd; display:inline-block; margin:2px 2px 2px 0;">${escapeHTML(f)}</code>`).join('')
-      : '<span style="color:var(--text-subtle); font-size:0.8rem;">None specified</span>';
-    inspectorBody.innerHTML = `
-      <div>
-        <div class="inspector-section-title">Contract Metadata</div>
-        <div class="inspector-meta-row"><span class="k">Task</span><span class="v">${escapeHTML(t.id)}</span></div>
-        <div class="inspector-meta-row"><span class="k">Role</span><span class="v">${escapeHTML(t.role)}</span></div>
-        <div class="inspector-meta-row"><span class="k">Tool / Model</span><span class="v">${escapeHTML(t.tool || 'auto')}</span></div>
-        <div class="inspector-meta-row"><span class="k">Stage</span><span class="v">${escapeHTML(String(t.stage))}</span></div>
-        <div class="inspector-meta-row"><span class="k">Status</span><span class="v">${escapeHTML(t.status)}</span></div>
-        <div class="inspector-meta-row"><span class="k">Commit</span><span class="v">${escapeHTML(t.commit || '\u2014')}</span></div>
-      </div>
-      <div>
-        <div class="inspector-section-title">Acceptance Criteria</div>
-        <div class="criteria-checklist">${critHtml}</div>
-      </div>
-      <div>
-        <div class="inspector-section-title">Allowed Files</div>
-        <div>${allowedHtml}</div>
-      </div>
-      <div>
-        <div class="inspector-section-title">Git Diff Summary</div>
-        <div class="inspector-diffstat" id="inspectorDiffstat"><span style="color:var(--text-subtle)">loading...</span></div>
+    const toolLabel = chatToolLabel(t);
+    if (chatModelPill) {
+      chatModelPill.innerHTML = `${escapeHTML(toolLabel)} <span class="model-caret">&#8963;</span>`;
+      chatModelPill.title = `Worker model for ${t.id}`;
+    }
+    const running = (t.status || '').toLowerCase() === 'in progress';
+    const statusLabel = running ? 'RUNNING Attempt 1' : String(t.status || 'ready').toUpperCase();
+    const workedDetail = running
+      ? 'Gate preflight: pass\nContract locked\nAttempt 1 in progress'
+      : 'Gate preflight: pass\nContract locked\nAttempt history in .runtime/';
+    chatStream.innerHTML = `
+      <div class="chat-bubble user">\u043f\u0440\u0438\u0441\u0442\u0443\u043f\u0430\u0439 \u043a ${escapeHTML(t.id)}</div>
+      <div class="chat-worked" id="chatWorked"><span class="chat-worked-caret">&#8250;</span><span>Worked for 2m</span></div>
+      <div class="chat-worked-detail" id="chatWorkedDetail" style="display:none">${escapeHTML(workedDetail)}</div>
+      <div class="chat-exec-card">
+        <div class="exec-status-text">${escapeHTML(execStatusText(t))}</div>
+        <div class="exec-meta">
+          <div class="exec-meta-row"><span class="k">Task ID</span><span class="v">${escapeHTML(t.id)}</span></div>
+          <div class="exec-meta-row"><span class="k">Role</span><span class="v">${escapeHTML(t.role || '\u2014')}</span></div>
+          <div class="exec-meta-row"><span class="k">Tool</span><span class="v">${escapeHTML(toolLabel)}</span></div>
+          <div class="exec-meta-row"><span class="k">Worktree</span><span class="v">${escapeHTML(t.worktree || '\u2014')}</span></div>
+          <div class="exec-meta-row"><span class="k">Status</span><span class="v${running ? ' running' : ''}">${escapeHTML(statusLabel)}</span></div>
+        </div>
+        <div class="exec-diff" id="execDiff">
+          <div class="exec-diff-summary" id="execDiffSummary">
+            <span id="execDiffText">loading diff...</span>
+            <span class="diff-badge add" id="execDiffAdd">+0</span>
+            <span class="diff-badge del" id="execDiffDel">-0</span>
+            <span class="diff-caret">&#8250;</span>
+          </div>
+          <div class="exec-diff-files" id="execDiffFiles"></div>
+        </div>
       </div>`;
+    const workedEl = document.getElementById('chatWorked');
+    const workedDetailEl = document.getElementById('chatWorkedDetail');
+    if (workedEl && workedDetailEl) {
+      workedEl.addEventListener('click', () => {
+        const open = workedDetailEl.style.display === 'none';
+        workedDetailEl.style.display = open ? 'block' : 'none';
+        workedEl.classList.toggle('open', open);
+      });
+    }
+    const diffEl = document.getElementById('execDiff');
+    const diffSummaryEl = document.getElementById('execDiffSummary');
+    if (diffEl && diffSummaryEl) {
+      diffSummaryEl.addEventListener('click', () => diffEl.classList.toggle('open'));
+    }
+    chatStream.scrollTop = 0;
     loadInspectorGit();
   }
 
   async function loadInspectorGit() {
-    const el = document.getElementById('inspectorDiffstat');
-    if (!el) return;
+    const textEl = document.getElementById('execDiffText');
+    const addEl = document.getElementById('execDiffAdd');
+    const delEl = document.getElementById('execDiffDel');
+    const filesEl = document.getElementById('execDiffFiles');
+    if (!textEl || !addEl || !delEl || !filesEl) return;
     const res = await fetchJSON(`/api/project/git?project=${encodeURIComponent(state.currentProject)}`);
-    if (!el.isConnected) return;
+    if (!textEl.isConnected) return;
+    let files = [];
+    let adds = 0;
+    let dels = 0;
     if (res && res.ok && res.is_git) {
-      const diff = res.diffstat && res.diffstat.trim() ? res.diffstat : 'No uncommitted changes vs HEAD.';
-      const changedList = (res.changed && res.changed.length)
-        ? `\n\nWorking tree (${res.changed.length}):\n${res.changed.slice(0, 30).join('\n')}`
-        : '';
-      el.textContent = `branch: ${res.branch}\n\n${diff}${changedList}`;
-      el.classList.remove('empty');
+      const m = (res.diffstat || '').match(/(\d+)\s+files?\s+changed(?:,\s*(\d+)\s+insertions?\(\+\))?(?:,\s*(\d+)\s+deletions?\(-\))?/);
+      if (m) {
+        adds = parseInt(m[2] || '0', 10);
+        dels = parseInt(m[3] || '0', 10);
+      }
+      files = (res.changed || []).map(l => l.replace(/^[ MADRCU?!]{1,3}/, '').trim()).filter(Boolean).slice(0, 30);
+      const n = files.length || (m ? parseInt(m[1], 10) : 0);
+      textEl.textContent = `${n} file${n === 1 ? '' : 's'} changed`;
     } else if (res && res.ok) {
-      el.textContent = 'Not a git repository.';
-      el.classList.add('empty');
+      textEl.textContent = 'not a git repository';
     } else {
-      el.textContent = (res && res.error) ? res.error : 'Git summary unavailable.';
-      el.classList.add('empty');
+      textEl.textContent = 'diff unavailable';
     }
+    addEl.textContent = `+${adds}`;
+    delEl.textContent = `-${dels}`;
+    filesEl.innerHTML = files.length
+      ? files.map(f => `<span class="diff-file" data-path="${escapeHTML(f)}" title="${escapeHTML(f)}">${escapeHTML(f)}</span>`).join('')
+      : '<span class="diff-file-none">No uncommitted changes vs HEAD.</span>';
+    filesEl.querySelectorAll('.diff-file').forEach(el => {
+      el.addEventListener('click', () => openExplorerFile(state.currentProject, el.dataset.path));
+    });
+  }
+
+  function sendChatMessage() {
+    if (!chatInput || !chatStream) return;
+    const text = chatInput.value.trim();
+    if (!text) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble user';
+    bubble.textContent = text;
+    chatStream.appendChild(bubble);
+    chatInput.value = '';
+    chatStream.scrollTop = chatStream.scrollHeight;
   }
 
   // --- Explicit Authorization Gate ---

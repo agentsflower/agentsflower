@@ -229,6 +229,56 @@ class TestTasksPayload(StudioApiCase):
         self.assertIn("text", c)
         self.assertIn("done", c)
 
+    def test_tasks_include_dispatch_header_fields(self):
+        code, res = self.api("/api/tasks?" + self.q({"project": str(studio.REPO_ROOT)}))
+        self.assertTrue(res.get("ok"), res)
+        tasks = res["data"]["tasks"]
+        self.assertTrue(tasks, "no tasks in ledger")
+        for t in tasks:
+            for key in ("branch", "worktree", "model"):
+                self.assertIn(key, t, f"{t.get('id')} missing {key}")
+        with_header = [t for t in tasks if t.get("worktree") or t.get("branch")]
+        self.assertTrue(with_header, "no task exposes Branch/Worktree header fields")
+
+
+class TestStudioShell(StudioApiCase):
+    def shell_html(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            return resp.read().decode("utf-8")
+
+    def test_index_topnav_and_views(self):
+        html = self.shell_html()
+        for marker in (
+            'class="topnav"',
+            'data-tab="explorer"',
+            'data-tab="kanban"',
+            'id="taskTotalBadge"',
+            'data-tab="analytics"',
+            'data-tab="graft"',
+            'data-tab="capacity"',
+            'data-tab="creator"',
+            'data-tab="guide"',
+            'class="kanban-grid"',
+            'id="stageFilters"',
+        ):
+            self.assertIn(marker, html)
+
+    def test_index_sidebar_and_chat_cockpit(self):
+        html = self.shell_html()
+        for marker in (
+            "ACTIVE WORKSPACE",
+            'id="btnOpenAttachModal"',
+            'id="btnOpenCreateModal"',
+            'id="projectAccordion"',
+            'id="explorerBreadcrumbs"',
+            'id="explorerCodeView"',
+            'class="chat-stream"',
+            'class="chat-composer"',
+            'id="chatModelPill"',
+            'id="inspectorTaskSelect"',
+        ):
+            self.assertIn(marker, html)
+
 
 if __name__ == "__main__":
     unittest.main()

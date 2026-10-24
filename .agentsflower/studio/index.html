@@ -16,8 +16,8 @@
 
   <!-- Studio Shell Layout -->
   <div class="studio-app">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
+    <!-- Top Navigation Bar -->
+    <header class="topnav">
       <div class="brand-header clickable" id="brandHomeBtn" title="Back to Task Board">
         <div class="brand-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -30,131 +30,128 @@
         </div>
       </div>
 
-      <!-- Project Switcher Selector -->
-      <div class="project-selector-card">
-        <div class="project-selector-header">
-          <label class="section-label">ACTIVE WORKSPACE</label>
-          <div class="project-header-actions">
-            <button type="button" class="btn-xs" id="btnOpenAttachModal" title="Attach Existing Project Folder">+ Attach</button>
-            <button type="button" class="btn-xs" id="btnOpenCreateModal" title="Scaffold New AgentsFlower Project">+ New</button>
-          </div>
-        </div>
-        <div class="project-accordion" id="projectAccordion">
-          <div class="accordion-loading">Loading workspaces...</div>
-        </div>
-      </div>
-
-      <!-- Main Navigation Menu -->
-      <nav class="nav-menu">
-        <button class="nav-item active" data-tab="kanban">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="9"/>
-            <rect x="14" y="3" width="7" height="5"/>
-            <rect x="14" y="12" width="7" height="9"/>
-            <rect x="3" y="16" width="7" height="5"/>
-          </svg>
-          <span>Task Board</span>
-          <span class="badge" id="taskTotalBadge">0</span>
-        </button>
-
-        <button class="nav-item" data-tab="explorer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-            <path d="M8 12h8M8 16h5"/>
-          </svg>
-          <span>Explorer</span>
-        </button>
-
-        <button class="nav-item" data-tab="analytics">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 3v18h18"/>
-            <path d="M18 17V9"/>
-            <path d="M13 17V5"/>
-            <path d="M8 17v-3"/>
-          </svg>
-          <span>Analytics & Roadmap</span>
-          <span class="badge badge-accent">Gantt</span>
-        </button>
-
-        <button class="nav-item" data-tab="graft">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="18" cy="5" r="3"/>
-            <circle cx="6" cy="12" r="3"/>
-            <circle cx="18" cy="19" r="3"/>
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-          </svg>
-          <span>Knowledge Graph</span>
-          <span class="badge badge-accent">AST</span>
-        </button>
-
-        <button class="nav-item" data-tab="capacity">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 20V10M12 20V4M6 20v-6"/>
-          </svg>
-          <span>Model Quota Hub</span>
-          <span class="pulse-indicator"></span>
-        </button>
-
-        <button class="nav-item" data-tab="creator">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="16"/>
-            <line x1="8" y1="12" x2="16" y2="12"/>
-          </svg>
-          <span>Task Contract Creator</span>
-        </button>
-
-        <button class="nav-item" data-tab="guide">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
-          </svg>
-          <span>Quick Start Guide</span>
-        </button>
-      </nav>
-
-      <!-- Machine Capacity Mini Widget -->
-      <div class="sidebar-footer">
-        <div class="quota-mini-status">
-          <div class="quota-header">
-            <span class="status-indicator online"></span>
-            <span class="quota-title">Zero-Token Engine</span>
-          </div>
-          <div class="quota-detail">Graft AST sidecar active & local</div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main Workspace Content Area -->
-    <main class="main-content">
-      <!-- Top Bar Header -->
-      <header class="topbar">
-        <div class="breadcrumbs">
-          <span class="breadcrumb-root clickable" id="breadcrumbStudio" title="Return to Task Board">Studio</span>
-          <span class="separator">/</span>
-          <span class="breadcrumb-active" id="activeTabTitle">Task Board</span>
-        </div>
-
-        <div class="topbar-actions">
-          <span class="active-project-chip" id="activeProjectChip" title="Active workspace"></span>
-          <div class="search-box">
+      <nav class="topnav-menu">
+        <div class="nav-group-primary">
+          <button class="nav-item nav-pill" data-tab="explorer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+              <path d="M8 12h8M8 16h5"/>
             </svg>
-            <input type="text" id="globalSearchInput" placeholder="Filter tasks, symbols, criteria...">
-          </div>
+            <span>Explorer</span>
+          </button>
 
-          <button class="btn btn-primary" id="btnQuickCreate">
+          <button class="nav-item nav-pill active" data-tab="kanban">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
+              <rect x="3" y="3" width="7" height="9"/>
+              <rect x="14" y="3" width="7" height="5"/>
+              <rect x="14" y="12" width="7" height="9"/>
+              <rect x="3" y="16" width="7" height="5"/>
             </svg>
-            <span>New Task</span>
+            <span>Task Board</span>
+            <span class="badge" id="taskTotalBadge">0</span>
           </button>
         </div>
-      </header>
+
+        <div class="nav-group-links">
+          <button class="nav-item nav-link" data-tab="analytics">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3v18h18"/>
+              <path d="M18 17V9"/>
+              <path d="M13 17V5"/>
+              <path d="M8 17v-3"/>
+            </svg>
+            <span>Analytics & Roadmap</span>
+          </button>
+
+          <button class="nav-item nav-link" data-tab="graft">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span>Knowledge Graph</span>
+          </button>
+
+          <button class="nav-item nav-link" data-tab="capacity">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 20V10M12 20V4M6 20v-6"/>
+            </svg>
+            <span>Model Quota Hub</span>
+            <span class="pulse-indicator"></span>
+          </button>
+
+          <button class="nav-item nav-link" data-tab="creator">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="16"/>
+              <line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            <span>Task Contract Creator</span>
+          </button>
+
+          <button class="nav-item nav-link" data-tab="guide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+            </svg>
+            <span>Quick Start Guide</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="topnav-actions">
+        <span class="active-project-chip" id="activeProjectChip" title="Active workspace"></span>
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="globalSearchInput" placeholder="Filter tasks, symbols, criteria...">
+        </div>
+
+        <button class="btn btn-primary" id="btnQuickCreate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>New Task</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <!-- Workspace Sidebar -->
+      <aside class="sidebar">
+        <!-- Project Switcher Selector -->
+        <div class="project-selector-card">
+          <div class="project-selector-header">
+            <label class="section-label">ACTIVE WORKSPACE</label>
+            <div class="project-header-actions">
+              <button type="button" class="btn-xs" id="btnOpenAttachModal" title="Attach Existing Project Folder">+ Attach</button>
+              <button type="button" class="btn-xs" id="btnOpenCreateModal" title="Scaffold New AgentsFlower Project">+ New</button>
+            </div>
+          </div>
+          <div class="project-accordion" id="projectAccordion">
+            <div class="accordion-loading">Loading workspaces...</div>
+          </div>
+        </div>
+
+        <!-- Machine Capacity Mini Widget -->
+        <div class="sidebar-footer">
+          <div class="quota-mini-status">
+            <div class="quota-header">
+              <span class="status-indicator online"></span>
+              <span class="quota-title">Zero-Token Engine</span>
+            </div>
+            <div class="quota-detail">Graft AST sidecar active & local</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Workspace Content Area -->
+      <main class="main-content">
 
       <!-- View Containers -->
       <div class="views-wrapper">
@@ -242,29 +239,45 @@
         <!-- 2. IDE Explorer View -->
         <section class="view-panel" id="view-explorer">
           <div class="explorer-grid">
-            <div class="explorer-tree-pane glass-card">
-              <div class="explorer-pane-header">
-                <span>Workspace Files</span>
-                <button type="button" class="btn-xs" id="btnExplorerTreeRefresh" title="Reload file tree">Refresh</button>
-              </div>
-              <div class="file-tree" id="explorerFileTree">
-                <div class="empty-state"><p>Loading workspace files...</p></div>
-              </div>
-            </div>
-
             <div class="explorer-code-pane glass-card">
               <div class="explorer-breadcrumbs" id="explorerBreadcrumbs">
                 <span class="crumb-leaf">Select a file to preview its contents</span>
               </div>
-              <pre class="code-viewer" id="explorerCodeView"><code class="code-empty">Click a file in the tree to inspect it here.</code></pre>
+              <div class="code-viewer" id="explorerCodeView">
+                <div class="code-empty">Click a file in the workspace tree to inspect it here.</div>
+              </div>
               <div class="explorer-statusbar" id="explorerStatusBar">Ready</div>
             </div>
 
-            <div class="explorer-inspector-pane glass-card">
-              <div class="explorer-pane-header"><span>Task Context Inspector</span></div>
-              <select id="inspectorTaskSelect" class="inspector-task-select"></select>
-              <div class="inspector-body" id="inspectorBody">
+            <div class="explorer-chat-pane glass-card">
+              <div class="chat-header">
+                <button type="button" class="chat-icon-btn" id="btnChatNew" title="New task contract">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <select id="inspectorTaskSelect" class="chat-task-select" title="Task thread"></select>
+                <div class="chat-header-controls">
+                  <button type="button" class="chat-icon-btn" id="btnChatRefresh" title="Reload task context">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="chat-stream" id="chatStream">
                 <div class="empty-state"><p>No task selected.</p></div>
+              </div>
+
+              <div class="chat-composer">
+                <textarea id="chatInput" rows="2" placeholder="Ask anything, @ to mention, / for actions"></textarea>
+                <div class="composer-toolbar">
+                  <button type="button" class="chat-icon-btn" id="btnChatPlus" title="Attach context">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                  <button type="button" class="model-pill" id="chatModelPill" title="Active worker model">Devin swe-2-high <span class="model-caret">&#8963;</span></button>
+                  <span class="composer-spacer"></span>
+                  <button type="button" class="chat-send" id="btnChatSend" title="Send message">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -537,7 +550,8 @@
           </div>
         </section>
       </div>
-    </main>
+      </main>
+    </div>
 
     <!-- Task Detail Drawer / Modal -->
     <div class="drawer-overlay" id="taskDrawerOverlay"></div>
