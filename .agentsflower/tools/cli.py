@@ -177,6 +177,56 @@ def cmd_studio(a) -> int:
 
 
 
+def cmd_project(a) -> int:
+    args = a.args or ["list"]
+    subcmd = args[0]
+    rest = args[1:]
+    import studio
+    if subcmd == "list":
+        projects = studio.find_projects()
+        print("\n=======================================================")
+        print("  [AgentsFlower] Workspaces & Discovered Projects")
+        print("=======================================================")
+        for p in projects:
+            curr = " * [CURRENT]" if p.get("is_current") else ""
+            stat = f"v{p.get('version')} ({p.get('task_count')} tasks)" if p.get("has_framework") else "[no flower]"
+            print(f"  {p['name']:<18} {stat:<22} {curr}")
+            print(f"    Path: {p['path']}")
+        print("=======================================================\n")
+        return 0
+    elif subcmd == "attach":
+        if not rest:
+            print("agentsflower project attach: path required", file=sys.stderr)
+            return 1
+        target = Path(rest[0]).resolve()
+        if not target.is_dir():
+            print(f"agentsflower: path not found: {target}", file=sys.stderr)
+            return 1
+        studio.save_attached_project(str(target))
+        print(f"Attached project: {target}")
+        return 0
+    elif subcmd in ("new", "create"):
+        if not rest:
+            print("agentsflower project new: target directory path required", file=sys.stderr)
+            return 1
+        target = Path(rest[0]).resolve()
+        target.mkdir(parents=True, exist_ok=True)
+        code = subprocess.call([sys.executable, str(INSTALLER), str(target), "--inside-repo"])
+        if code == 0:
+            studio.save_attached_project(str(target))
+            print(f"\nSuccessfully scaffolded AgentsFlower project at {target}")
+        return code
+    elif subcmd == "update":
+        if not rest:
+            print("agentsflower project update: target directory path required", file=sys.stderr)
+            return 1
+        target = Path(rest[0]).resolve()
+        return subprocess.call([sys.executable, str(INSTALLER), str(target), "--update", "--inside-repo"])
+    else:
+        print(f"agentsflower project: unknown command '{subcmd}'. Choices: list, attach, new, update", file=sys.stderr)
+        return 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="agentflow", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -198,10 +248,14 @@ def main(argv=None) -> int:
     p.add_argument("--project", type=Path, default=argparse.SUPPRESS, help="project dir or any dir inside it (default: current directory)")
 
     for name, script in (("gate", "gate.py"), ("accept", "accept.py"), ("ledger", "ledger.py"),
-                         ("mcp", "mcp_server.py"), ("hooks", "hooks.py"), ("graft", "graft.py")):
+                         ("mcp", "mcp_server.py"), ("hooks", "hooks.py"), ("graft", "graft.py"),
+                         ("local", "local_adapter.py"), ("failover", "failover.py")):
         p = sub.add_parser(name, help=f"pass arguments to .agentflow/tools/{script}")
         p.add_argument("args", nargs=argparse.REMAINDER, help=f"arguments of {script} (see its --help)")
         p.set_defaults(script=script)
+
+    p = sub.add_parser("project", help="manage multi-project workspaces (list, attach, new, update)")
+    p.add_argument("args", nargs=argparse.REMAINDER, help="subcommand: list, attach <path>, new <path>, update <path>")
 
     p = sub.add_parser("done", help="the single completion check for a Task File (gate.py done)")
     p.add_argument("task", help="task id T-NNN")
@@ -230,6 +284,8 @@ def main(argv=None) -> int:
         return cmd_dashboard(a)
     if a.cmd == "studio":
         return cmd_studio(a)
+    if a.cmd == "project":
+        return cmd_project(a)
     return cmd_passthrough(a, a.script)
 
 

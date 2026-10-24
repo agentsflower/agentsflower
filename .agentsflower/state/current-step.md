@@ -17,8 +17,9 @@
 - **T-127 (Task Contract Creator Interactive Lists):** Dynamic file tag inputs, interactive criteria builder (`C-01:`, `C-02:`), and preset chips replacing malformed raw textareas.
 - **T-128 (Multi-Project Gateway):** Dynamic project switcher with `?project=` task loading, external folder attachment modal, and uninitialized workspace banner with auto-installer.
 - **T-129 (Classic Dashboard & Analytics):** Embedded Tasks Overview, Gantt & Timeline, and Roadmap tabs with live on-demand rebuild action.
-- **Quick Start Guide:** Built-in protocol cockpit explaining role specialization, zero-trust gate authority, AST querying, and CLI cheat sheet.
+- **T-120 (Local Model Protocol & Failover Architecture):** Probes local inference servers (Ollama, LM Studio) and provides tiered failover protocol preserving context when cloud limits are reached.
+- **T-122 (Project Scaffolding CLI):** Workspace management commands (`agentsflower project list|attach|new|update`).
 
 ## 3. Ready in the Queue
-- **T-120:** Local Model Protocol & Adapter Architecture (Ollama / LM Studio / local LLM zero-cost fallback adapter).
-- **T-122:** Project Scaffolding CLI & Template Engine (`agentsflower project new`).
+- **Stage 7 Gate Verification & Review:** Independent verification pass across Stage 7 deliverables.
+- **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps).
