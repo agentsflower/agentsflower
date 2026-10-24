@@ -23,9 +23,10 @@
 - **T-130 / T-131 (Multi-Project Explorer + verify):** Multi-project file tree accordion, Explorer tab, global context broadcast, consent-gated install; independently verified (510/0/4 suite, traversal + 403-gate probes). Merged main 3d89d3c.
 
 ## 3. Ready in the Queue
-- **In flight (2026-10-24 ~22:11Z):** T-141 (tester for T-138 @ 4f611e6) devin attempt 1 running; T-139 (frontend-art-direction skill) devin attempt 1 running, deadline 22:35Z.
-- **T-138** `completed` (Change 4f611e6): accepts once T-141 returns `Verdict: pass` (gate verify + merge).
-- **T-140** (chrome-extension-mv3 skill) `ready`, `Depends on: T-139` - shares INDEX.md/ATTRIBUTION.md/test_skills.py; tick auto-launches it at T-139 done.
-- **Next:** on T-139 `completed`, write its tester task (devin preferred) then accept per the decision table.
+- **Accepted (2026-10-24 ~23:49Z, tick clean):** T-141 -> T-138 merged (quota hub); T-142 partial -> T-139 rejected -> T-143 + T-145 -> merged (frontend-art-direction skill @ 63e0328); T-146 pass (substitution judged faithful) -> T-140 merged (chrome-extension-mv3 skill @ b58fe9f); T-147 pass -> T-144 rejected (contract omitted common.css) -> T-148 carrier -> merged (@ 9446803).
+- **Ledger:** fully clean - no open tasks.
+- **Pending cleanup (human's call):** rejected-task worktrees/branches T-139 (`t-139-skill-frontend-art-direction`) and T-144 (`t-144-studio-analytics-roadmap-mockup-alignment`) - artifacts already landed via successors.
+- **Contract nit for the human:** T-140's `metadata.source` still reads `google/chrome-extensions-samples@main` (canonical org `GoogleChrome`); attribution links are correct. A doc-only correction can ride any next contract.
+- **Next:** Stage 8 (Advanced Domain Skills) remainder awaits human plan approval.
 - **Latest merges:** T-136 (conversational task inception, verified by T-137) merged at 25fdad6.
 - **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps) - Phase P1 skills (T-139/T-140) human-authorized 2026-10-25; remainder awaits human approval.

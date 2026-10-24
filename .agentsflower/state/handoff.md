@@ -95,3 +95,19 @@ What waits: T-141 verdict (`pass` -> accept T-141, then T-138 acceptance:
 gate verify on 4f611e6, merge); T-139 still running (deadline 22:35Z) -
 on `completed` write its tester task the same way; T-140 stays
 `Depends on: T-139`. Committed Task Files, T-138 Result and ledger; released.
+
+Background session devin-background, 2026-10-24 ~23:50Z: resolved the tick
+need chain end to end - ledger fully clean, tick shows no needs/waits.
+Accepted+merged: T-138 (quota hub, via T-141 pass), T-143 (frontend-art-direction
+skill, successor of rejected T-139 via T-142 partial -> one-cell ATTRIBUTION fix,
+T-145 pass), T-140 (chrome-extension-mv3 skill, via T-146 pass judging the
+disclosed `michaell/chrome-mv3` 404 -> catalog-source substitution faithful),
+T-148 (T-144's verified artifact carried under corrected Allowed files after
+T-147 flagged the common.css scope omission). Launched human-added T-144 per
+its ready row; it completed and landed via the carrier.
+
+What waits: nothing mechanical. For the human: (a) agree cleanup of the
+rejected worktrees/branches T-139 and T-144 (artifacts already on main via
+successors); (b) contract nit - T-140 metadata.source org spelling
+`google/chrome-extensions-samples` vs canonical `GoogleChrome` (links are
+correct; ride any next contract); (c) Stage 8 remainder needs plan approval.

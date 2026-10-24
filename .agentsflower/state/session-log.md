@@ -486,3 +486,32 @@ What waits: T-141 verdict and T-139 outcome. T-141 `pass` -> mechanical
 accept of T-141, then T-138 acceptance (gate verify on 4f611e6, merge).
 T-139 `completed` -> write its tester task the same way; T-140 stays
 `Depends on: T-139`. Committed Task Files, Result and ledger; released.
+
+## 2026-10-24 ~23:50Z - Background orchestrator session (devin-background)
+
+Resolved the tick need (T-139 completed without a tester) and ran the full
+downstream chain to a clean ledger:
+
+- Wrote and launched tester T-142 for T-139 @ 914f968 (Jev medium 0.53
+  confirmed after one low-confidence re-assessment). Verdict: partial -
+  ATTRIBUTION.md taste-skill "Upstream path" held the skill name
+  `design-taste-frontend`, not the repo path `skills/taste-skill`.
+- Accepted T-142; rejected T-139; successor T-143 (one-cell repair on the
+  preserved artifact) verified by T-145 (pass) and merged.
+- T-138's tester T-141 came back `pass`; accepted both (T-138 merged).
+- T-140 (chrome-extension-mv3) completed with a disclosed contract deviation
+  (`michaell/chrome-mv3@main` 404 -> catalog-designated sources, real pins);
+  tester T-146 judged the substitution faithful (pass); T-140 merged.
+- Human-added T-144 (Studio analytics pixel-perfect) completed; T-147 verified
+  it pass end-to-end but flagged that the contract's Allowed files omitted
+  `dashboard/common.css`. Accepted T-147, rejected T-144, carrier T-148
+  (byte-identical artifact, corrected scope) merged.
+- Mechanical normalizations applied twice: T-141/T-147 evidence basenames
+  lacking the `T-NNN.` prefix and mid-line `evidence:` markers turned into
+  claims (T-075/T-080 precedent).
+- Repointed T-140's dependency T-139 -> T-143 after the rejection.
+- Recorded worker-proposed known-issues entries (upstream-id authoring rule,
+  carrier-defect class third instance).
+
+Ended: ledger fully clean, tick.json no needs/waits. Rejected worktrees and
+branches of T-139 and T-144 left for human-agreed cleanup.

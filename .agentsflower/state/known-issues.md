@@ -151,3 +151,19 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   restored via `ledger.py set --notes` (stored as `// grip`). Authoring
   rule: keep `|` out of ledger Notes; a durable fix is a developer task on
   the ledger row parser/serializer.
+- 2026-10-24 - Task-contract upstream ids can name skills or be simply wrong:
+  T-139's `emilkowalski/design-eng@main` resolves to skill `emil-design-eng`
+  inside `emilkowalski/skills`; T-140's `michaell/chrome-mv3@main` 404s (worker
+  substituted the catalog's designated Domain-4 source, T-146 judged the
+  substitution faithful). Authoring rule (endorsed by T-140/T-146): the
+  Orchestrator resolves every `metadata.source` id to a real repo+path before
+  launch, and ATTRIBUTION "Upstream path" must hold the repo path
+  (`skills/taste-skill`), not the upstream skill's `name:` field
+  (`design-taste-frontend` - the exact T-142 V-05 defect).
+- 2026-10-24 - Carrier-defect class, third instance (after T-082->T-084,
+  T-094->T-095): T-144's human-written contract omitted
+  `.agentsflower/dashboard/common.css` from `Allowed files` though the contract
+  itself required editing it; T-147 verified the artifact pass on 9446803 but
+  scope verify could not accept. Remedy: carrier successor T-148 declares the
+  full `git diff` file set. Authoring rule stands: `Allowed files` must cover
+  every file the contract's own goals require touching.
