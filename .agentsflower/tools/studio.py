@@ -8,6 +8,8 @@ A modern, zero-dependency local web dashboard and multi-project cockpit:
 - Multi-project switcher and rapid task generator
 """
 import argparse
+import ast
+from datetime import datetime, timezone
 import json
 import mimetypes
 import os
@@ -384,6 +386,511 @@ def get_tasks_data(project_path: str = None) -> dict:
     }
 
 
+def _next_task_number(flow_root: Path) -> int:
+    max_num = 0
+    ledger_file = flow_root / "state" / "tasks.md"
+    if ledger_file.is_file():
+        try:
+            for m in re.finditer(r"T-([0-9]+)", ledger_file.read_text(encoding="utf-8-sig")):
+                max_num = max(max_num, int(m.group(1)))
+        except Exception:
+            pass
+    tasks_dir = flow_root / "tasks"
+    if tasks_dir.is_dir():
+        try:
+            for tf in tasks_dir.glob("T-*.md"):
+                m = re.match(r"^T-([0-9]+)", tf.name)
+                if m:
+                    max_num = max(max_num, int(m.group(1)))
+        except Exception:
+            pass
+    return max_num + 1
+
+
+def _index_repo_ast_symbols(root: Path) -> tuple[dict[str, str], dict[str, set[str]], dict[str, str]]:
+    symbol_to_file: dict[str, str] = {}
+    module_importers: dict[str, set[str]] = {}
+    basename_to_rel: dict[str, str] = {}
+
+    flow = get_project_flow_root(root) or (root / ".agentsflower")
+    scan_dirs = [flow / "tools", flow / "studio", flow / "tests", root / "src"]
+    for d in scan_dirs:
+        if not d.is_dir():
+            continue
+        try:
+            for fp in d.rglob("*"):
+                if not fp.is_file() or "__pycache__" in fp.parts or ".runtime" in fp.parts:
+                    continue
+                rel = fp.relative_to(root).as_posix()
+                basename_to_rel.setdefault(fp.name.lower(), rel)
+                if fp.suffix == ".py":
+                    try:
+                        tree = ast.parse(fp.read_text(encoding="utf-8-sig", errors="replace"))
+                        for node in ast.walk(tree):
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                                if len(node.name) >= 3 and not node.name.startswith("_"):
+                                    symbol_to_file.setdefault(node.name, rel)
+                            elif isinstance(node, ast.Import):
+                                for alias in node.names:
+                                    mod = alias.name.split(".")[-1]
+                                    module_importers.setdefault(mod, set()).add(rel)
+                            elif isinstance(node, ast.ImportFrom) and node.module:
+                                mod = node.module.split(".")[-1]
+                                module_importers.setdefault(mod, set()).add(rel)
+                    except Exception:
+                        continue
+        except Exception:
+            continue
+    return symbol_to_file, module_importers, basename_to_rel
+
+
+def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool = True) -> dict:
+    symbol_to_file, module_importers, basename_to_rel = _index_repo_ast_symbols(root)
+    affected: list[str] = []
+    matched_symbols: list[str] = []
+    targets: list[str] = []
+
+    def _add_file(rel_path: str):
+        norm = rel_path.replace(chr(92), "/").removeprefix("./").lstrip("/")
+        if norm and norm not in affected:
+            affected.append(norm)
+
+    for m in re.finditer(r"([A-Za-z0-9_./-]+[.][A-Za-z0-9]+)", text or ""):
+        token = m.group(1).strip(".,:;()[]" + chr(96) + chr(34) + chr(39))
+        ext = Path(token).suffix.lower()
+        if ext not in (".py", ".js", ".css", ".html", ".md", ".json", ".ts", ".tsx"):
+            continue
+        low = Path(token).name.lower()
+        if (root / token).is_file():
+            rel = (root / token).resolve().relative_to(root.resolve()).as_posix()
+            _add_file(rel)
+            targets.append(rel)
+        elif low in basename_to_rel:
+            _add_file(basename_to_rel[low])
+            targets.append(basename_to_rel[low])
+
+    for tok in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text or ""):
+        if tok in symbol_to_file:
+            if tok not in matched_symbols:
+                matched_symbols.append(tok)
+            if tok not in targets:
+                targets.insert(0, tok)
+            def_file = symbol_to_file[tok]
+            _add_file(def_file)
+            stem = Path(def_file).stem
+            for imp_rel in sorted(module_importers.get(stem, ())):
+                _add_file(imp_rel)
+
+    if invoke_graft and graft and hasattr(graft, "graft_blast_radius"):
+        flow = get_project_flow_root(root) or (root / ".agentsflower")
+        graft_rt_root = flow / "tasks" / ".runtime" / "graft"
+        had_rt = graft_rt_root.exists()
+        probe_targets = targets[:1] if targets else ["studio.py"]
+        try:
+            g_files = graft.graft_blast_radius(root, probe_targets)
+            for gf in g_files or []:
+                _add_file(str(gf))
+        except Exception:
+            pass
+        finally:
+            if not had_rt and graft_rt_root.is_dir():
+                try:
+                    shutil.rmtree(graft_rt_root, ignore_errors=True)
+                except Exception:
+                    pass
+
+    for f in list(affected):
+        stem = Path(f).stem
+        if f.endswith(".py") and not stem.startswith("test_"):
+            test_key = f"test_{stem}.py".lower()
+            if test_key in basename_to_rel:
+                _add_file(basename_to_rel[test_key])
+
+    if not affected:
+        flow_name = (get_project_flow_root(root) or (root / ".agentsflower")).name
+        for default_rel in (f"{flow_name}/tools/studio.py", f"{flow_name}/tests/test_studio.py"):
+            _add_file(default_rel)
+
+    return {
+        "targets": targets[:8],
+        "symbols": matched_symbols[:10],
+        "affected_files": affected[:12],
+        "engine": "graft-ast",
+    }
+
+
+def _assess_task_complexity(item_text: str, allowed_files: list[str]) -> dict:
+    low = (item_text or "").lower()
+    escalation_kw = (
+        "architect", "ast", "blast", "graph", "synthesize", "synthesis",
+        "security", "cross-cutting", "concurrency", "protocol", "engine",
+        "complex", "multi-file", "migration", "orchestrat", "escalat", "argon", "refactor",
+    )
+    floor_only_kw = ("minor", "css", "badge", "label", "typo", "unit test", "verify")
+    has_esc = any(k in low for k in escalation_kw)
+    non_test_files = [f for f in allowed_files if not Path(f).name.startswith("test_")]
+    is_simple_floor = any(k in low for k in floor_only_kw) and not any(
+        k in low for k in ("architect", "ast", "blast", "graph", "complex", "multi-file", "security", "refactor")
+    )
+    if (has_esc and not is_simple_floor) or len(non_test_files) >= 3:
+        return {
+            "complexity": "high",
+            "effort": "high",
+            "model": "gemini-4-argon-high",
+            "tier": "escalation",
+        }
+    return {
+        "complexity": "standard",
+        "effort": "medium",
+        "model": "swe-2-high",
+        "tier": "floor",
+    }
+
+
+def _extract_discussion_items(text: str) -> list[str]:
+    inline_parts = [seg.strip() for seg in re.split(r"(?:^|\s+)[0-9]+[.)]\s+", (text or "").strip()) if seg.strip()]
+    if len(inline_parts) >= 2:
+        return inline_parts[:6]
+    raw_lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    numbered = []
+    for ln in raw_lines:
+        m = re.match(r"^(?:[0-9]+[.)]|[-*]) +(.+)$", ln)
+        if m:
+            numbered.append(m.group(1).strip())
+    if len(numbered) >= 2:
+        return numbered[:6]
+    if len(raw_lines) >= 2:
+        return [re.sub(r"^(?:[0-9]+[.)]|[-*]) +", "", ln).strip() for ln in raw_lines[:6]]
+    single = (text or "").strip() or "Implement conversational feature and verification suite"
+    clean = re.sub(r"^(?:[0-9]+[.)]|[-*]) +", "", single).strip()
+    return [
+        clean,
+        f"Add unit tests and gate verification for: {clean[:72]}",
+    ]
+
+
+def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
+    flow_root = get_project_flow_root(root) or (root / ".agentsflower")
+    stage = str(body.get("stage") or "7")
+    thread = str(body.get("thread") or "research")
+    nl = chr(10)
+
+    msgs = body.get("messages") or body.get("history") or []
+    parts: list[str] = []
+    if isinstance(msgs, list):
+        for m in msgs:
+            if isinstance(m, dict):
+                role = str(m.get("role") or "user").lower()
+                content = str(m.get("content") or m.get("text") or "").strip()
+                if content and role in ("user", "human", ""):
+                    parts.append(content)
+            elif isinstance(m, str) and m.strip():
+                parts.append(m.strip())
+    for key in ("discussion", "prompt", "text", "context"):
+        val = body.get(key)
+        if isinstance(val, str) and val.strip():
+            parts.append(val.strip())
+
+    full_text = nl.join(parts).strip()
+    if not full_text:
+        full_text = nl.join([
+            "1. Architect conversational task synthesis in studio.py with Graft AST blast radius.",
+            "2. Verify synthesized task pool in test_studio.py.",
+        ])
+
+    blast = compute_conversation_blast_radius(root, full_text, invoke_graft=True)
+    items = _extract_discussion_items(full_text)
+    next_num = _next_task_number(flow_root)
+    tasks: list[dict] = []
+
+    for idx, item in enumerate(items):
+        tid = f"T-{next_num + idx:03d}"
+        item_blast = compute_conversation_blast_radius(root, item, invoke_graft=False)
+        item_files = item_blast["affected_files"] or blast["affected_files"]
+        for f in item_files:
+            if f not in blast["affected_files"]:
+                blast["affected_files"].append(f)
+
+        title = item.rstrip(".").strip()
+        if len(title) > 78:
+            title = title[:75].rsplit(" ", 1)[0] + "..."
+
+        assess = _assess_task_complexity(item, item_files)
+        role = "developer"
+        criteria = [
+            f"C-01: {title} implemented within allowed files ({', '.join(item_files[:3])}).",
+            f"C-02: Verification suite passes cleanly: python -m unittest discover -s {flow_root.name}/tests.",
+        ]
+        tasks.append({
+            "id": tid,
+            "title": title,
+            "stage": stage,
+            "role": role,
+            "tool": "devin",
+            "effort": assess["effort"],
+            "complexity": assess["complexity"],
+            "tier": assess["tier"],
+            "model": assess["model"],
+            "goal": item,
+            "allowed": item_files,
+            "allowed_files": item_files,
+            "blast_radius": item_files,
+            "criteria": criteria,
+        })
+
+    result = {
+        "ok": True,
+        "project": str(root),
+        "thread": thread,
+        "summary": f"Synthesized {len(tasks)} atomic task contracts with AST blast radius ({len(blast['affected_files'])} affected files).",
+        "symbols": blast["symbols"],
+        "blast_radius": blast,
+        "tasks": tasks,
+        "pool": tasks,
+    }
+    if body.get("register") is True or body.get("approve") is True:
+        reg = register_task_pool(root, tasks, default_stage=stage)
+        result["registered"] = reg.get("registered", [])
+        result["files"] = reg.get("files", [])
+    return result
+
+
+def register_task_pool(target_root: Path, tasks_payload: list[dict], default_stage: str = "7") -> dict:
+    flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
+    tasks_dir = flow_root / "tasks"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    ledger_file = flow_root / "state" / "tasks.md"
+
+    next_num = _next_task_number(flow_root)
+    registered_ids: list[str] = []
+    created_files: list[str] = []
+    normalized_tasks: list[dict] = []
+
+    lines, cols, rows, head, end = ledger.load(ledger_file)
+    idx_map = {r[0]: i for i, r in enumerate(rows)}
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    bt = chr(96)
+    nl = chr(10)
+    bs = chr(92)
+
+    for raw in tasks_payload or []:
+        if not isinstance(raw, dict):
+            continue
+        tid = str(raw.get("id") or "").strip().upper()
+        if not re.fullmatch(r"T-[0-9]+", tid):
+            tid = f"T-{next_num:03d}"
+            next_num += 1
+        title = str(raw.get("title") or f"Task {tid}").strip()
+        role = str(raw.get("role") or "developer").strip()
+        stage = str(raw.get("stage") or default_stage).strip()
+        tool = str(raw.get("tool") or "devin").strip()
+        model = str(raw.get("model") or "swe-2-high").strip()
+        effort = str(raw.get("effort") or "high").strip()
+        depends = str(raw.get("depends") or "none").strip()
+        goal = str(raw.get("goal") or title).strip()
+        allowed = raw.get("allowed_files") or raw.get("allowed") or []
+        raw_criteria = raw.get("criteria") or []
+
+        norm_criteria: list[str] = []
+        for c_idx, c in enumerate(raw_criteria, 1):
+            c_str = str(c.get("text") if isinstance(c, dict) else c).strip()
+            if not c_str:
+                continue
+            if not re.match(r"^[A-Za-z]-[0-9]+:", c_str):
+                c_str = f"C-{c_idx:02d}: {c_str}"
+            norm_criteria.append(c_str)
+        if not norm_criteria:
+            norm_criteria = ["C-01: Verification pass."]
+
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48].strip("-")
+        filename = f"{tid}-{slug}.md" if slug else f"{tid}.md"
+        file_path = tasks_dir / filename
+
+        allowed_bullets = nl.join(f"- {bt}{f}{bt}" for f in allowed) if allowed else "- none"
+        criteria_bullets = nl.join(f"- [ ] {c}" for c in norm_criteria)
+        wt_path = f"{target_root.parent}{bs}worktrees{bs}{target_root.name}-{tid.lower()}-{slug or 'task'}"
+
+        task_lines = [
+            f"# {tid}: {title}",
+            "",
+            f"Role: {role}",
+            f"Tool: {tool}",
+            f"Model: {model}",
+            f"Effort: {effort}",
+            f"Stage: {stage}",
+            f"Depends on: {depends}",
+            f"Branch: {tid.lower()}-{slug or 'task'}",
+            f"Worktree: {wt_path}",
+            "Independent check: tester",
+            "Resume: none",
+            "Routing exception: human authorized via AgentsFlower Studio (2026-10-24)",
+            "",
+            "## Goal",
+            "",
+            goal,
+            "",
+            "## Read first",
+            "",
+            f"- {flow_root.name}/docs/ai-handoff-protocol.md",
+            "",
+            "## Allowed files",
+            "",
+            allowed_bullets,
+            "",
+            "## Do not touch",
+            "",
+            "- All other files.",
+            "",
+            "## Setup",
+            "",
+            "- nothing",
+            "",
+            "## Port",
+            "",
+            "- nothing",
+            "",
+            "## Rebuild together",
+            "",
+            "- nothing",
+            "",
+            "## Acceptance criteria",
+            "",
+            criteria_bullets,
+            "",
+            "## Checks",
+            "",
+            f"- python -m unittest discover -s {flow_root.name}/tests",
+            "",
+            "## Result",
+            "",
+            "<!-- Worker writes its outcome below this block -->",
+            "",
+        ]
+        file_path.write_text(nl.join(task_lines), encoding="utf-8")
+
+        row = [""] * len(cols)
+        row[cols.index("ID")] = tid
+        row[cols.index("Title")] = title
+        row[cols.index("Stage")] = stage
+        row[cols.index("Role")] = role
+        row[cols.index("Tool")] = tool
+        row[cols.index("Status")] = "ready"
+        row[cols.index("Depends on")] = "" if depends == "none" else depends
+        row[cols.index("Notes")] = f"model={model}; effort={effort}"
+        row[cols.index("Updated")] = now_str
+        if tid in idx_map:
+            rows[idx_map[tid]] = row
+        else:
+            idx_map[tid] = len(rows)
+            rows.append(row)
+
+        rel_path = file_path.relative_to(target_root).as_posix() if file_path.is_relative_to(target_root) else str(file_path)
+        registered_ids.append(tid)
+        created_files.append(rel_path)
+        normalized_tasks.append({
+            "id": tid,
+            "title": title,
+            "stage": stage,
+            "role": role,
+            "tool": tool,
+            "model": model,
+            "effort": effort,
+            "file": rel_path,
+        })
+
+    if registered_ids:
+        ledger.save(ledger_file, lines, head, end, rows)
+
+    return {
+        "ok": bool(registered_ids),
+        "registered": registered_ids,
+        "files": created_files,
+        "tasks": normalized_tasks,
+        "task_id": registered_ids[0] if registered_ids else "",
+        "file": created_files[0] if created_files else "",
+    }
+
+
+def get_task_context(target_root: Path, task_id: str) -> dict:
+    tid = (task_id or "").strip().upper()
+    tasks_data = get_tasks_data(str(target_root))
+    all_tasks = tasks_data.get("tasks", [])
+    task_obj = next((t for t in all_tasks if t.get("id", "").upper() == tid), None)
+    if not task_obj and all_tasks and not tid:
+        task_obj = all_tasks[0]
+        tid = task_obj["id"]
+    if not task_obj:
+        return {"ok": False, "error": f"Task not found: {task_id}"}
+
+    flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
+    tasks_dir = flow_root / "tasks"
+    contract_file = ""
+    checks: list[str] = []
+    effort = "high"
+    full_allowed = list(task_obj.get("allowed_files") or [])
+    bt = chr(96)
+    if tasks_dir.is_dir():
+        hits = sorted(tasks_dir.glob(f"{tid}*.md"))
+        if hits:
+            tf = hits[0]
+            contract_file = tf.relative_to(target_root).as_posix() if tf.is_relative_to(target_root) else str(tf)
+            try:
+                t_text = tf.read_text(encoding="utf-8-sig")
+                for line in t_text.splitlines():
+                    if line.startswith("Effort:"):
+                        effort = line.split(":", 1)[1].strip() or effort
+                        break
+                sections = re.split(r"^## ", t_text, flags=re.M)
+                for sec in sections:
+                    if sec.startswith("Allowed files"):
+                        parsed_allowed = [
+                            ln.strip().lstrip("- ").strip(bt).strip()
+                            for ln in sec.splitlines()[1:]
+                            if ln.strip().startswith("-")
+                        ]
+                        if parsed_allowed:
+                            full_allowed = [a for a in parsed_allowed if a and a.lower() != "none"]
+                    elif sec.startswith("Checks"):
+                        checks = [
+                            ln.strip().lstrip("- ").strip(bt).strip()
+                            for ln in sec.splitlines()[1:]
+                            if ln.strip().startswith("-")
+                        ]
+            except Exception:
+                pass
+
+    recent_log: list[str] = []
+    rt_file = flow_root / "tasks" / ".runtime" / f"{tid}.json"
+    if rt_file.is_file():
+        try:
+            rt_data = json.loads(rt_file.read_text(encoding="utf-8-sig"))
+            for att in (rt_data.get("attempts") or [])[-3:]:
+                recent_log.append(
+                    f"Attempt #{att.get('n', 1)}: status={att.get('status', 'unknown')} tool={att.get('tool', task_obj.get('tool', 'devin'))}"
+                )
+        except Exception:
+            pass
+    code, git_log = _git(target_root, "log", "-n", "3", "--oneline")
+    if code == 0 and git_log.strip():
+        for ln in git_log.strip().splitlines()[:3]:
+            recent_log.append(f"git: {ln.strip()}")
+    if not recent_log:
+        recent_log.append(f"Task {tid} registered in ledger (status: {task_obj.get('status', 'ready')})")
+
+    enriched = dict(task_obj)
+    enriched["allowed_files"] = full_allowed
+    enriched["checks"] = checks
+    enriched["effort"] = effort
+    enriched["contract_file"] = contract_file
+
+    return {
+        "ok": True,
+        "task": enriched,
+        "recent_log": recent_log,
+        "git": get_git_summary(target_root),
+    }
+
+
 def get_quotas_data() -> dict:
     """Fetch quota health and tool limits."""
     tools = [
@@ -446,6 +953,16 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         if path == "/api/tasks":
             self.send_json({"ok": True, "data": get_tasks_data(target_project_str)})
+            return
+
+        if path == "/api/task/context":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            tid = qs.get("id", qs.get("task_id", [""]))[0]
+            res = get_task_context(root, tid)
+            self.send_json(res, 200 if res.get("ok") else 404)
             return
 
         if path == "/api/project/tree":
@@ -625,6 +1142,28 @@ class StudioHandler(BaseHTTPRequestHandler):
             target = body.get("target", "")
             res = graft.graft_impact(target_root, target)
             self.send_json(res)
+            return
+
+        if path == "/api/task/synthesize":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            res = synthesize_tasks_from_chat(target_root, body)
+            self.send_json(res, 200 if res.get("ok") else 400)
+            return
+
+        if path in ("/api/task/pool/register", "/api/task/register", "/api/task/batch"):
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            pool_items = body.get("tasks") or body.get("pool") or []
+            if not isinstance(pool_items, list) or not pool_items:
+                self.send_json({"ok": False, "error": "No tasks provided in pool"}, 400)
+                return
+            res = register_task_pool(target_root, pool_items, default_stage=str(body.get("stage") or "7"))
+            self.send_json(res, 200 if res.get("ok") else 400)
             return
 
         if path == "/api/task/create":

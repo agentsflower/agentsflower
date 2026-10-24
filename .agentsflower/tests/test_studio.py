@@ -319,5 +319,215 @@ class TestStudioShell(StudioApiCase):
             self.assertIn(marker, html)
 
 
+
+
+class TestTaskSynthesisAndPool(StudioApiCase):
+    def test_synthesize_generates_task_pool_from_dialogue(self):
+        code, res = self.api(
+            "/api/task/synthesize",
+            method="POST",
+            body={
+                "project": str(studio.REPO_ROOT),
+                "thread": "research",
+                "model": "gemini-4-argon-high",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "1. Architect AST blast-radius synthesis in studio.py using resolve_graft and graft_blast_radius. "
+                            "2. Add unit tests in test_studio.py to verify task pool registration."
+                        ),
+                    }
+                ],
+            },
+        )
+        self.assertEqual(code, 200, res)
+        self.assertTrue(res.get("ok"), res)
+        tasks = res.get("tasks", [])
+        self.assertGreaterEqual(len(tasks), 2, res)
+        self.assertEqual(res.get("pool"), tasks)
+        self.assertIn("blast_radius", res)
+        self.assertIsInstance(res["blast_radius"].get("affected_files"), list)
+        self.assertTrue(res["blast_radius"]["affected_files"], "blast radius should include affected files")
+        for t in tasks:
+            self.assertRegex(t.get("id", ""), r"^T-\d+$")
+            self.assertTrue(t.get("title"))
+            self.assertTrue(t.get("stage"))
+            self.assertIn(t.get("role"), ("developer", "tester", "deployer"))
+            self.assertIn(t.get("effort"), ("low", "medium", "high", "max"))
+            self.assertIn(t.get("model"), ("swe-2-high", "gemini-4-argon-high"))
+            self.assertTrue(t.get("allowed_files"))
+            self.assertTrue(t.get("criteria"))
+            self.assertTrue(any(str(c).startswith("C-01:") for c in t["criteria"]))
+
+    def test_synthesize_complexity_floor_vs_escalation(self):
+        code, res = self.api(
+            "/api/task/synthesize",
+            method="POST",
+            body={
+                "project": str(studio.REPO_ROOT),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "1. Design complex multi-file AST knowledge graph architecture and cross-cutting security gate synthesis across studio.py, graft.py, gate.py, and index.html. "
+                            "2. Update minor CSS badge label in studio.css."
+                        ),
+                    }
+                ],
+            },
+        )
+        self.assertEqual(code, 200, res)
+        tasks = res.get("tasks", [])
+        self.assertGreaterEqual(len(tasks), 2)
+        models = {t["model"] for t in tasks}
+        self.assertIn("gemini-4-argon-high", models)
+        self.assertIn("swe-2-high", models)
+
+    def test_synthesize_leverages_graft_blast_radius(self):
+        from unittest.mock import patch
+
+        with patch.object(
+            studio.graft,
+            "graft_blast_radius",
+            return_value=[".agentsflower/tools/graft.py", ".agentsflower/tools/studio.py"],
+        ) as mock_br:
+            code, res = self.api(
+                "/api/task/synthesize",
+                method="POST",
+                body={
+                    "project": str(studio.REPO_ROOT),
+                    "messages": [{"role": "user", "content": "Refactor resolve_graft in graft.py"}],
+                },
+            )
+            self.assertEqual(code, 200, res)
+            self.assertTrue(mock_br.called)
+            self.assertIn(".agentsflower/tools/graft.py", res["blast_radius"]["affected_files"])
+
+    def test_synthesize_rejects_unregistered_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api(
+                "/api/task/synthesize",
+                method="POST",
+                body={"project": td, "messages": [{"role": "user", "content": "Build feature"}]},
+            )
+            self.assertEqual(code, 403)
+            self.assertFalse(res.get("ok", True))
+
+    def test_batch_register_pool_commits_ledger_and_generates_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "pool_proj"
+            flow = proj / ".agentsflower"
+            (flow / "state").mkdir(parents=True)
+            (flow / "tasks").mkdir(parents=True)
+            studio.save_attached_project(str(proj))
+            try:
+                pool = [
+                    {
+                        "id": "T-201",
+                        "title": "Implement conversational thread switcher",
+                        "stage": "7",
+                        "role": "developer",
+                        "tool": "devin",
+                        "model": "swe-2-high",
+                        "effort": "medium",
+                        "goal": "Add thread switcher in chat header.",
+                        "allowed_files": [".agentsflower/studio/index.html", ".agentsflower/studio/studio.js"],
+                        "criteria": [
+                            "C-01: Header switches between Research and task threads.",
+                            "C-02: Unit tests pass.",
+                        ],
+                    },
+                    {
+                        "id": "T-202",
+                        "title": "Synthesize task pool with AST blast radius",
+                        "stage": "7",
+                        "role": "developer",
+                        "tool": "devin",
+                        "model": "gemini-4-argon-high",
+                        "effort": "high",
+                        "goal": "Implement /api/task/synthesize endpoint.",
+                        "allowed_files": [".agentsflower/tools/studio.py"],
+                        "criteria": [
+                            "C-01: Endpoint returns synthesized task pool.",
+                        ],
+                    },
+                ]
+                code, res = self.api(
+                    "/api/task/pool/register",
+                    method="POST",
+                    body={"project": str(proj), "tasks": pool},
+                )
+                self.assertEqual(code, 200, res)
+                self.assertTrue(res.get("ok"), res)
+                self.assertEqual(res.get("registered"), ["T-201", "T-202"])
+                self.assertEqual(len(res.get("files", [])), 2)
+                ledger_text = (flow / "state" / "tasks.md").read_text(encoding="utf-8")
+                self.assertIn("| T-201 |", ledger_text)
+                self.assertIn("| T-202 |", ledger_text)
+                self.assertIn("Implement conversational thread switcher", ledger_text)
+                self.assertIn("Synthesize task pool with AST blast radius", ledger_text)
+                t201_files = list((flow / "tasks").glob("T-201-*.md"))
+                t202_files = list((flow / "tasks").glob("T-202-*.md"))
+                self.assertEqual(len(t201_files), 1)
+                self.assertEqual(len(t202_files), 1)
+                t202_text = t202_files[0].read_text(encoding="utf-8")
+                self.assertIn("Model: gemini-4-argon-high", t202_text)
+                self.assertIn("Effort: high", t202_text)
+                self.assertIn("- [ ] C-01: Endpoint returns synthesized task pool.", t202_text)
+            finally:
+                try:
+                    attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                    attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                    studio.ATTACHED_FILE.write_text(
+                        json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                    )
+                except Exception:
+                    pass
+
+    def test_task_context_endpoint_returns_contract_files_log_and_diff(self):
+        code, tasks_res = self.api("/api/tasks?" + self.q({"project": str(studio.REPO_ROOT)}))
+        self.assertTrue(tasks_res.get("ok"))
+        first_id = tasks_res["data"]["tasks"][0]["id"]
+        code, res = self.api(
+            "/api/task/context?" + self.q({"project": str(studio.REPO_ROOT), "id": first_id})
+        )
+        self.assertEqual(code, 200, res)
+        self.assertTrue(res.get("ok"), res)
+        self.assertEqual(res["task"]["id"], first_id)
+        self.assertIn("allowed_files", res["task"])
+        self.assertIn("criteria", res["task"])
+        self.assertIn("recent_log", res)
+        self.assertIn("git", res)
+
+    def test_conversational_inception_ui_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            "Research &amp; Inception",
+            'id="btnSynthesizeTasks"',
+            "Synthesize Tasks from Discussion",
+        ):
+            self.assertIn(marker, html)
+
+        for marker in (
+            "/api/task/synthesize",
+            "/api/task/pool/register",
+            "/api/task/context",
+            "Approve & Register Pool in Ledger",
+            "task-pool-card",
+            "Research & Inception",
+        ):
+            self.assertIn(marker, js)
+
+        for marker in (".task-pool-card", ".btn-synthesize", ".btn-approve-pool"):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()
