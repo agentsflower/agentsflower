@@ -117,7 +117,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-130 | AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate | 7 | developer | devin | done | none | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 | Multi-project file tree accordion, Explorer tab, global context broadcast, and consent-gated install | 2026-10-24 12:31 |
 | T-131 | Verify Studio multi-project explorer and authorization gate | 7 | tester | devin | done |  | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 |  | 2026-10-24 12:31 |
 | T-132 | Studio UI Pixel-Perfect Implementation from Visual Mockup Contract | 7 | developer | devin | in progress |  |  |  | 2026-10-24 15:27 |
-| T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | ready |  |  | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 15:50 |
+| T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | in progress |  |  | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 15:50 |
 
 
 
