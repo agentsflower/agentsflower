@@ -204,7 +204,7 @@ body {
   padding: 0 20px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .nav-group-primary {
@@ -1489,10 +1489,127 @@ body {
 /* ===== IDE Explorer Grid ===== */
 .explorer-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 10px 400px;
+  column-gap: 8px;
   height: calc(100vh - 140px);
   min-height: 480px;
+}
+
+/* Draggable pane splitters with || grip */
+.pane-resizer {
+  width: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  position: relative;
+  z-index: 5;
+}
+.pane-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border-subtle);
+}
+.pane-resizer .resizer-grip {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: -0.12em;
+  color: var(--text-subtle);
+  background: #141b2c;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 8px 1px 8px 3px;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.pane-resizer:hover .resizer-grip,
+.pane-resizer.dragging .resizer-grip {
+  color: #c7d2fe;
+  border-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+body.pane-resizing,
+body.pane-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.pane-resizing iframe {
+  pointer-events: none;
+}
+
+/* Editor file tabs bar above the code viewer */
+.editor-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: thin;
+}
+.editor-tabs:empty {
+  display: none;
+}
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px 8px 0 0;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.editor-tab:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+.editor-tab.active {
+  color: #dbe7ff;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.4), inset 0 0 8px rgba(59, 130, 246, 0.12);
+}
+.editor-tab .ft-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.editor-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.editor-tab-close:hover {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
 }
 .explorer-code-pane,
 .explorer-chat-pane {
@@ -1852,6 +1969,56 @@ body {
 }
 .model-pill:hover { border-color: rgba(99, 102, 241, 0.45); color: #c7d2fe; }
 .model-pill .model-caret { font-size: 0.68rem; color: var(--text-subtle); }
+
+/* Chat model selector dropdown */
+.model-selector-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.model-dropdown {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 230px;
+  background: #101728;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 5px;
+  z-index: 40;
+}
+.model-selector-wrap.open .model-dropdown {
+  display: block;
+}
+.model-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.model-option:hover {
+  background: rgba(99, 102, 241, 0.14);
+}
+.model-option.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #c7d2fe;
+}
+.model-option .model-id {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 400;
+  color: var(--text-subtle);
+}
 .chat-send {
   width: 28px;
   height: 28px;
@@ -1930,5 +2097,5 @@ body {
 
 /* ===== Explorer responsive ===== */
 @media (max-width: 1200px) {
-  .explorer-grid { grid-template-columns: minmax(0, 1fr) 340px; }
+  .explorer-grid { grid-template-columns: minmax(0, 1fr) 10px 340px; }
 }
