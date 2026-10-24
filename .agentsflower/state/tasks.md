@@ -116,8 +116,9 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-129 | Studio Classic Dashboard Integration: Analytics & Roadmap views | 7 | developer | devin | done | T-128 |  | Embedded overview, Gantt and roadmap views in Studio with on-demand rebuild action | 2026-10-24 05:15 |
 | T-130 | AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate | 7 | developer | devin | done | none | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 | Multi-project file tree accordion, Explorer tab, global context broadcast, and consent-gated install | 2026-10-24 12:31 |
 | T-131 | Verify Studio multi-project explorer and authorization gate | 7 | tester | devin | done |  | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 |  | 2026-10-24 12:31 |
-| T-132 | Studio UI Pixel-Perfect Implementation from Visual Mockup Contract | 7 | developer | devin | in progress |  |  |  | 2026-10-24 15:27 |
-| T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | in progress |  |  | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 15:50 |
+| T-132 | Studio UI Pixel-Perfect Implementation from Visual Mockup Contract | 7 | developer | devin | done |  | 14dcc0f52b93bf3fd46a1b86cb60798e08615869 |  | 2026-10-24 16:02 |
+| T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | done |  | 14dcc0f52b93bf3fd46a1b86cb60798e08615869 | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 16:02 |
+| T-134 | Studio Interactive Enhancements: Draggable Splitters, Editor File Tabs, and Model Selector | 7 | developer | devin | ready | none |  | Bounded draggable resizers (|| grip), editor file tabs bar, clean topnav (4 tabs), chat model selector dropdown | 2026-10-24 20:56 |
 
 
 

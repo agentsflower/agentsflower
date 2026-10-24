@@ -78,3 +78,24 @@ When `Task Board` is active in top navigation:
   - `Verification / Review (0)` with purple dot
   - `Done & Merged (81)` with green dot
 - **Task Cards:** Task ID badge (`T-001`), Stage badge (`Stage 6`), Title text, Role (`Developer`), Tool (`devin`).
+
+## 5. Explorer Interactive Features & Refinements (Mockup 3 / Screenshot 3)
+
+Approved visual enhancements from `mockup-explorer-splitters-tabs.png`:
+- **Draggable Vertical Splitters (`||` grip handles):**
+  - Gutter 1: between left workspace sidebar and center code viewer.
+  - Gutter 2: between center code viewer and right chat pane.
+  - Distinct vertical grip icon `||` centered on the divider.
+  - Fluid dragging with mouse to resize panels; persists custom widths in `localStorage`.
+  - Boundaries: sidebar (220px..450px), chat (320px..650px), code pane flex-shrinks/expands.
+- **Editor File Tabs Bar:**
+  - Above code viewer: horizontal tabs bar with open files (e.g. `[icon] AGENTS.md ×`, `[icon] Scratchpad ×`).
+  - Active tab highlighted with blue/accent border.
+  - Clicking file in tree opens a new tab or switches to it.
+  - Close button `×` closes tab.
+- **Top Navigation Cleanliness:**
+  - Strictly 4 core tabs: `Explorer`, `Task Board [N]`, `Analytics & Roadmap`, `Model Quota Hub`.
+  - Removed junk tabs (`Task Contract Creator`, `Quick Start`, etc.).
+  - Zero horizontal scrollbars (`overflow-x: hidden`).
+- **Chat Model Selector:**
+  - Interactive pill in chat composer (`Devin swe-2-high ^`) that opens a dropdown to switch models (`swe-2-high`, `gemini-4-argon-high`, `claude-opus-4-6-thinking`, `gpt-5-5-high`, local options).
