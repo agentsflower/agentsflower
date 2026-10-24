@@ -27,6 +27,21 @@ document.addEventListener('DOMContentLoaded', () => {
     explorerPath: '',
     inspectorTaskId: '',
     pendingInstall: null,
+    openTabs: [],
+    chatModel: 'swe-2-high',
+  };
+
+  const CHAT_MODELS = [
+    { id: 'swe-2-high', label: 'Devin swe-2-high', note: 'Floor default' },
+    { id: 'gemini-4-argon-high', label: 'Gemini 4 Argon High', note: 'gemini-4-argon-high' },
+    { id: 'claude-opus-4-6-thinking', label: 'Claude Opus 4.6 Thinking', note: 'claude-opus-4-6-thinking' },
+    { id: 'gpt-5-5-high', label: 'GPT-5.5 High', note: 'gpt-5-5-high' },
+    { id: 'local-ollama', label: 'Local / Ollama Model', note: 'Offline zero-token' },
+  ];
+
+  const PANE_LIMITS = {
+    sidebar: { min: 200, max: 450, key: 'af_sidebar_width' },
+    chat: { min: 320, max: 650, key: 'af_chat_width' },
   };
 
   // DOM Elements
@@ -110,6 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const explorerCodeView = document.getElementById('explorerCodeView');
   const explorerStatusBar = document.getElementById('explorerStatusBar');
   const inspectorTaskSelect = document.getElementById('inspectorTaskSelect');
+  const explorerGrid = document.getElementById('explorerGrid');
+  const editorTabsBar = document.getElementById('editorTabsBar');
+  const sidebarEl = document.querySelector('.sidebar');
+  const sidebarResizer = document.getElementById('sidebarResizer');
+  const chatResizer = document.getElementById('chatResizer');
 
   // Chat Cockpit Elements
   const chatStream = document.getElementById('chatStream');
@@ -119,6 +139,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnChatPlus = document.getElementById('btnChatPlus');
   const btnChatRefresh = document.getElementById('btnChatRefresh');
   const chatModelPill = document.getElementById('chatModelPill');
+  const chatModelSelector = document.getElementById('chatModelSelector');
+  const chatModelDropdown = document.getElementById('chatModelDropdown');
 
   // Authorization Gate Modal
   const modalAuthBackdrop = document.getElementById('modalAuthBackdrop');
@@ -144,6 +166,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Initialize App ---
   async function init() {
     setupEventListeners();
+    setupPaneSplitters();
+    setupModelSelector();
     renderAllowedTags();
     renderCriteriaList();
     await loadProjects();
@@ -1024,8 +1048,71 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // --- Draggable pane splitters ---
+  function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+  function applyChatWidth(w) {
+    if (explorerGrid) {
+      explorerGrid.style.gridTemplateColumns = `minmax(0, 1fr) 10px ${w}px`;
+    }
+  }
+
+  function bindResizer(resizerEl, limits, measure, apply) {
+    if (!resizerEl) return;
+    resizerEl.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      let last = null;
+      const onMove = (ev) => {
+        last = clamp(Math.round(measure(ev)), limits.min, limits.max);
+        apply(last);
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        resizerEl.classList.remove('dragging');
+        document.body.classList.remove('pane-resizing');
+        if (last !== null) {
+          try { localStorage.setItem(limits.key, String(last)); } catch (err) { /* localStorage unavailable */ }
+        }
+      };
+      resizerEl.classList.add('dragging');
+      document.body.classList.add('pane-resizing');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function restorePaneWidths() {
+    try {
+      const sb = parseInt(localStorage.getItem(PANE_LIMITS.sidebar.key), 10);
+      if (sidebarEl && Number.isFinite(sb)) {
+        sidebarEl.style.width = `${clamp(sb, PANE_LIMITS.sidebar.min, PANE_LIMITS.sidebar.max)}px`;
+      }
+      const cw = parseInt(localStorage.getItem(PANE_LIMITS.chat.key), 10);
+      if (Number.isFinite(cw)) {
+        applyChatWidth(clamp(cw, PANE_LIMITS.chat.min, PANE_LIMITS.chat.max));
+      }
+    } catch (err) { /* localStorage unavailable */ }
+  }
+
+  function setupPaneSplitters() {
+    restorePaneWidths();
+    bindResizer(sidebarResizer, PANE_LIMITS.sidebar,
+      (ev) => ev.clientX - sidebarEl.getBoundingClientRect().left,
+      (w) => { sidebarEl.style.width = `${w}px`; });
+    bindResizer(chatResizer, PANE_LIMITS.chat,
+      (ev) => {
+        const chatPane = explorerGrid.querySelector('.explorer-chat-pane');
+        return chatPane.getBoundingClientRect().right - ev.clientX;
+      },
+      applyChatWidth);
+  }
+
   // --- IDE Explorer: breadcrumbs, code viewer ---
   function resetExplorerPane() {
+    state.explorerPath = '';
+    state.openTabs = [];
+    renderEditorTabs();
     if (explorerBreadcrumbs) explorerBreadcrumbs.innerHTML = '<span class="crumb-leaf">Select a file to preview its contents</span>';
     if (explorerCodeView) explorerCodeView.innerHTML = '<div class="code-empty">Click a file in the workspace tree to inspect it here.</div>';
     if (explorerStatusBar) explorerStatusBar.textContent = 'Ready';
@@ -1037,6 +1124,11 @@ document.addEventListener('DOMContentLoaded', () => {
       await switchProject(projPath);
     }
     state.explorerPath = rel;
+    const tabKey = treeKey(projPath, rel);
+    if (!state.openTabs.some(t => t.key === tabKey)) {
+      state.openTabs.push({ key: tabKey, proj: projPath, rel, name: rel.split('/').pop() });
+    }
+    renderEditorTabs();
     renderExplorerBreadcrumbs(projPath, rel);
     explorerCodeView.innerHTML = '<div class="code-empty">Loading...</div>';
     const res = await fetchJSON(`/api/file/read?project=${encodeURIComponent(projPath)}&path=${encodeURIComponent(rel)}`);
@@ -1084,6 +1176,43 @@ document.addEventListener('DOMContentLoaded', () => {
       state.openDirs.add(treeKey(projPath, acc));
     });
     renderProjectAccordion();
+  }
+
+  // --- Editor file tabs bar ---
+  function renderEditorTabs() {
+    if (!editorTabsBar) return;
+    editorTabsBar.innerHTML = '';
+    const activeKey = state.explorerPath ? treeKey(state.currentProject, state.explorerPath) : '';
+    state.openTabs.forEach(t => {
+      const tab = document.createElement('div');
+      tab.className = `editor-tab${t.key === activeKey ? ' active' : ''}`;
+      tab.title = t.rel;
+      tab.innerHTML = `
+        ${ftIconFor({ type: 'file', name: t.name })}
+        <span class="editor-tab-name">${escapeHTML(t.name)}</span>
+        <button type="button" class="editor-tab-close" title="Close tab">&times;</button>`;
+      tab.addEventListener('click', () => openExplorerFile(t.proj, t.rel));
+      tab.querySelector('.editor-tab-close').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        closeFileTab(t.key);
+      });
+      editorTabsBar.appendChild(tab);
+    });
+  }
+
+  function closeFileTab(key) {
+    const idx = state.openTabs.findIndex(t => t.key === key);
+    if (idx === -1) return;
+    const removed = state.openTabs.splice(idx, 1)[0];
+    if (removed.rel === state.explorerPath && removed.proj === state.currentProject) {
+      const next = state.openTabs[idx - 1] || state.openTabs[state.openTabs.length - 1];
+      if (next) {
+        openExplorerFile(next.proj, next.rel);
+      } else {
+        resetExplorerPane();
+      }
+    }
+    renderEditorTabs();
   }
 
   // --- Lightweight syntax highlighting ---
@@ -1204,10 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const toolLabel = chatToolLabel(t);
-    if (chatModelPill) {
-      chatModelPill.innerHTML = `${escapeHTML(toolLabel)} <span class="model-caret">&#8963;</span>`;
-      chatModelPill.title = `Worker model for ${t.id}`;
-    }
+    updateChatModelPill();
     const running = (t.status || '').toLowerCase() === 'in progress';
     const statusLabel = running ? 'RUNNING Attempt 1' : String(t.status || 'ready').toUpperCase();
     const workedDetail = running
@@ -1299,6 +1425,58 @@ document.addEventListener('DOMContentLoaded', () => {
     chatStream.appendChild(bubble);
     chatInput.value = '';
     chatStream.scrollTop = chatStream.scrollHeight;
+  }
+
+  // --- Chat model selector ---
+  function currentChatModel() {
+    return CHAT_MODELS.find(m => m.id === state.chatModel) || CHAT_MODELS[0];
+  }
+
+  function updateChatModelPill() {
+    if (!chatModelPill) return;
+    const m = currentChatModel();
+    chatModelPill.innerHTML = `${escapeHTML(m.label)} <span class="model-caret">&#8963;</span>`;
+    chatModelPill.title = `Chat model: ${m.label}`;
+  }
+
+  function renderModelDropdown() {
+    if (!chatModelDropdown) return;
+    chatModelDropdown.innerHTML = '';
+    CHAT_MODELS.forEach(m => {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = `model-option${m.id === state.chatModel ? ' active' : ''}`;
+      opt.setAttribute('role', 'menuitem');
+      opt.innerHTML = `<span>${escapeHTML(m.label)}</span><span class="model-id">${escapeHTML(m.note)}</span>`;
+      opt.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        state.chatModel = m.id;
+        try { sessionStorage.setItem('af_chat_model', m.id); } catch (err) { /* storage unavailable */ }
+        updateChatModelPill();
+        renderModelDropdown();
+        chatModelSelector.classList.remove('open');
+      });
+      chatModelDropdown.appendChild(opt);
+    });
+  }
+
+  function setupModelSelector() {
+    if (!chatModelSelector || !chatModelPill) return;
+    try {
+      const saved = sessionStorage.getItem('af_chat_model');
+      if (saved && CHAT_MODELS.some(m => m.id === saved)) state.chatModel = saved;
+    } catch (err) { /* storage unavailable */ }
+    updateChatModelPill();
+    renderModelDropdown();
+    chatModelPill.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      chatModelSelector.classList.toggle('open');
+    });
+    document.addEventListener('click', (ev) => {
+      if (!chatModelSelector.contains(ev.target)) {
+        chatModelSelector.classList.remove('open');
+      }
+    });
   }
 
   // --- Explicit Authorization Gate ---

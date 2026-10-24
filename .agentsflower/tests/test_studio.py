@@ -254,14 +254,53 @@ class TestStudioShell(StudioApiCase):
             'data-tab="kanban"',
             'id="taskTotalBadge"',
             'data-tab="analytics"',
-            'data-tab="graft"',
             'data-tab="capacity"',
-            'data-tab="creator"',
-            'data-tab="guide"',
             'class="kanban-grid"',
             'id="stageFilters"',
         ):
             self.assertIn(marker, html)
+
+    def test_index_topnav_has_only_four_core_tabs(self):
+        html = self.shell_html()
+        self.assertEqual(html.count('data-tab="'), 4, html[:2000])
+        for removed in ('data-tab="graft"', 'data-tab="creator"', 'data-tab="guide"'):
+            self.assertNotIn(removed, html)
+
+    def test_index_resizers_and_editor_tabs_bar(self):
+        html = self.shell_html()
+        for marker in (
+            'id="sidebarResizer"',
+            'id="chatResizer"',
+            'resizer-grip',
+            'id="editorTabsBar"',
+        ):
+            self.assertIn(marker, html)
+
+    def test_index_model_selector_dropdown(self):
+        html = self.shell_html()
+        for marker in ('id="chatModelPill"', 'id="chatModelDropdown"', 'model-dropdown'):
+            self.assertIn(marker, html)
+
+    def test_studio_js_splitter_persistence_and_models(self):
+        js = self.shell_asset("studio.js")
+        for marker in (
+            'af_sidebar_width',
+            'af_chat_width',
+            'localStorage',
+            'gemini-4-argon-high',
+            'claude-opus-4-6-thinking',
+            'gpt-5-5-high',
+        ):
+            self.assertIn(marker, js)
+
+    def test_studio_css_topnav_no_horizontal_scroll(self):
+        css = self.shell_asset("studio.css")
+        block = css.split(".topnav-menu", 1)[1].split("}", 1)[0]
+        self.assertIn("overflow-x: hidden", block)
+
+    def shell_asset(self, name):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/{name}") as resp:
+            return resp.read().decode("utf-8")
 
     def test_index_sidebar_and_chat_cockpit(self):
         html = self.shell_html()

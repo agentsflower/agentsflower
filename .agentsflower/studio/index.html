@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="studio.css?v=2">
+  <link rel="stylesheet" href="studio.css?v=3">
 </head>
 <body>
   <!-- Ambient backdrop lights -->
@@ -63,40 +63,12 @@
             <span>Analytics & Roadmap</span>
           </button>
 
-          <button class="nav-item nav-link" data-tab="graft">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="18" cy="5" r="3"/>
-              <circle cx="6" cy="12" r="3"/>
-              <circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-            <span>Knowledge Graph</span>
-          </button>
-
           <button class="nav-item nav-link" data-tab="capacity">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 20V10M12 20V4M6 20v-6"/>
             </svg>
             <span>Model Quota Hub</span>
             <span class="pulse-indicator"></span>
-          </button>
-
-          <button class="nav-item nav-link" data-tab="creator">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="16"/>
-              <line x1="8" y1="12" x2="16" y2="12"/>
-            </svg>
-            <span>Task Contract Creator</span>
-          </button>
-
-          <button class="nav-item nav-link" data-tab="guide">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
-            </svg>
-            <span>Quick Start Guide</span>
           </button>
         </div>
       </nav>
@@ -149,6 +121,9 @@
           </div>
         </div>
       </aside>
+
+      <!-- Splitter 1: sidebar <-> workspace content -->
+      <div class="pane-resizer" id="sidebarResizer" title="Drag to resize sidebar"><span class="resizer-grip">||</span></div>
 
       <!-- Main Workspace Content Area -->
       <main class="main-content">
@@ -238,8 +213,9 @@
 
         <!-- 2. IDE Explorer View -->
         <section class="view-panel" id="view-explorer">
-          <div class="explorer-grid">
+          <div class="explorer-grid" id="explorerGrid">
             <div class="explorer-code-pane glass-card">
+              <div class="editor-tabs" id="editorTabsBar"></div>
               <div class="explorer-breadcrumbs" id="explorerBreadcrumbs">
                 <span class="crumb-leaf">Select a file to preview its contents</span>
               </div>
@@ -248,6 +224,9 @@
               </div>
               <div class="explorer-statusbar" id="explorerStatusBar">Ready</div>
             </div>
+
+            <!-- Splitter 2: code viewer <-> chat pane -->
+            <div class="pane-resizer" id="chatResizer" title="Drag to resize chat pane"><span class="resizer-grip">||</span></div>
 
             <div class="explorer-chat-pane glass-card">
               <div class="chat-header">
@@ -272,7 +251,10 @@
                   <button type="button" class="chat-icon-btn" id="btnChatPlus" title="Attach context">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   </button>
-                  <button type="button" class="model-pill" id="chatModelPill" title="Active worker model">Devin swe-2-high <span class="model-caret">&#8963;</span></button>
+                  <div class="model-selector-wrap" id="chatModelSelector">
+                    <button type="button" class="model-pill" id="chatModelPill" title="Chat model selector">Devin swe-2-high <span class="model-caret">&#8963;</span></button>
+                    <div class="model-dropdown" id="chatModelDropdown" role="menu"></div>
+                  </div>
                   <span class="composer-spacer"></span>
                   <button type="button" class="chat-send" id="btnChatSend" title="Send message">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -639,6 +621,6 @@
     </div>
   </div>
 
-  <script src="studio.js?v=3"></script>
+  <script src="studio.js?v=4"></script>
 </body>
 </html>
