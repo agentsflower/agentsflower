@@ -1,5 +1,6 @@
 """Unit tests for AgentsFlower specialized skills ecosystem, including geo-seo-audit."""
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 FLOW = Path(__file__).resolve().parents[1]
 SKILLS = FLOW / "skills"
 GEO_AUDIT_SCRIPT = SKILLS / "geo-seo-audit" / "scripts" / "geo_audit.py"
+ART_DIRECTION = SKILLS / "frontend-art-direction"
 
 
 class SkillsEcosystemTests(unittest.TestCase):
@@ -69,6 +71,63 @@ class SkillsEcosystemTests(unittest.TestCase):
             self.assertEqual(data["verdict"], "OPTIMIZED")
             self.assertEqual(data["categories"]["structured_data"]["score"], 25)
             self.assertEqual(data["categories"]["semantic_structure"]["score"], 20)
+
+
+class FrontendArtDirectionSkillTests(unittest.TestCase):
+    def test_skill_package_structure(self):
+        self.assertTrue(ART_DIRECTION.is_dir(), "frontend-art-direction/ must exist")
+        skill_md = ART_DIRECTION / "SKILL.md"
+        self.assertTrue(skill_md.is_file(), "frontend-art-direction/SKILL.md must exist")
+        self.assertTrue((ART_DIRECTION / "references").is_dir(), "references/ must exist")
+        for name in ("anti-slop-guidelines.md", "micro-motion-easing.md", "design-tokens-wcag.md"):
+            self.assertTrue((ART_DIRECTION / "references" / name).is_file(), f"references/{name} must exist")
+        self.assertLessEqual(len(skill_md.read_text(encoding="utf-8").splitlines()), 500,
+                             "SKILL.md must stay a <= 500-line router")
+
+    def test_skill_frontmatter_conforms_to_spec(self):
+        content = (ART_DIRECTION / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---"), "SKILL.md must open with YAML frontmatter")
+        end = content.find("\n---", 3)
+        self.assertGreater(end, 0, "frontmatter block must be closed")
+        fm = content[3:end]
+        self.assertIn("name: frontend-art-direction", fm, "name must equal directory name")
+        self.assertRegex(fm, r"description:\s*\S", "description must be present and non-empty")
+        self.assertIn("domain: 1", fm, "metadata.domain must be 1")
+        self.assertIn("Leonxlnx/taste-skill@main", fm)
+        self.assertIn("emilkowalski/design-eng@main", fm)
+        self.assertIn("license: MIT", fm, "metadata.license must be MIT")
+
+    def test_skill_routes_to_existing_references(self):
+        content = (ART_DIRECTION / "SKILL.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\((references/[^)\s]+)\)", content)
+        self.assertTrue(links, "router SKILL.md must link its references/ files")
+        for link in links:
+            self.assertTrue((ART_DIRECTION / link).is_file(), f"broken reference link: {link}")
+
+    def test_references_provide_concrete_rules(self):
+        refs = ART_DIRECTION / "references"
+        anti = (refs / "anti-slop-guidelines.md").read_text(encoding="utf-8").lower()
+        self.assertIn("icon card", anti, "anti-slop rules must ban the icon-card pattern")
+        self.assertIn("shadow", anti, "anti-slop rules must cover translucent shadows")
+        self.assertIn("typograph", anti, "anti-slop rules must cover typography hierarchy")
+        motion = (refs / "micro-motion-easing.md").read_text(encoding="utf-8").lower()
+        self.assertIn("ease-out", motion, "motion rules must mandate ease-out on enter")
+        self.assertIn("ease-in", motion, "motion rules must address the ease-in mistake")
+        self.assertIn("prefers-reduced-motion", motion, "motion rules must require reduced-motion compliance")
+        tokens = (refs / "design-tokens-wcag.md").read_text(encoding="utf-8").lower()
+        self.assertIn("4.5:1", tokens, "WCAG normal-text contrast ratio must be stated")
+        self.assertIn("3:1", tokens, "WCAG large-text/UI-component ratio must be stated")
+        self.assertIn("dark", tokens, "token rules must cover dark mode palettes")
+
+    def test_registered_in_index_and_attribution(self):
+        index = (SKILLS / "INDEX.md").read_text(encoding="utf-8")
+        self.assertIn("frontend-art-direction", index, "INDEX.md must register the skill")
+        self.assertIn("frontend-art-direction/SKILL.md", index, "INDEX.md must link the SKILL.md")
+        attr = (SKILLS / "ATTRIBUTION.md").read_text(encoding="utf-8")
+        self.assertIn("frontend-art-direction", attr, "ATTRIBUTION.md must name the skill")
+        self.assertIn("Leonxlnx/taste-skill", attr, "ATTRIBUTION.md must pin taste-skill")
+        self.assertIn("emilkowalski", attr, "ATTRIBUTION.md must credit emilkowalski")
+        self.assertIn("MIT", attr, "ATTRIBUTION.md must record the MIT license")
 
 
 if __name__ == "__main__":
