@@ -25,7 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     openDirs: new Set(),
     treeCache: {},
     explorerPath: '',
-    inspectorTaskId: '',
+    inspectorTaskId: 'research',
+    threads: { research: [] },
     pendingInstall: null,
     openTabs: [],
     chatModel: 'swe-2-high',
@@ -138,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnChatNew = document.getElementById('btnChatNew');
   const btnChatPlus = document.getElementById('btnChatPlus');
   const btnChatRefresh = document.getElementById('btnChatRefresh');
+  const btnSynthesizeTasks = document.getElementById('btnSynthesizeTasks');
   const chatModelPill = document.getElementById('chatModelPill');
   const chatModelSelector = document.getElementById('chatModelSelector');
   const chatModelDropdown = document.getElementById('chatModelDropdown');
@@ -194,7 +196,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quick Create Button in Topbar
     if (btnQuickCreate) {
       btnQuickCreate.addEventListener('click', () => {
-        switchTab('creator');
+        switchTab('explorer');
+        activateResearchThread();
       });
     }
 
@@ -285,8 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
-    if (btnChatNew) btnChatNew.addEventListener('click', () => switchTab('creator'));
-    if (btnChatPlus) btnChatPlus.addEventListener('click', () => switchTab('creator'));
+    if (btnChatNew) btnChatNew.addEventListener('click', activateResearchThread);
+    if (btnChatPlus) btnChatPlus.addEventListener('click', activateResearchThread);
+    if (btnSynthesizeTasks) btnSynthesizeTasks.addEventListener('click', synthesizeTasksFromDiscussion);
     if (btnChatRefresh) {
       btnChatRefresh.addEventListener('click', async () => {
         invalidateTreeCache(state.currentProject);
@@ -1287,24 +1291,37 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Task Inception & Chat Cockpit ---
+  function getThreadItems(threadId) {
+    const key = threadId || 'research';
+    if (!state.threads[key]) state.threads[key] = [];
+    return state.threads[key];
+  }
+
+  function activateResearchThread() {
+    state.inspectorTaskId = 'research';
+    if (inspectorTaskSelect) inspectorTaskSelect.value = 'research';
+    renderInspector();
+    if (chatInput) chatInput.focus();
+  }
+
   function populateInspectorTasks() {
     if (!inspectorTaskSelect) return;
-    const prev = state.inspectorTaskId;
+    const prev = state.inspectorTaskId || 'research';
     inspectorTaskSelect.innerHTML = '';
-    if (!state.tasks.length) {
-      inspectorTaskSelect.innerHTML = '<option value="">No tasks in workspace</option>';
-      state.inspectorTaskId = '';
-      renderInspector();
-      return;
-    }
-    const stillThere = state.tasks.some(t => t.id === prev);
-    const pick = stillThere ? prev : (state.tasks.find(t => t.status === 'in progress') || state.tasks[0]).id;
+    const researchOpt = document.createElement('option');
+    researchOpt.value = 'research';
+    researchOpt.textContent = '🔍 Research & Inception';
+    inspectorTaskSelect.appendChild(researchOpt);
+
     state.tasks.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.id;
-      opt.textContent = `${t.id} \u2014 ${t.title}`;
+      opt.textContent = t.id + ' — ' + t.title;
       inspectorTaskSelect.appendChild(opt);
     });
+
+    const validTask = state.tasks.some(t => t.id === prev);
+    const pick = (prev === 'research' || !validTask) ? 'research' : prev;
     inspectorTaskSelect.value = pick;
     state.inspectorTaskId = pick;
     renderInspector();
@@ -1313,55 +1330,198 @@ document.addEventListener('DOMContentLoaded', () => {
   function chatToolLabel(t) {
     const toolNames = { devin: 'Devin', claude: 'Claude', codex: 'Codex', agy: 'Gemini' };
     const toolName = toolNames[(t.tool || '').toLowerCase()] || (t.tool ? t.tool : 'Devin');
-    return t.model ? `${toolName} ${t.model}` : `${toolName} swe-2-high`;
+    return t.model ? (toolName + ' ' + t.model) : (toolName + ' swe-2-high');
   }
 
   function execStatusText(t) {
     const status = (t.status || '').toLowerCase();
-    const base = `\u0417\u0430\u0434\u0430\u0447\u0430 ${t.id}: ${t.title}`;
-    if (status === 'in progress') return `${base} \u2014 \u0443\u0441\u043f\u0435\u0448\u043d\u043e \u0440\u0430\u0437\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430, \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0430 \u0432 \u0440\u0435\u0435\u0441\u0442\u0440\u0435 \u0438 \u0437\u0430\u043f\u0443\u0449\u0435\u043d\u0430 \u043d\u0430 \u0438\u0441\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435!`;
-    if (status === 'review') return `${base} \u2014 \u0438\u0441\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e, \u0430\u0440\u0442\u0435\u0444\u0430\u043a\u0442 \u043f\u0435\u0440\u0435\u0434\u0430\u043d \u043d\u0430 \u043d\u0435\u0437\u0430\u0432\u0438\u0441\u0438\u043c\u0443\u044e \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443!`;
-    if (status === 'done') return `${base} \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u0430, \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u043f\u0440\u0438\u043d\u044f\u0442 \u0438 \u0441\u043b\u0438\u0442 \u0432 main!`;
-    return `${base} \u2014 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0430 \u0432 \u0440\u0435\u0435\u0441\u0442\u0440\u0435 \u0438 \u0433\u043e\u0442\u043e\u0432\u0430 \u043a \u0437\u0430\u043f\u0443\u0441\u043a\u0443!`;
+    const base = 'Задача ' + t.id + ': ' + t.title;
+    if (status === 'in progress') return base + ' — успешно разблокирована, утверждена в реестре и запущена на исполнение!';
+    if (status === 'review') return base + ' — исполнение завершено, артефакт передан на независимую проверку!';
+    if (status === 'done') return base + ' — проверка пройдена, результат принят и слит в main!';
+    return base + ' — утверждена в реестре и готова к запуску!';
+  }
+
+  function renderThreadItem(item) {
+    if (item.type === 'pool') return createTaskPoolCardElement(item.data, item);
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ' + (item.role === 'assistant' ? 'assistant' : 'user');
+    bubble.textContent = item.content;
+    return bubble;
+  }
+
+  function createTaskPoolCardElement(poolData, holder) {
+    const card = document.createElement('div');
+    card.className = 'task-pool-card';
+    const tasks = poolData.tasks || poolData.pool || [];
+    const blastFiles = (poolData.blast_radius && poolData.blast_radius.affected_files) || [];
+    const registered = Boolean(holder && holder.registered);
+
+    const header = document.createElement('div');
+    header.className = 'pool-card-header';
+    header.innerHTML = '<span>✨ Synthesized Task Pool (' + tasks.length + ')</span><span class="badge">Graft AST</span>';
+    card.appendChild(header);
+
+    const blastEl = document.createElement('div');
+    blastEl.className = 'pool-blast-summary';
+    blastEl.textContent = 'AST Blast Radius (' + blastFiles.length + ' files): ' + (blastFiles.join(', ') || 'scoped to workspace');
+    card.appendChild(blastEl);
+
+    tasks.forEach(t => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'pool-task-item';
+      const isEsc = (t.model || '').includes('argon') || t.tier === 'escalation';
+      const allowedList = (t.allowed_files || t.allowed || []).map(f => '<li><code>' + escapeHTML(f) + '</code></li>').join('');
+      const critList = (t.criteria || []).map(c => '<li>' + escapeHTML(typeof c === 'object' ? (c.id + ': ' + c.text) : String(c)) + '</li>').join('');
+      itemEl.innerHTML =
+        '<div class="pool-task-top">' +
+          '<span class="task-tid">' + escapeHTML(t.id) + '</span>' +
+          '<span class="task-stage-badge">Stage ' + escapeHTML(String(t.stage || '7')) + '</span>' +
+          '<span class="effort-badge">Effort: ' + escapeHTML(t.effort || 'high') + '</span>' +
+          '<span class="model-tier-pill' + (isEsc ? ' escalation' : '') + '">' + escapeHTML(t.model || 'swe-2-high') + '</span>' +
+        '</div>' +
+        '<div class="task-card-title">' + escapeHTML(t.title) + '</div>' +
+        '<details class="pool-task-details">' +
+          '<summary>Allowed Files (' + (t.allowed_files || t.allowed || []).length + ') &amp; Acceptance Criteria (' + (t.criteria || []).length + ')</summary>' +
+          '<div style="margin-top:6px; font-size:0.74rem;">' +
+            '<strong>Allowed Files:</strong><ul style="margin:4px 0 6px 16px;">' + allowedList + '</ul>' +
+            '<strong>Acceptance Criteria:</strong><ul style="margin:4px 0 0 16px;">' + critList + '</ul>' +
+          '</div>' +
+        '</details>';
+      card.appendChild(itemEl);
+    });
+
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn-approve-pool';
+    approveBtn.disabled = registered;
+    approveBtn.textContent = registered
+      ? ('✓ Registered in Ledger (' + tasks.map(x => x.id).join(', ') + ')')
+      : 'Approve & Register Pool in Ledger';
+    approveBtn.addEventListener('click', () => approveAndRegisterPool(tasks, approveBtn, holder));
+    card.appendChild(approveBtn);
+    return card;
+  }
+
+  async function approveAndRegisterPool(tasks, btnEl, holder) {
+    if (!tasks || !tasks.length) return;
+    btnEl.disabled = true;
+    btnEl.textContent = 'Registering pool in ledger...';
+    const res = await fetchJSON('/api/task/pool/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: state.currentProject, tasks: tasks })
+    });
+    if (res && res.ok) {
+      if (holder) holder.registered = true;
+      btnEl.textContent = '✓ Registered in Ledger (' + (res.registered || []).join(', ') + ')';
+      await loadTasks(state.currentProject);
+      renderProjectAccordion();
+    } else {
+      btnEl.disabled = false;
+      btnEl.textContent = 'Approve & Register Pool in Ledger';
+      alert('Failed to register pool: ' + (res && res.error ? res.error : 'Unknown error'));
+    }
+  }
+
+  async function synthesizeTasksFromDiscussion() {
+    if (!chatStream) return;
+    if (chatInput && chatInput.value.trim()) sendChatMessage();
+    const threadKey = state.inspectorTaskId || 'research';
+    const items = getThreadItems(threadKey);
+    const messages = items.filter(it => it.type === 'message').map(it => ({ role: it.role, content: it.content }));
+
+    if (btnSynthesizeTasks) {
+      btnSynthesizeTasks.disabled = true;
+      btnSynthesizeTasks.textContent = '✨ Synthesizing AST Pool...';
+    }
+    const res = await fetchJSON('/api/task/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project: state.currentProject,
+        thread: threadKey,
+        model: state.chatModel,
+        messages: messages
+      })
+    });
+    if (btnSynthesizeTasks) {
+      btnSynthesizeTasks.disabled = false;
+      btnSynthesizeTasks.textContent = '✨ Synthesize Tasks from Discussion';
+    }
+    if (res && res.ok) {
+      const holder = { type: 'pool', data: res, registered: false };
+      items.push(holder);
+      chatStream.appendChild(createTaskPoolCardElement(res, holder));
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
   }
 
   function renderInspector() {
     if (!chatStream) return;
-    const t = state.tasks.find(x => x.id === state.inspectorTaskId);
+    updateChatModelPill();
+    const threadKey = state.inspectorTaskId || 'research';
+    if (threadKey === 'research') {
+      const m = currentChatModel();
+      chatStream.innerHTML =
+        '<div class="chat-exec-card">' +
+          '<div class="exec-status-text">🔍 Research &amp; Inception Thread — Free-form architecture ideation &amp; AST task synthesis</div>' +
+          '<div class="exec-meta">' +
+            '<div class="exec-meta-row"><span class="k">Mode</span><span class="v">Conversational Inception</span></div>' +
+            '<div class="exec-meta-row"><span class="k">Model</span><span class="v">' + escapeHTML(m.label) + '</span></div>' +
+            '<div class="exec-meta-row"><span class="k">AST Graph</span><span class="v">Graft local blast-radius active</span></div>' +
+          '</div>' +
+        '</div>';
+      getThreadItems('research').forEach(it => chatStream.appendChild(renderThreadItem(it)));
+      return;
+    }
+
+    const t = state.tasks.find(x => x.id === threadKey);
     if (!t) {
       chatStream.innerHTML = '<div class="empty-state"><p>No task selected or no tasks in this workspace.</p></div>';
       return;
     }
     const toolLabel = chatToolLabel(t);
-    updateChatModelPill();
     const running = (t.status || '').toLowerCase() === 'in progress';
     const statusLabel = running ? 'RUNNING Attempt 1' : String(t.status || 'ready').toUpperCase();
     const workedDetail = running
-      ? 'Gate preflight: pass\nContract locked\nAttempt 1 in progress'
-      : 'Gate preflight: pass\nContract locked\nAttempt history in .runtime/';
-    chatStream.innerHTML = `
-      <div class="chat-bubble user">\u043f\u0440\u0438\u0441\u0442\u0443\u043f\u0430\u0439 \u043a ${escapeHTML(t.id)}</div>
-      <div class="chat-worked" id="chatWorked"><span class="chat-worked-caret">&#8250;</span><span>Worked for 2m</span></div>
-      <div class="chat-worked-detail" id="chatWorkedDetail" style="display:none">${escapeHTML(workedDetail)}</div>
-      <div class="chat-exec-card">
-        <div class="exec-status-text">${escapeHTML(execStatusText(t))}</div>
-        <div class="exec-meta">
-          <div class="exec-meta-row"><span class="k">Task ID</span><span class="v">${escapeHTML(t.id)}</span></div>
-          <div class="exec-meta-row"><span class="k">Role</span><span class="v">${escapeHTML(t.role || '\u2014')}</span></div>
-          <div class="exec-meta-row"><span class="k">Tool</span><span class="v">${escapeHTML(toolLabel)}</span></div>
-          <div class="exec-meta-row"><span class="k">Worktree</span><span class="v">${escapeHTML(t.worktree || '\u2014')}</span></div>
-          <div class="exec-meta-row"><span class="k">Status</span><span class="v${running ? ' running' : ''}">${escapeHTML(statusLabel)}</span></div>
-        </div>
-        <div class="exec-diff" id="execDiff">
-          <div class="exec-diff-summary" id="execDiffSummary">
-            <span id="execDiffText">loading diff...</span>
-            <span class="diff-badge add" id="execDiffAdd">+0</span>
-            <span class="diff-badge del" id="execDiffDel">-0</span>
-            <span class="diff-caret">&#8250;</span>
-          </div>
-          <div class="exec-diff-files" id="execDiffFiles"></div>
-        </div>
-      </div>`;
+      ? 'Gate preflight: pass | Contract locked | Attempt 1 in progress'
+      : 'Gate preflight: pass | Contract locked | Attempt history in .runtime/';
+    const allowedHtml = (t.allowed_files || []).map(f => '<li><code>' + escapeHTML(f) + '</code></li>').join('');
+    const critHtml = (t.criteria || []).map(c => '<li>' + escapeHTML((c.id ? c.id + ': ' : '') + (c.text || c)) + '</li>').join('');
+
+    chatStream.innerHTML =
+      '<div class="chat-bubble user">приступай к ' + escapeHTML(t.id) + '</div>' +
+      '<div class="chat-worked" id="chatWorked"><span class="chat-worked-caret">&#8250;</span><span>Worked for 2m</span></div>' +
+      '<div class="chat-worked-detail" id="chatWorkedDetail" style="display:none">' + escapeHTML(workedDetail) + '</div>' +
+      '<div class="chat-exec-card">' +
+        '<div class="exec-status-text">' + escapeHTML(execStatusText(t)) + '</div>' +
+        '<div class="exec-meta">' +
+          '<div class="exec-meta-row"><span class="k">Task ID</span><span class="v">' + escapeHTML(t.id) + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Role</span><span class="v">' + escapeHTML(t.role || '—') + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Tool</span><span class="v">' + escapeHTML(toolLabel) + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Worktree</span><span class="v">' + escapeHTML(t.worktree || '—') + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Status</span><span class="v' + (running ? ' running' : '') + '">' + escapeHTML(statusLabel) + '</span></div>' +
+        '</div>' +
+        '<details class="pool-task-details"><summary>Contract Scope: Allowed Files &amp; Criteria</summary>' +
+          '<div id="taskContextScope" style="margin-top:6px; font-size:0.74rem;">' +
+            '<strong>Allowed Files:</strong><ul style="margin:4px 0 6px 16px;">' + (allowedHtml || '<li>none</li>') + '</ul>' +
+            '<strong>Acceptance Criteria:</strong><ul style="margin:4px 0 0 16px;">' + (critHtml || '<li>none</li>') + '</ul>' +
+          '</div>' +
+        '</details>' +
+        '<div class="exec-diff" id="execDiff">' +
+          '<div class="exec-diff-summary" id="execDiffSummary">' +
+            '<span id="execDiffText">loading diff...</span>' +
+            '<span class="diff-badge add" id="execDiffAdd">+0</span>' +
+            '<span class="diff-badge del" id="execDiffDel">-0</span>' +
+            '<span class="diff-caret">&#8250;</span>' +
+          '</div>' +
+          '<div class="exec-diff-files" id="execDiffFiles"></div>' +
+        '</div>' +
+      '</div>';
+
+    getThreadItems(t.id).forEach(it => chatStream.appendChild(renderThreadItem(it)));
+
     const workedEl = document.getElementById('chatWorked');
     const workedDetailEl = document.getElementById('chatWorkedDetail');
     if (workedEl && workedDetailEl) {
@@ -1378,6 +1538,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     chatStream.scrollTop = 0;
     loadInspectorGit();
+    loadTaskThreadContext(t.id);
+  }
+
+  async function loadTaskThreadContext(taskId) {
+    const res = await fetchJSON('/api/task/context?project=' + encodeURIComponent(state.currentProject) + '&id=' + encodeURIComponent(taskId));
+    if (!res || !res.ok || state.inspectorTaskId !== taskId) return;
+    const workedDetailEl = document.getElementById('chatWorkedDetail');
+    if (workedDetailEl && Array.isArray(res.recent_log) && res.recent_log.length) {
+      workedDetailEl.textContent = res.recent_log.join(String.fromCharCode(10));
+    }
   }
 
   async function loadInspectorGit() {
@@ -1386,29 +1556,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const delEl = document.getElementById('execDiffDel');
     const filesEl = document.getElementById('execDiffFiles');
     if (!textEl || !addEl || !delEl || !filesEl) return;
-    const res = await fetchJSON(`/api/project/git?project=${encodeURIComponent(state.currentProject)}`);
+    const res = await fetchJSON('/api/project/git?project=' + encodeURIComponent(state.currentProject));
     if (!textEl.isConnected) return;
     let files = [];
     let adds = 0;
     let dels = 0;
     if (res && res.ok && res.is_git) {
-      const m = (res.diffstat || '').match(/(\d+)\s+files?\s+changed(?:,\s*(\d+)\s+insertions?\(\+\))?(?:,\s*(\d+)\s+deletions?\(-\))?/);
+      const m = (res.diffstat || '').match(/([0-9]+) +files? +changed(?:, +([0-9]+) +insertions?\([+]\))?(?:, +([0-9]+) +deletions?\([-]\))?/);
       if (m) {
         adds = parseInt(m[2] || '0', 10);
         dels = parseInt(m[3] || '0', 10);
       }
       files = (res.changed || []).map(l => l.replace(/^[ MADRCU?!]{1,3}/, '').trim()).filter(Boolean).slice(0, 30);
       const n = files.length || (m ? parseInt(m[1], 10) : 0);
-      textEl.textContent = `${n} file${n === 1 ? '' : 's'} changed`;
+      textEl.textContent = n + ' file' + (n === 1 ? '' : 's') + ' changed';
     } else if (res && res.ok) {
       textEl.textContent = 'not a git repository';
     } else {
       textEl.textContent = 'diff unavailable';
     }
-    addEl.textContent = `+${adds}`;
-    delEl.textContent = `-${dels}`;
+    addEl.textContent = '+' + adds;
+    delEl.textContent = '-' + dels;
     filesEl.innerHTML = files.length
-      ? files.map(f => `<span class="diff-file" data-path="${escapeHTML(f)}" title="${escapeHTML(f)}">${escapeHTML(f)}</span>`).join('')
+      ? files.map(f => '<span class="diff-file" data-path="' + escapeHTML(f) + '" title="' + escapeHTML(f) + '">' + escapeHTML(f) + '</span>').join('')
       : '<span class="diff-file-none">No uncommitted changes vs HEAD.</span>';
     filesEl.querySelectorAll('.diff-file').forEach(el => {
       el.addEventListener('click', () => openExplorerFile(state.currentProject, el.dataset.path));
@@ -1419,11 +1589,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chatInput || !chatStream) return;
     const text = chatInput.value.trim();
     if (!text) return;
-    const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble user';
-    bubble.textContent = text;
-    chatStream.appendChild(bubble);
+    const threadKey = state.inspectorTaskId || 'research';
+    const items = getThreadItems(threadKey);
+    const userItem = { type: 'message', role: 'user', content: text };
+    items.push(userItem);
+    chatStream.appendChild(renderThreadItem(userItem));
     chatInput.value = '';
+
+    const m = currentChatModel();
+    const replyText = threadKey === 'research'
+      ? ('[' + m.label + '] Captured deliverable context. Click "✨ Synthesize Tasks from Discussion" to compute Graft AST blast radius and generate atomic task contracts.')
+      : ('[' + m.label + ' · ' + threadKey + '] Context noted for ' + threadKey + '. You can refine scope or synthesize follow-up tasks directly from this discussion.');
+    const assistantItem = { type: 'message', role: 'assistant', content: replyText };
+    items.push(assistantItem);
+    chatStream.appendChild(renderThreadItem(assistantItem));
     chatStream.scrollTop = chatStream.scrollHeight;
   }
 
