@@ -42,6 +42,7 @@ Fix the flexbox shrinkage bug in `.agentsflower/studio/studio.css` where `.task-
 ## Result
 
 Outcome: completed
+Change: b500ee4
 Criteria:
 - C-01: pass - .task-card in studio.css has flex-shrink: 0 and min-height: fit-content preventing card compression in flex columns.
 - C-02: pass - .task-card-title displays full multi-line title text with proper line-height (1.4) and word-break without clipping.
