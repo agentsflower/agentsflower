@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentTab: 'kanban',
     currentStage: 'all',
     currentProject: '',
+    currentProjectName: '',
     searchQuery: '',
     tasks: [],
     projects: [],
@@ -20,12 +21,19 @@ document.addEventListener('DOMContentLoaded', () => {
       'Clean git status and verification gate approval.'
     ],
     analyticsSubTab: 'index',
+    expandedProjects: new Set(),
+    openDirs: new Set(),
+    treeCache: {},
+    explorerPath: '',
+    inspectorTaskId: '',
+    pendingInstall: null,
   };
 
   // DOM Elements
   const appVersionEl = document.getElementById('appVersion');
-  const projectSelectEl = document.getElementById('projectSelect');
-  const projectActiveDot = document.getElementById('projectActiveDot');
+  const projectAccordionEl = document.getElementById('projectAccordion');
+  const activeProjectChip = document.getElementById('activeProjectChip');
+  const creatorTargetProject = document.getElementById('creatorTargetProject');
   const uninitProjectBanner = document.getElementById('uninitProjectBanner');
   const btnInstallFramework = document.getElementById('btnInstallFramework');
   const navItems = document.querySelectorAll('.nav-item');
@@ -99,6 +107,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnOpenExternalDashboard = document.getElementById('btnOpenExternalDashboard');
   const subTabButtons = document.querySelectorAll('.btn-subtab');
 
+  // Explorer Elements
+  const explorerFileTree = document.getElementById('explorerFileTree');
+  const explorerBreadcrumbs = document.getElementById('explorerBreadcrumbs');
+  const explorerCodeView = document.getElementById('explorerCodeView');
+  const explorerStatusBar = document.getElementById('explorerStatusBar');
+  const btnExplorerTreeRefresh = document.getElementById('btnExplorerTreeRefresh');
+  const inspectorTaskSelect = document.getElementById('inspectorTaskSelect');
+  const inspectorBody = document.getElementById('inspectorBody');
+
+  // Authorization Gate Modal
+  const modalAuthBackdrop = document.getElementById('modalAuthBackdrop');
+  const btnCloseAuthModal = document.getElementById('btnCloseAuthModal');
+  const btnCancelAuth = document.getElementById('btnCancelAuth');
+  const btnConfirmAuth = document.getElementById('btnConfirmAuth');
+  const authModalPath = document.getElementById('authModalPath');
+  const authModalTitle = document.getElementById('authModalTitle');
+  const authModalText = document.getElementById('authModalText');
+
   // --- API Client ---
   async function fetchJSON(url, options = {}) {
     try {
@@ -117,9 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAllowedTags();
     renderCriteriaList();
     await loadProjects();
+    updateProjectChrome();
     await loadStatus();
     await loadTasks();
     await loadQuotas();
+    loadExplorerTree();
   }
 
   // --- Event Listeners ---
@@ -172,34 +200,60 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') handleGraftQuery();
     });
 
-    // Project Switcher
-    projectSelectEl.addEventListener('change', async () => {
-      state.currentProject = projectSelectEl.value;
-      await loadStatus(state.currentProject);
-      await loadTasks(state.currentProject);
-    });
-
-    // Framework Install on uninit banner
+    // Framework Install on uninit banner -> explicit authorization gate
     if (btnInstallFramework) {
-      btnInstallFramework.addEventListener('click', async () => {
+      btnInstallFramework.addEventListener('click', () => {
         if (!state.currentProject) return;
-        btnInstallFramework.disabled = true;
-        btnInstallFramework.textContent = 'Initializing AgentsFlower...';
-        const res = await fetchJSON('/api/project/create', {
+        requestInstallAuthorization(state.currentProject, false);
+      });
+    }
+
+    // Authorization Gate Modal
+    const closeAuthModal = () => {
+      modalAuthBackdrop.style.display = 'none';
+      const pending = state.pendingInstall;
+      state.pendingInstall = null;
+      if (pending && pending.onCancel) pending.onCancel();
+    };
+    if (btnCloseAuthModal) btnCloseAuthModal.addEventListener('click', closeAuthModal);
+    if (btnCancelAuth) btnCancelAuth.addEventListener('click', closeAuthModal);
+    if (btnConfirmAuth) {
+      btnConfirmAuth.addEventListener('click', async () => {
+        if (!state.pendingInstall) return;
+        const { path, isUpdate } = state.pendingInstall;
+        btnConfirmAuth.disabled = true;
+        btnConfirmAuth.textContent = 'Installing...';
+        const endpoint = isUpdate ? '/api/project/update' : '/api/project/create';
+        const res = await fetchJSON(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: state.currentProject })
+          body: JSON.stringify({ path: path, authorized: true, update: isUpdate })
         });
-        btnInstallFramework.disabled = false;
-        btnInstallFramework.textContent = 'Initialize AgentsFlower (v2.17.0)';
+        btnConfirmAuth.disabled = false;
+        btnConfirmAuth.textContent = 'Authorize & Install';
+        modalAuthBackdrop.style.display = 'none';
+        state.pendingInstall = null;
         if (res && res.ok) {
           alert('AgentsFlower successfully installed in workspace!');
           await loadProjects();
-          await loadStatus(state.currentProject);
-          await loadTasks(state.currentProject);
+          await switchProject(canonicalProjectPath(path));
         } else {
           alert(`Error initializing: ${res ? res.error : 'Unknown error'}`);
         }
+      });
+    }
+
+    // Explorer: refresh file tree + inspector task select
+    if (btnExplorerTreeRefresh) {
+      btnExplorerTreeRefresh.addEventListener('click', () => {
+        invalidateTreeCache(state.currentProject);
+        loadExplorerTree();
+      });
+    }
+    if (inspectorTaskSelect) {
+      inspectorTaskSelect.addEventListener('change', () => {
+        state.inspectorTaskId = inspectorTaskSelect.value;
+        renderInspector();
       });
     }
 
@@ -224,45 +278,25 @@ document.addEventListener('DOMContentLoaded', () => {
           modalAttachBackdrop.style.display = 'none';
           inputAttachPath.value = '';
           await loadProjects();
-          state.currentProject = pathVal;
-          projectSelectEl.value = pathVal;
-          await loadStatus(pathVal);
-          await loadTasks(pathVal);
+          await switchProject(canonicalProjectPath(pathVal));
         } else {
           alert(`Could not attach project: ${res ? res.error : 'Directory invalid'}`);
         }
       });
     }
 
-    // Scaffold New Project Modal
+    // Scaffold New Project Modal -> routed through the explicit authorization gate
     if (btnOpenCreateModal) btnOpenCreateModal.addEventListener('click', () => { modalCreateBackdrop.style.display = 'flex'; });
     if (btnCloseCreateModal) btnCloseCreateModal.addEventListener('click', () => { modalCreateBackdrop.style.display = 'none'; });
     if (btnCancelScaffold) btnCancelScaffold.addEventListener('click', () => { modalCreateBackdrop.style.display = 'none'; });
     if (btnConfirmScaffold) {
-      btnConfirmScaffold.addEventListener('click', async () => {
+      btnConfirmScaffold.addEventListener('click', () => {
         const pathVal = inputCreatePath.value.trim();
         if (!pathVal) return;
-        btnConfirmScaffold.disabled = true;
-        btnConfirmScaffold.textContent = 'Scaffolding...';
-        const res = await fetchJSON('/api/project/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: pathVal })
+        modalCreateBackdrop.style.display = 'none';
+        requestInstallAuthorization(pathVal, false, () => {
+          modalCreateBackdrop.style.display = 'flex';
         });
-        btnConfirmScaffold.disabled = false;
-        btnConfirmScaffold.textContent = 'Scaffold Project';
-        if (res && res.ok) {
-          modalCreateBackdrop.style.display = 'none';
-          inputCreatePath.value = '';
-          alert('New AgentsFlower project successfully scaffolded!');
-          await loadProjects();
-          state.currentProject = pathVal;
-          projectSelectEl.value = pathVal;
-          await loadStatus(pathVal);
-          await loadTasks(pathVal);
-        } else {
-          alert(`Error scaffolding project: ${res ? res.error : 'Directory error'}`);
-        }
       });
     }
 
@@ -325,7 +359,11 @@ document.addEventListener('DOMContentLoaded', () => {
       btnRebuildDashboard.addEventListener('click', async () => {
         btnRebuildDashboard.disabled = true;
         btnRebuildDashboard.innerHTML = '<span>Rebuilding...</span>';
-        const res = await fetchJSON('/api/dashboard/build', { method: 'POST' });
+        const res = await fetchJSON('/api/dashboard/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: state.currentProject })
+        });
         btnRebuildDashboard.disabled = false;
         btnRebuildDashboard.innerHTML = `
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -355,6 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const titleMap = {
       kanban: 'Task Board',
+      explorer: 'Explorer',
       analytics: 'Analytics & Roadmap',
       graft: 'Knowledge Graph & Blast Radius',
       capacity: 'Model Quota & Dispatch Hub',
@@ -373,9 +412,12 @@ document.addEventListener('DOMContentLoaded', () => {
       roadmap: '/dashboard/out/roadmap.html',
     };
     const targetUrl = pathMap[state.analyticsSubTab] || pathMap.index;
-    const finalUrl = forceReload ? `${targetUrl}?ts=${Date.now()}` : targetUrl;
+    const qs = [];
+    if (state.currentProject) qs.push(`project=${encodeURIComponent(state.currentProject)}`);
+    if (forceReload) qs.push(`ts=${Date.now()}`);
+    const finalUrl = qs.length ? `${targetUrl}?${qs.join('&')}` : targetUrl;
     analyticsFrame.src = finalUrl;
-    if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = targetUrl;
+    if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = finalUrl;
   }
 
   // --- Interactive Allowed Files Helpers ---
@@ -463,12 +505,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.version && appVersionEl) {
         appVersionEl.textContent = `v${data.version}`;
       }
+      if (data.project) {
+        state.currentProjectName = data.project;
+      }
       if (uninitProjectBanner) {
         uninitProjectBanner.style.display = data.has_framework ? 'none' : 'flex';
       }
-      if (projectActiveDot) {
-        projectActiveDot.style.background = data.has_framework ? 'var(--accent-emerald)' : 'var(--accent-amber)';
+      if (btnInstallFramework && data.version) {
+        btnInstallFramework.textContent = `Initialize AgentsFlower (v${data.version})`;
       }
+      updateProjectChrome();
     }
   }
 
@@ -477,21 +523,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetchJSON('/api/projects');
     if (res && res.projects) {
       state.projects = res.projects;
-      projectSelectEl.innerHTML = '';
-      res.projects.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.path;
-        const taskInfo = p.has_framework ? ` (${p.task_count} tasks)` : ' [no flower]';
-        opt.textContent = `${p.name} - v${p.version}${taskInfo}${p.is_current ? ' ★' : ''}`;
-        if (p.is_current && !state.currentProject) {
-          opt.selected = true;
-          state.currentProject = p.path;
-        }
-        projectSelectEl.appendChild(opt);
-      });
-      if (state.currentProject) {
-        projectSelectEl.value = state.currentProject;
+      if (!state.currentProject) {
+        const curr = res.projects.find(p => p.is_current) || res.projects[0];
+        if (curr) state.currentProject = curr.path;
       }
+      const known = new Set(res.projects.map(p => p.path));
+      state.expandedProjects = new Set([...state.expandedProjects].filter(p => known.has(p)));
+      renderProjectAccordion();
+      updateProjectChrome();
     }
   }
 
@@ -502,13 +541,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetchJSON(`/api/tasks${query}`);
     if (res && res.data && res.data.tasks) {
       state.tasks = res.data.tasks;
-      updateMetrics();
-      renderKanban();
     } else {
       state.tasks = [];
-      updateMetrics();
-      renderKanban();
     }
+    updateMetrics();
+    renderKanban();
+    populateInspectorTasks();
   }
 
   // --- Load Quotas ---
@@ -667,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetchJSON('/api/graft/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q, path_scope: '' })
+      body: JSON.stringify({ question: q, path_scope: '', project: state.currentProject })
     });
 
     btnRunGraftQuery.disabled = false;
@@ -692,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetchJSON('/api/graft/impact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: q })
+      body: JSON.stringify({ target: q, project: state.currentProject })
     });
 
     btnRunGraftImpact.disabled = false;
@@ -810,6 +848,398 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       alert(`Error creating task: ${res ? res.error : 'Unknown server error'}`);
     }
+  }
+
+  // --- Global Project Synchronization ---
+  function canonicalProjectPath(pathVal) {
+    const norm = s => (s || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const match = state.projects.find(p => norm(p.path) === norm(pathVal));
+    return match ? match.path : pathVal;
+  }
+
+  async function switchProject(path) {
+    if (!path || path === state.currentProject) {
+      renderProjectAccordion();
+      return;
+    }
+    state.currentProject = path;
+    state.explorerPath = '';
+    state.inspectorTaskId = '';
+    closeDrawer();
+    renderProjectAccordion();
+    updateProjectChrome();
+    resetExplorerPane();
+    await Promise.all([loadStatus(path), loadTasks(path)]);
+    loadExplorerTree();
+    updateAnalyticsFrame();
+  }
+
+  function updateProjectChrome() {
+    const proj = state.projects.find(p => p.path === state.currentProject);
+    const name = (proj && proj.name) || state.currentProjectName || 'workspace';
+    if (activeProjectChip) {
+      activeProjectChip.textContent = `\u25C8 ${name}`;
+      activeProjectChip.title = state.currentProject || name;
+    }
+    if (creatorTargetProject) creatorTargetProject.textContent = name;
+  }
+
+  // --- Sidebar Multi-Project Accordion ---
+  function renderProjectAccordion() {
+    if (!projectAccordionEl) return;
+    projectAccordionEl.innerHTML = '';
+    if (!state.projects.length) {
+      projectAccordionEl.innerHTML = '<div class="accordion-loading">No workspaces found</div>';
+      return;
+    }
+    state.projects.forEach(p => {
+      const isActive = p.path === state.currentProject;
+      const isOpen = state.expandedProjects.has(p.path);
+      const item = document.createElement('div');
+      item.className = `project-acc-item${isActive ? ' active' : ''}${p.has_framework ? '' : ' uninit'}${isOpen ? ' expanded' : ''}`;
+      const meta = p.has_framework ? `<span class="project-acc-meta">v${escapeHTML(String(p.version))} · ${p.task_count}</span>` : '<span class="uninit-badge">Uninitialized</span>';
+      item.innerHTML = `
+        <div class="project-acc-header">
+          <svg class="project-acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="project-acc-dot"></span>
+          <span class="project-acc-name" title="${escapeHTML(p.path)}">${escapeHTML(p.name)}${p.is_current ? '<span class="star">\u2605</span>' : ''}</span>
+          ${meta}
+        </div>
+        <div class="project-acc-tree"${isOpen ? '' : ' style="display:none"'}></div>`;
+      const header = item.querySelector('.project-acc-header');
+      header.addEventListener('click', async () => {
+        if (state.expandedProjects.has(p.path)) {
+          state.expandedProjects.delete(p.path);
+        } else {
+          state.expandedProjects.add(p.path);
+        }
+        await switchProject(p.path);
+      });
+      projectAccordionEl.appendChild(item);
+      if (isOpen) {
+        const treeEl = item.querySelector('.project-acc-tree');
+        treeEl.innerHTML = '<div class="ft-loading">loading...</div>';
+        fetchTree(p.path, '').then(entries => renderTreeNodes(treeEl, p.path, entries));
+      }
+    });
+  }
+
+  // --- File Tree (shared by sidebar accordion and Explorer pane) ---
+  function treeKey(projPath, rel) { return `${projPath}::${rel || ''}`; }
+
+  async function fetchTree(projPath, rel) {
+    const key = treeKey(projPath, rel);
+    if (key in state.treeCache) return state.treeCache[key];
+    const res = await fetchJSON(`/api/project/tree?project=${encodeURIComponent(projPath)}&path=${encodeURIComponent(rel || '')}`);
+    const entries = (res && res.ok && res.entries) ? res.entries : null;
+    state.treeCache[key] = entries;
+    return entries;
+  }
+
+  function invalidateTreeCache(projPath) {
+    const prefix = `${projPath}::`;
+    Object.keys(state.treeCache).forEach(k => { if (k.startsWith(prefix)) delete state.treeCache[k]; });
+  }
+
+  async function loadDir(childrenEl, projPath, rel) {
+    childrenEl.innerHTML = '<div class="ft-loading">loading...</div>';
+    const entries = await fetchTree(projPath, rel);
+    renderTreeNodes(childrenEl, projPath, entries);
+  }
+
+  function renderTreeNodes(container, projPath, entries) {
+    container.innerHTML = '';
+    if (!entries) {
+      container.innerHTML = '<div class="ft-error">Unable to load folder</div>';
+      return;
+    }
+    if (!entries.length) {
+      container.innerHTML = '<div class="ft-loading">(empty)</div>';
+      return;
+    }
+    entries.forEach(e => {
+      const isDir = e.type === 'dir';
+      const open = state.openDirs.has(treeKey(projPath, e.path));
+      const node = document.createElement('div');
+      const label = document.createElement('div');
+      label.className = `ft-node-label${state.explorerPath === e.path ? ' selected' : ''}`;
+      label.title = e.path;
+      label.innerHTML = `
+        <svg class="ft-caret${open ? ' open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="${isDir ? '' : 'visibility:hidden'}"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg class="ft-icon ${isDir ? 'dir' : 'file'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${isDir
+          ? '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'
+          : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'}</svg>
+        <span class="ft-name">${escapeHTML(e.name)}</span>`;
+      const childrenEl = document.createElement('div');
+      childrenEl.className = 'ft-children';
+      childrenEl.style.display = open ? 'block' : 'none';
+      node.appendChild(label);
+      node.appendChild(childrenEl);
+      container.appendChild(node);
+      const caret = label.querySelector('.ft-caret');
+      if (open && isDir) loadDir(childrenEl, projPath, e.path);
+      label.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (isDir) {
+          const k = treeKey(projPath, e.path);
+          const nowOpen = childrenEl.style.display === 'none';
+          childrenEl.style.display = nowOpen ? 'block' : 'none';
+          caret.classList.toggle('open', nowOpen);
+          if (nowOpen) {
+            state.openDirs.add(k);
+            loadDir(childrenEl, projPath, e.path);
+          } else {
+            state.openDirs.delete(k);
+          }
+        } else {
+          container.querySelectorAll('.ft-node-label.selected').forEach(el => el.classList.remove('selected'));
+          label.classList.add('selected');
+          openExplorerFile(projPath, e.path);
+        }
+      });
+    });
+  }
+
+  // --- IDE Explorer: tree, breadcrumbs, code viewer ---
+  async function loadExplorerTree() {
+    if (!explorerFileTree || !state.currentProject) return;
+    explorerFileTree.innerHTML = '<div class="ft-loading">loading...</div>';
+    const entries = await fetchTree(state.currentProject, '');
+    renderTreeNodes(explorerFileTree, state.currentProject, entries);
+  }
+
+  function resetExplorerPane() {
+    if (explorerBreadcrumbs) explorerBreadcrumbs.innerHTML = '<span class="crumb-leaf">Select a file to preview its contents</span>';
+    if (explorerCodeView) explorerCodeView.innerHTML = '<code class="code-empty">Click a file in the tree to inspect it here.</code>';
+    if (explorerStatusBar) explorerStatusBar.textContent = 'Ready';
+  }
+
+  async function openExplorerFile(projPath, rel) {
+    if (!rel) return;
+    if (projPath !== state.currentProject) {
+      await switchProject(projPath);
+    }
+    state.explorerPath = rel;
+    renderExplorerBreadcrumbs(projPath, rel);
+    explorerCodeView.innerHTML = '<code class="code-empty">Loading...</code>';
+    const res = await fetchJSON(`/api/file/read?project=${encodeURIComponent(projPath)}&path=${encodeURIComponent(rel)}`);
+    if (res && res.ok) {
+      const ext = rel.includes('.') ? rel.split('.').pop().toLowerCase() : '';
+      explorerCodeView.innerHTML = `<code>${highlightCode(res.content, ext)}</code>`;
+      const lines = res.content.split('\n').length;
+      explorerStatusBar.textContent = `${rel}  ·  ${lines} lines  ·  ${res.size} bytes${res.truncated ? '  ·  truncated to 256 KB' : ''}`;
+    } else {
+      explorerCodeView.innerHTML = `<code class="code-empty">${escapeHTML(res && res.error ? res.error : 'Unable to read file')}</code>`;
+      explorerStatusBar.textContent = rel;
+    }
+    if (state.currentTab !== 'explorer') switchTab('explorer');
+  }
+
+  function renderExplorerBreadcrumbs(projPath, rel) {
+    if (!explorerBreadcrumbs) return;
+    const proj = state.projects.find(p => p.path === projPath);
+    const name = (proj && proj.name) || 'workspace';
+    const segs = rel.split('/').filter(Boolean);
+    let html = `<span class="crumb" data-dir="">${escapeHTML(name)}</span>`;
+    segs.forEach((s, i) => {
+      const dirPath = segs.slice(0, i + 1).join('/');
+      html += `<span class="crumb-sep">/</span>`;
+      html += i === segs.length - 1
+        ? `<span class="crumb-leaf">${escapeHTML(s)}</span>`
+        : `<span class="crumb" data-dir="${escapeHTML(dirPath)}">${escapeHTML(s)}</span>`;
+    });
+    explorerBreadcrumbs.innerHTML = html;
+    explorerBreadcrumbs.querySelectorAll('.crumb').forEach(c => {
+      c.addEventListener('click', () => revealDirInTree(projPath, c.dataset.dir));
+    });
+  }
+
+  async function revealDirInTree(projPath, dirRel) {
+    if (!dirRel) {
+      loadExplorerTree();
+      return;
+    }
+    const parts = dirRel.split('/').filter(Boolean);
+    let acc = '';
+    parts.forEach(seg => {
+      acc = acc ? `${acc}/${seg}` : seg;
+      state.openDirs.add(treeKey(projPath, acc));
+    });
+    await loadExplorerTree();
+  }
+
+  // --- Lightweight syntax highlighting ---
+  const HL_DEFS = {
+    code: {
+      com: String.raw`//[^\n]*|/\*[\s\S]*?\*/`,
+      str: String.raw`"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|` + '`(?:\\\\.|[^`\\\\])*`',
+      kw: 'async|await|break|case|catch|class|const|continue|default|delete|do|else|export|extends|finally|for|from|function|if|import|in|instanceof|let|new|null|of|return|static|super|switch|this|throw|try|typeof|undefined|var|while|yield|true|false',
+      kwBare: true,
+    },
+    py: {
+      com: String.raw`#[^\n]*`,
+      str: String.raw`"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'`,
+      kw: 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|self|try|while|with|yield|None|True|False|print',
+      kwBare: true,
+    },
+    shell: {
+      com: String.raw`#[^\n]*`,
+      str: String.raw`"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'`,
+      kw: 'begin|case|do|done|echo|elif|else|end|esac|exit|export|fi|for|function|if|in|local|param|process|return|then|while',
+      kwBare: true,
+    },
+    markup: {
+      com: String.raw`<!--[\s\S]*?-->`,
+      str: String.raw`"[^"\n]*"|'[^'\n]*'`,
+      kw: String.raw`</?[a-zA-Z][^>\n]*>`,
+      kwBare: false,
+    },
+    md: {
+      com: String.raw`<!--[\s\S]*?-->`,
+      str: String.raw`` + '`[^`\\n]*`',
+      kw: String.raw`#{1,6}[^\n]*`,
+      kwBare: false,
+    },
+  };
+  const HL_EXT = {
+    js: 'code', jsx: 'code', ts: 'code', tsx: 'code', json: 'code', css: 'code',
+    py: 'py', psm1: 'shell', ps1: 'shell', sh: 'shell', bash: 'shell',
+    yml: 'shell', yaml: 'shell', toml: 'shell', ini: 'shell', cfg: 'shell',
+    html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup',
+    md: 'md', markdown: 'md',
+  };
+  const HL_PATTERNS = {};
+  function hlPattern(family) {
+    if (!HL_PATTERNS[family]) {
+      const d = HL_DEFS[family];
+      const kw = d.kwBare ? `\\b(?:${d.kw})\\b` : d.kw;
+      HL_PATTERNS[family] = new RegExp(`(${d.com})|(${d.str})|(\\b\\d+(?:\\.\\d+)?\\b)|(${kw})`, 'gm');
+    }
+    return HL_PATTERNS[family];
+  }
+
+  function highlightCode(src, ext) {
+    const family = HL_EXT[ext];
+    if (!family) return escapeHTML(src);
+    const re = hlPattern(family);
+    re.lastIndex = 0;
+    let out = '';
+    let last = 0;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      if (m[0].length === 0) { re.lastIndex += 1; continue; }
+      out += escapeHTML(src.slice(last, m.index));
+      const cls = m[1] !== undefined ? 'tok-com'
+        : m[2] !== undefined ? 'tok-str'
+        : m[3] !== undefined ? 'tok-num'
+        : (family === 'markup' ? 'tok-tag' : 'tok-kw');
+      out += `<span class="${cls}">${escapeHTML(m[0])}</span>`;
+      last = m.index + m[0].length;
+    }
+    return out + escapeHTML(src.slice(last));
+  }
+
+  // --- Task Context Inspector ---
+  function populateInspectorTasks() {
+    if (!inspectorTaskSelect) return;
+    const prev = state.inspectorTaskId;
+    inspectorTaskSelect.innerHTML = '';
+    if (!state.tasks.length) {
+      inspectorTaskSelect.innerHTML = '<option value="">No tasks in workspace</option>';
+      state.inspectorTaskId = '';
+      renderInspector();
+      return;
+    }
+    const stillThere = state.tasks.some(t => t.id === prev);
+    const pick = stillThere ? prev : (state.tasks.find(t => t.status === 'in progress') || state.tasks[0]).id;
+    state.tasks.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = `${t.id} \u2014 ${t.title}`;
+      inspectorTaskSelect.appendChild(opt);
+    });
+    inspectorTaskSelect.value = pick;
+    state.inspectorTaskId = pick;
+    renderInspector();
+  }
+
+  function renderInspector() {
+    if (!inspectorBody) return;
+    const t = state.tasks.find(x => x.id === state.inspectorTaskId);
+    if (!t) {
+      inspectorBody.innerHTML = '<div class="empty-state"><p>No task selected or no tasks in this workspace.</p></div>';
+      return;
+    }
+    const critHtml = (t.criteria && t.criteria.length)
+      ? t.criteria.map(c => `
+        <label class="criteria-check${c.done ? ' done' : ''}">
+          <input type="checkbox" disabled${c.done ? ' checked' : ''}>
+          <span><span class="cid">${escapeHTML(c.id)}:</span> ${escapeHTML(c.text)}</span>
+        </label>`).join('')
+      : '<div class="inspector-diffstat empty">No acceptance criteria in contract.</div>';
+    const allowedHtml = (t.allowed_files && t.allowed_files.length)
+      ? t.allowed_files.map(f => `<code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); font-size:0.72rem; color:#93c5fd; display:inline-block; margin:2px 2px 2px 0;">${escapeHTML(f)}</code>`).join('')
+      : '<span style="color:var(--text-subtle); font-size:0.8rem;">None specified</span>';
+    inspectorBody.innerHTML = `
+      <div>
+        <div class="inspector-section-title">Contract Metadata</div>
+        <div class="inspector-meta-row"><span class="k">Task</span><span class="v">${escapeHTML(t.id)}</span></div>
+        <div class="inspector-meta-row"><span class="k">Role</span><span class="v">${escapeHTML(t.role)}</span></div>
+        <div class="inspector-meta-row"><span class="k">Tool / Model</span><span class="v">${escapeHTML(t.tool || 'auto')}</span></div>
+        <div class="inspector-meta-row"><span class="k">Stage</span><span class="v">${escapeHTML(String(t.stage))}</span></div>
+        <div class="inspector-meta-row"><span class="k">Status</span><span class="v">${escapeHTML(t.status)}</span></div>
+        <div class="inspector-meta-row"><span class="k">Commit</span><span class="v">${escapeHTML(t.commit || '\u2014')}</span></div>
+      </div>
+      <div>
+        <div class="inspector-section-title">Acceptance Criteria</div>
+        <div class="criteria-checklist">${critHtml}</div>
+      </div>
+      <div>
+        <div class="inspector-section-title">Allowed Files</div>
+        <div>${allowedHtml}</div>
+      </div>
+      <div>
+        <div class="inspector-section-title">Git Diff Summary</div>
+        <div class="inspector-diffstat" id="inspectorDiffstat"><span style="color:var(--text-subtle)">loading...</span></div>
+      </div>`;
+    loadInspectorGit();
+  }
+
+  async function loadInspectorGit() {
+    const el = document.getElementById('inspectorDiffstat');
+    if (!el) return;
+    const res = await fetchJSON(`/api/project/git?project=${encodeURIComponent(state.currentProject)}`);
+    if (!el.isConnected) return;
+    if (res && res.ok && res.is_git) {
+      const diff = res.diffstat && res.diffstat.trim() ? res.diffstat : 'No uncommitted changes vs HEAD.';
+      const changedList = (res.changed && res.changed.length)
+        ? `\n\nWorking tree (${res.changed.length}):\n${res.changed.slice(0, 30).join('\n')}`
+        : '';
+      el.textContent = `branch: ${res.branch}\n\n${diff}${changedList}`;
+      el.classList.remove('empty');
+    } else if (res && res.ok) {
+      el.textContent = 'Not a git repository.';
+      el.classList.add('empty');
+    } else {
+      el.textContent = (res && res.error) ? res.error : 'Git summary unavailable.';
+      el.classList.add('empty');
+    }
+  }
+
+  // --- Explicit Authorization Gate ---
+  function requestInstallAuthorization(path, isUpdate = false, onCancel = null) {
+    if (!path) return;
+    state.pendingInstall = { path, isUpdate, onCancel };
+    if (authModalTitle) {
+      authModalTitle.textContent = isUpdate
+        ? 'Update AgentsFlower in this workspace?'
+        : 'Install AgentsFlower into this workspace?';
+    }
+    if (authModalText) {
+      authModalText.innerHTML = `This runs <code>install.py${isUpdate ? ' --update' : ''}</code> and writes the AgentsFlower template into the target directory. Nothing is installed in the background &mdash; the operation starts only after your explicit confirmation.`;
+    }
+    if (authModalPath) authModalPath.textContent = path;
+    modalAuthBackdrop.style.display = 'flex';
   }
 
   // Utility

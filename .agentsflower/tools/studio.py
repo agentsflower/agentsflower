@@ -145,6 +145,148 @@ def find_projects() -> list[dict]:
     return projects
 
 
+def _norm(p: Path) -> str:
+    return os.path.normcase(str(p.resolve()))
+
+
+def resolve_known_project(project_str: str | None) -> Path | None:
+    """Resolve a `project` query/body param to a directory the Studio may serve.
+
+    An empty param means the current repository. Any other path must resolve to a
+    project already known to the cockpit (current, attached, or discovered), so
+    file endpoints can never be pointed at arbitrary directories on disk.
+    """
+    if not project_str or not str(project_str).strip():
+        return REPO_ROOT
+    try:
+        target = Path(project_str).resolve()
+    except (OSError, ValueError):
+        return None
+    if not target.is_dir():
+        return None
+    t_norm = _norm(target)
+    for p in find_projects():
+        try:
+            if _norm(Path(p["path"])) == t_norm:
+                return target
+        except (OSError, ValueError, KeyError):
+            continue
+    return None
+
+
+def safe_under(root: Path, rel: str) -> Path | None:
+    """Join `rel` under `root` and refuse anything that escapes the root.
+
+    Rejects absolute paths, `..` traversal, NUL bytes, and symlinked targets
+    outside `root` (resolve() follows links before the boundary check).
+    """
+    if rel is None or "\x00" in rel:
+        return None
+    try:
+        resolved = (root / rel).resolve()
+    except (OSError, ValueError):
+        return None
+    if resolved != root.resolve() and root.resolve() not in resolved.parents:
+        return None
+    return resolved
+
+
+MAX_FILE_READ = 256 * 1024
+
+
+def get_project_tree(root: Path, rel: str) -> dict:
+    """List one directory of a known project for the explorer file tree."""
+    target = safe_under(root, rel)
+    if target is None or not target.is_dir():
+        return {"ok": False, "error": "path outside project or not a directory"}
+    entries = []
+    truncated = False
+    try:
+        children = sorted(target.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower()))
+    except (PermissionError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+    for child in children:
+        if child.name == ".git":
+            continue
+        if len(entries) >= 1000:
+            truncated = True
+            break
+        try:
+            is_dir = child.is_dir()
+            entries.append({
+                "name": child.name,
+                "path": child.relative_to(root).as_posix(),
+                "type": "dir" if is_dir else "file",
+                "size": 0 if is_dir else child.stat().st_size,
+            })
+        except (PermissionError, OSError):
+            continue
+    return {
+        "ok": True,
+        "project": str(root),
+        "path": rel,
+        "entries": entries,
+        "truncated": truncated,
+    }
+
+
+def read_project_file(root: Path, rel: str) -> dict:
+    """Read a UTF-8 text file inside a known project for the code viewer."""
+    if not rel:
+        return {"ok": False, "error": "path required"}
+    target = safe_under(root, rel)
+    if target is None:
+        return {"ok": False, "error": "path outside project boundary"}
+    if not target.is_file():
+        return {"ok": False, "error": "not a file"}
+    try:
+        size = target.stat().st_size
+        with target.open("rb") as fh:
+            head = fh.read(min(size, MAX_FILE_READ + 1))
+    except (PermissionError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+    if b"\x00" in head[:4096]:
+        return {"ok": False, "error": "binary file not shown"}
+    truncated = len(head) > MAX_FILE_READ
+    content = head[:MAX_FILE_READ].decode("utf-8", errors="replace")
+    return {
+        "ok": True,
+        "path": rel,
+        "size": size,
+        "truncated": truncated,
+        "content": content,
+    }
+
+
+def _git(root: Path, *args: str) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, timeout=15,
+        )
+        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except Exception as e:
+        return 1, str(e)
+
+
+def get_git_summary(root: Path) -> dict:
+    """Branch, working-tree change list, and diff stat for the context inspector."""
+    code, out = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if code != 0:
+        return {"ok": True, "is_git": False}
+    branch = out.strip().splitlines()[0] if out.strip() else "HEAD"
+    _, status_out = _git(root, "status", "--porcelain")
+    changed = [l for l in status_out.splitlines() if l.strip()][:200]
+    _, diffstat = _git(root, "diff", "--stat", "HEAD")
+    return {
+        "ok": True,
+        "is_git": True,
+        "branch": branch,
+        "changed": changed,
+        "diffstat": diffstat.strip()[:4000],
+    }
+
+
 def get_tasks_data(project_path: str = None) -> dict:
     """Read task ledger and task files for the specified project root."""
     target_root = Path(project_path).resolve() if project_path else REPO_ROOT
@@ -187,7 +329,14 @@ def get_tasks_data(project_path: str = None) -> dict:
                             goal_match = re.search(r"## Goal\s*\n\n(.*?)(?=\n## |\Z)", t_content, re.S)
                             if goal_match:
                                 goal = goal_match.group(1).strip()
-                            criteria = re.findall(r"-\s*\[([ xX])\]\s*([A-Za-z0-9_-]+:\s*.*)", t_content)
+                            for chk, cid, ctext in re.findall(
+                                r"-\s*\[([ xX])\]\s*([A-Za-z0-9_-]+):\s*(.*)", t_content
+                            ):
+                                criteria.append({
+                                    "id": cid,
+                                    "text": ctext.strip(),
+                                    "done": chk.lower() == "x",
+                                })
                             allowed = [l.strip().lstrip("- `").rstrip("`") for l in re.findall(r"-\s*`([^`]+)`", t_content)]
                         except Exception:
                             pass
@@ -204,6 +353,7 @@ def get_tasks_data(project_path: str = None) -> dict:
                         "notes": row_dict.get("Notes", ""),
                         "date": row_dict.get("Updated", row_dict.get("Date", "")),
                         "goal": goal,
+                        "criteria": criteria,
                         "criteria_count": len(criteria),
                         "allowed_files": allowed[:5],
                     })
@@ -290,6 +440,34 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "data": get_tasks_data(target_project_str)})
             return
 
+        if path == "/api/project/tree":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            rel = qs.get("path", [""])[0]
+            self.send_json(get_project_tree(root, rel))
+            return
+
+        if path == "/api/file/read":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            rel = qs.get("path", [""])[0]
+            res = read_project_file(root, rel)
+            code = 200 if res.get("ok") else (403 if "outside" in res.get("error", "") else 404)
+            self.send_json(res, code)
+            return
+
+        if path == "/api/project/git":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            self.send_json(get_git_summary(root))
+            return
+
         if path == "/api/quotas":
             self.send_json({"ok": True, "data": get_quotas_data()})
             return
@@ -308,28 +486,33 @@ class StudioHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Dashboard static assets
-        if path.startswith("/dashboard/out/"):
-            rel_file = path[len("/dashboard/out/"):].lstrip("/")
-            file_path = FLOW_ROOT / "dashboard" / "out" / rel_file
-            if file_path.is_file():
-                self._serve_file(file_path)
-                return
-        elif path.startswith("/dashboard/"):
-            rel_file = path[len("/dashboard/"):].lstrip("/")
-            file_path = FLOW_ROOT / "dashboard" / rel_file
-            if file_path.is_file():
-                self._serve_file(file_path)
-                return
+        # Dashboard static assets (project-scoped via ?project=<known project>)
+        if path.startswith("/dashboard/"):
+            dash_root = FLOW_ROOT / "dashboard"
+            if target_project_str:
+                proj = resolve_known_project(target_project_str)
+                flow = get_project_flow_root(proj) if proj else None
+                dash_root = flow / "dashboard" if flow else None
+            if dash_root is not None:
+                rel_file = path[len("/dashboard/"):].lstrip("/")
+                file_path = safe_under(dash_root, rel_file)
+                if file_path and file_path.is_file():
+                    self._serve_file(file_path)
+                    return
+                if target_project_str:
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b"Dashboard file not found for this project")
+                    return
 
         # Studio Static assets
         req_file = path.lstrip("/")
         if not req_file or req_file == "index.html":
             file_path = STUDIO_DIR / "index.html"
         else:
-            file_path = STUDIO_DIR / req_file
+            file_path = safe_under(STUDIO_DIR, req_file)
 
-        if file_path.is_file() and not file_path.is_symlink():
+        if file_path and file_path.is_file() and not file_path.is_symlink():
             self._serve_file(file_path)
         else:
             self.send_response(404)
@@ -372,6 +555,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not p_str:
                 self.send_json({"ok": False, "error": "Target directory path required"}, 400)
                 return
+            if body.get("authorized") is not True:
+                self.send_json({
+                    "ok": False,
+                    "error": "Explicit human authorization required before running install.py",
+                    "requires_authorization": True,
+                }, 403)
+                return
             p_dir = Path(p_str).resolve()
             p_dir.mkdir(parents=True, exist_ok=True)
             cmd = [sys.executable, str(TOOLS_DIR / "install.py"), str(p_dir), "--inside-repo"]
@@ -386,9 +576,17 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/dashboard/build":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            target_flow = get_project_flow_root(target_root)
+            b_script = target_flow / "dashboard" / "build.py" if target_flow else None
+            if not b_script or not b_script.is_file():
+                self.send_json({"ok": False, "error": "project has no AgentsFlower dashboard to build"}, 400)
+                return
             try:
-                b_script = FLOW_ROOT / "dashboard" / "build.py"
-                proc = subprocess.run([sys.executable, str(b_script)], cwd=REPO_ROOT, capture_output=True, text=True)
+                proc = subprocess.run([sys.executable, str(b_script)], cwd=target_root, capture_output=True, text=True)
                 self.send_json({"ok": proc.returncode == 0, "output": proc.stdout, "error": proc.stderr})
             except Exception as e:
                 self.send_json({"ok": False, "error": str(e)}, 500)
@@ -398,9 +596,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not graft:
                 self.send_json({"ok": False, "error": "Graft module not available in environment"}, 400)
                 return
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
             q = body.get("question", "")
             scope = body.get("path_scope", "")
-            res = graft.graft_query(REPO_ROOT, q, scope)
+            res = graft.graft_query(target_root, q, scope)
             self.send_json(res)
             return
 
@@ -408,15 +610,21 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not graft:
                 self.send_json({"ok": False, "error": "Graft module not available in environment"}, 400)
                 return
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
             target = body.get("target", "")
-            res = graft.graft_impact(REPO_ROOT, target)
+            res = graft.graft_impact(target_root, target)
             self.send_json(res)
             return
 
         if path == "/api/task/create":
             # Rapid task authoring
-            target_proj_str = body.get("project", "").strip()
-            target_root = Path(target_proj_str).resolve() if target_proj_str else REPO_ROOT
+            target_root = resolve_known_project(body.get("project", "").strip())
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
             flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
 
             tid = body.get("id", "").strip().upper()
