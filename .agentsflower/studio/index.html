@@ -39,11 +39,8 @@
             <button type="button" class="btn-xs" id="btnOpenCreateModal" title="Scaffold New AgentsFlower Project">+ New</button>
           </div>
         </div>
-        <div class="project-select-wrapper">
-          <div class="active-dot" id="projectActiveDot"></div>
-          <select id="projectSelect" class="project-dropdown">
-            <option value="">Loading workspaces...</option>
-          </select>
+        <div class="project-accordion" id="projectAccordion">
+          <div class="accordion-loading">Loading workspaces...</div>
         </div>
       </div>
 
@@ -58,6 +55,14 @@
           </svg>
           <span>Task Board</span>
           <span class="badge" id="taskTotalBadge">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="explorer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+            <path d="M8 12h8M8 16h5"/>
+          </svg>
+          <span>Explorer</span>
         </button>
 
         <button class="nav-item" data-tab="analytics">
@@ -132,6 +137,7 @@
         </div>
 
         <div class="topbar-actions">
+          <span class="active-project-chip" id="activeProjectChip" title="Active workspace"></span>
           <div class="search-box">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/>
@@ -233,7 +239,38 @@
           </div>
         </section>
 
-        <!-- 2. Knowledge Graph (Graft) View -->
+        <!-- 2. IDE Explorer View -->
+        <section class="view-panel" id="view-explorer">
+          <div class="explorer-grid">
+            <div class="explorer-tree-pane glass-card">
+              <div class="explorer-pane-header">
+                <span>Workspace Files</span>
+                <button type="button" class="btn-xs" id="btnExplorerTreeRefresh" title="Reload file tree">Refresh</button>
+              </div>
+              <div class="file-tree" id="explorerFileTree">
+                <div class="empty-state"><p>Loading workspace files...</p></div>
+              </div>
+            </div>
+
+            <div class="explorer-code-pane glass-card">
+              <div class="explorer-breadcrumbs" id="explorerBreadcrumbs">
+                <span class="crumb-leaf">Select a file to preview its contents</span>
+              </div>
+              <pre class="code-viewer" id="explorerCodeView"><code class="code-empty">Click a file in the tree to inspect it here.</code></pre>
+              <div class="explorer-statusbar" id="explorerStatusBar">Ready</div>
+            </div>
+
+            <div class="explorer-inspector-pane glass-card">
+              <div class="explorer-pane-header"><span>Task Context Inspector</span></div>
+              <select id="inspectorTaskSelect" class="inspector-task-select"></select>
+              <div class="inspector-body" id="inspectorBody">
+                <div class="empty-state"><p>No task selected.</p></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Knowledge Graph (Graft) View -->
         <section class="view-panel" id="view-graft">
           <div class="graft-dashboard">
             <div class="card glass-card graft-search-card">
@@ -302,7 +339,7 @@
           </div>
         </section>
 
-        <!-- 3. Model Capacity & Quota Hub View -->
+        <!-- 4. Model Capacity & Quota Hub View -->
         <section class="view-panel" id="view-capacity">
           <div class="capacity-dashboard">
             <div class="card glass-card">
@@ -316,12 +353,13 @@
           </div>
         </section>
 
-        <!-- 4. Task Contract Creator View -->
+        <!-- 5. Task Contract Creator View -->
         <section class="view-panel" id="view-creator">
           <div class="creator-container">
             <div class="card glass-card">
               <h3>New Task Contract Generator</h3>
               <p class="subtitle">Draft a formal, verifiable contract adhering to the AgentsFlower handoff protocol.</p>
+              <p class="target-project-hint">Target workspace: <strong id="creatorTargetProject">current project</strong></p>
               
               <form id="createTaskForm" class="creator-form">
                 <div class="form-row">
@@ -415,7 +453,7 @@
           </div>
         </section>
 
-        <!-- 5. Classic Analytics & Roadmap View -->
+        <!-- 6. Classic Analytics & Roadmap View -->
         <section class="view-panel" id="view-analytics">
           <div class="analytics-container">
             <div class="analytics-toolbar glass-card">
@@ -441,7 +479,7 @@
           </div>
         </section>
 
-        <!-- 6. Quick Start & Onboarding Guide View -->
+        <!-- 7. Quick Start & Onboarding Guide View -->
         <section class="view-panel" id="view-guide">
           <div class="guide-container">
             <div class="card glass-card">
@@ -550,6 +588,38 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" id="btnCancelScaffold">Cancel</button>
           <button type="button" class="btn btn-primary" id="btnConfirmScaffold">Scaffold Project</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Explicit Authorization Gate Modal -->
+    <div class="modal-backdrop" id="modalAuthBackdrop" style="display:none;">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3>Explicit Authorization Required</h3>
+          <button type="button" class="btn-close" id="btnCloseAuthModal">&times;</button>
+        </div>
+        <div class="auth-warning">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <div>
+            <strong id="authModalTitle">Install AgentsFlower into this workspace?</strong>
+            <p class="subtitle" id="authModalText">
+              This runs <code>install.py</code> and writes the AgentsFlower template into the target directory.
+              Nothing is installed in the background &mdash; the operation starts only after your explicit confirmation.
+            </p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Target Directory</label>
+          <code class="auth-target-path" id="authModalPath"></code>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelAuth">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnConfirmAuth">Authorize &amp; Install</button>
         </div>
       </div>
     </div>
