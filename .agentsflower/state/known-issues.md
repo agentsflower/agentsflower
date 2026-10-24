@@ -143,3 +143,11 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   temp-file read (PermissionError). Both tests pass in isolated rerun; T-132
   hit this, unrelated to its change. Candidate fix: harden fixture teardown
   or serialize those tests.
+- 2026-10-24 - Ledger round-trip loses Notes containing a literal `|`:
+  the launcher's `ready` -> `in progress` rewrite re-parses the row by
+  splitting on `|`, so T-134's note "resizers (|| grip), ..." was truncated
+  to "resizers (". The documented sanitizer (`|` -> `/`) only guards values
+  written through ledger.py, not rows already carrying a raw `|`. Note
+  restored via `ledger.py set --notes` (stored as `// grip`). Authoring
+  rule: keep `|` out of ledger Notes; a durable fix is a developer task on
+  the ledger row parser/serializer.

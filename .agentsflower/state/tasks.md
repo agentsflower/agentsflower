@@ -118,7 +118,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-131 | Verify Studio multi-project explorer and authorization gate | 7 | tester | devin | done |  | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 |  | 2026-10-24 12:31 |
 | T-132 | Studio UI Pixel-Perfect Implementation from Visual Mockup Contract | 7 | developer | devin | done |  | 14dcc0f52b93bf3fd46a1b86cb60798e08615869 |  | 2026-10-24 16:02 |
 | T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | done |  | 14dcc0f52b93bf3fd46a1b86cb60798e08615869 | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 16:02 |
-| T-134 | Studio Interactive Enhancements: Draggable Splitters, Editor File Tabs, and Model Selector | 7 | developer | devin | ready | none |  | Bounded draggable resizers (|| grip), editor file tabs bar, clean topnav (4 tabs), chat model selector dropdown | 2026-10-24 20:56 |
+| T-134 | Studio Interactive Enhancements: Draggable Splitters, Editor File Tabs, and Model Selector | 7 | developer | devin | in progress | none |  | Bounded draggable resizers (// grip), editor file tabs bar, clean topnav (4 tabs), chat model selector dropdown | 2026-10-24 17:58 |
 
 
 
