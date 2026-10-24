@@ -25,5 +25,5 @@ distilled.
 
 | Skill | Upstream repo | Upstream path | License | Commit pin |
 |---|---|---|---|---|
-| `frontend-art-direction` | [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) | `design-taste-frontend` | MIT | `6010f91a9935f1c167dfc500fb1a475681892e6b` (`main`, pinned 2026-10-25) |
+| `frontend-art-direction` | [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) | `skills/taste-skill` (skill name `design-taste-frontend`) | MIT | `6010f91a9935f1c167dfc500fb1a475681892e6b` (`main`, pinned 2026-10-25) |
 | `frontend-art-direction` | [emilkowalski/skills](https://github.com/emilkowalski/skills) | `skills/emil-design-eng` (`metadata.source` id `emilkowalski/design-eng`) | MIT | `2d228630ba1446365f614a108cb8252f1feda202` (`main`, pinned 2026-10-25) |
