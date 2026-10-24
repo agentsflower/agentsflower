@@ -323,6 +323,7 @@ def get_tasks_data(project_path: str = None) -> dict:
                     criteria = []
                     goal = ""
                     allowed = []
+                    header = {}
                     if tf and tf.is_file():
                         try:
                             t_content = tf.read_text(encoding="utf-8-sig")
@@ -338,6 +339,10 @@ def get_tasks_data(project_path: str = None) -> dict:
                                     "done": chk.lower() == "x",
                                 })
                             allowed = [l.strip().lstrip("- `").rstrip("`") for l in re.findall(r"-\s*`([^`]+)`", t_content)]
+                            for field in ("Branch", "Worktree", "Model"):
+                                fm = re.search(rf"^{field}:\s*(.+?)\s*$", t_content, re.M)
+                                if fm:
+                                    header[field.lower()] = fm.group(1)
                         except Exception:
                             pass
 
@@ -348,6 +353,9 @@ def get_tasks_data(project_path: str = None) -> dict:
                         "role": row_dict.get("Role", ""),
                         "tool": row_dict.get("Tool", ""),
                         "status": row_dict.get("Status", "ready"),
+                        "branch": header.get("branch", ""),
+                        "worktree": header.get("worktree", ""),
+                        "model": header.get("model", ""),
                         "depends": row_dict.get("Depends on", ""),
                         "commit": row_dict.get("Commit / artifact", row_dict.get("Commit", "")),
                         "notes": row_dict.get("Notes", ""),
