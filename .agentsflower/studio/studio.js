@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'All unit tests pass without regressions: python -m unittest discover -s .agentsflower/tests',
       'Clean git status and verification gate approval.'
     ],
-    analyticsSubTab: 'index',
+    analyticsSubTab: 'graph',
     expandedProjects: new Set(),
     openDirs: new Set(),
     treeCache: {},
@@ -123,6 +123,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRebuildDashboard = document.getElementById('btnRebuildDashboard');
   const btnOpenExternalDashboard = document.getElementById('btnOpenExternalDashboard');
   const subTabButtons = document.querySelectorAll('.btn-subtab');
+  const analyticsBuiltStamp = document.getElementById('analyticsBuiltStamp');
+  const btnDashThemeToggle = document.getElementById('btnDashThemeToggle');
+  const workspacePathEl = document.getElementById('workspacePath');
   const btnCapacityRefresh = document.getElementById('btnCapacityRefresh');
 
   // Explorer Elements
@@ -181,6 +184,8 @@ document.addEventListener('DOMContentLoaded', () => {
     await loadStatus();
     await loadTasks();
     await loadCapacity();
+    paintDashThemeToggle();
+    updateAnalyticsFrame();
   }
 
   // --- Event Listeners ---
@@ -423,6 +428,31 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Dashboard theme toggle: shared localStorage key + postMessage into the embedded frame
+    if (btnDashThemeToggle) {
+      btnDashThemeToggle.addEventListener('click', () => {
+        const next = dashTheme() === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('dash-theme', next); } catch(e) {}
+        paintDashThemeToggle();
+        try { analyticsFrame.contentWindow.postMessage({ af: 'dash-theme', theme: next }, location.origin); } catch(e) {}
+      });
+    }
+
+    // Build stamp: the embedded dashboard posts af-dash-meta; scrape same-origin #hdr .gen as fallback
+    window.addEventListener('message', (ev) => {
+      if (ev.origin !== location.origin) return;
+      const d = ev.data || {};
+      if (d.af === 'dash-meta' && d.generated) setAnalyticsBuilt(d.generated);
+    });
+    if (analyticsFrame) {
+      analyticsFrame.addEventListener('load', () => {
+        try {
+          const gen = analyticsFrame.contentDocument && analyticsFrame.contentDocument.querySelector('#hdr .gen');
+          if (gen && gen.textContent) setAnalyticsBuilt(gen.textContent.replace(/^Built\s*/, '').trim());
+        } catch(e) {}
+      });
+    }
+
     // Model Quota Hub rescan
     if (btnCapacityRefresh) {
       btnCapacityRefresh.addEventListener('click', async () => {
@@ -459,9 +489,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const qs = [];
     if (state.currentProject) qs.push(`project=${encodeURIComponent(state.currentProject)}`);
     if (forceReload) qs.push(`ts=${Date.now()}`);
-    const finalUrl = qs.length ? `${targetUrl}?${qs.join('&')}` : targetUrl;
-    analyticsFrame.src = finalUrl;
-    if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = finalUrl;
+    const baseQs = qs.length ? `?${qs.join('&')}` : '';
+    // embedded=1 tells the dashboard page to hide its own #hdr topbar (Studio supplies the chrome)
+    analyticsFrame.src = `${targetUrl}${baseQs}${baseQs ? '&' : '?'}embedded=1`;
+    if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = `${targetUrl}${baseQs}`;
+    setAnalyticsBuilt('');
+  }
+
+  // --- Embedded dashboard bridge: build stamp + theme toggle ---
+  const DASH_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const DASH_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  function dashTheme() {
+    try { return localStorage.getItem('dash-theme') || 'dark'; } catch(e) { return 'dark'; }
+  }
+  function paintDashThemeToggle() {
+    if (!btnDashThemeToggle) return;
+    const dark = dashTheme() === 'dark';
+    btnDashThemeToggle.innerHTML = dark ? DASH_SUN : DASH_MOON;
+    btnDashThemeToggle.title = dark ? 'Dashboard: switch to light theme' : 'Dashboard: switch to dark theme';
+  }
+  function setAnalyticsBuilt(ts) {
+    if (!analyticsBuiltStamp) return;
+    analyticsBuiltStamp.textContent = ts ? `Built ${ts}` : 'Built —';
+    analyticsBuiltStamp.title = ts ? `Dashboard built ${ts}` : 'Dashboard build timestamp';
   }
 
   // --- Interactive Allowed Files Helpers ---
@@ -1061,6 +1111,10 @@ document.addEventListener('DOMContentLoaded', () => {
       activeProjectChip.title = state.currentProject || name;
     }
     if (creatorTargetProject) creatorTargetProject.textContent = name;
+    if (workspacePathEl) {
+      workspacePathEl.textContent = state.currentProject || name;
+      workspacePathEl.title = state.currentProject || name;
+    }
   }
 
   // --- Sidebar Multi-Project Accordion ---

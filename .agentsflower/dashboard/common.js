@@ -81,6 +81,10 @@ const C=(function(){
     const paint=()=>{ btn.innerHTML=isDark()?SUN:MOON; btn.title=isDark()?"Light theme":"Dark theme"; };
     btn.onclick=()=>{ const next=isDark()?"light":"dark"; document.documentElement.dataset.theme=next; try{ localStorage.setItem("dash-theme",next); }catch(e){} paint(); };
     paint();
+    // embedded in Studio (?embedded=1): hide this page's topbar (see common.css) and bridge meta/theme with the parent toolbar
+    try{ if(new URLSearchParams(location.search).get("embedded")==="1") document.documentElement.dataset.embedded="1"; }catch(e){}
+    try{ if(window.parent&&window.parent!==window) window.parent.postMessage({af:"dash-meta",generated:generated,project:project},location.origin); }catch(e){}
+    window.addEventListener("message",ev=>{ if(ev.origin!==location.origin) return; const d=ev.data||{}; if(d.af==="dash-theme"&&(d.theme==="dark"||d.theme==="light")){ document.documentElement.dataset.theme=d.theme; try{ localStorage.setItem("dash-theme",d.theme); }catch(e){} paint(); } });
   }
 
   // ---- task card ----
