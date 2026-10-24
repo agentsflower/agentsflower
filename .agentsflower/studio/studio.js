@@ -30,6 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingInstall: null,
     openTabs: [],
     chatModel: 'swe-2-high',
+    chatModels: [],
+    capacityData: null,
+    defaultWorkerModel: null,
   };
 
   const CHAT_MODELS = [
@@ -120,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRebuildDashboard = document.getElementById('btnRebuildDashboard');
   const btnOpenExternalDashboard = document.getElementById('btnOpenExternalDashboard');
   const subTabButtons = document.querySelectorAll('.btn-subtab');
+  const btnCapacityRefresh = document.getElementById('btnCapacityRefresh');
 
   // Explorer Elements
   const explorerBreadcrumbs = document.getElementById('explorerBreadcrumbs');
@@ -176,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateProjectChrome();
     await loadStatus();
     await loadTasks();
-    await loadQuotas();
+    await loadCapacity();
   }
 
   // --- Event Listeners ---
@@ -419,6 +423,15 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Model Quota Hub rescan
+    if (btnCapacityRefresh) {
+      btnCapacityRefresh.addEventListener('click', async () => {
+        btnCapacityRefresh.disabled = true;
+        await loadCapacity(true);
+        btnCapacityRefresh.disabled = false;
+      });
+    }
+
     // Task Creator Form Submit
     createTaskForm.addEventListener('submit', handleTaskCreate);
   }
@@ -581,11 +594,20 @@ document.addEventListener('DOMContentLoaded', () => {
     populateInspectorTasks();
   }
 
-  // --- Load Quotas ---
-  async function loadQuotas() {
-    const res = await fetchJSON('/api/quotas');
-    if (res && res.data && res.data.tools) {
-      renderCapacityGrid(res.data.tools);
+  // --- Model Quota Hub: live CLI probe ---
+  async function loadCapacity(force = false) {
+    const params = [];
+    if (state.currentProject) params.push(`project=${encodeURIComponent(state.currentProject)}`);
+    if (force) params.push('refresh=1');
+    const res = await fetchJSON(`/api/capacity/probe${params.length ? '?' + params.join('&') : ''}`);
+    if (res && res.ok) {
+      state.capacityData = res;
+      state.defaultWorkerModel = res.default_model || null;
+      renderCapacityHub(res);
+      applyCapacityModels(res);
+    } else {
+      const meta = document.getElementById('capacityScanMeta');
+      if (meta) meta.textContent = 'CLI probe failed: /api/capacity/probe unreachable';
     }
   }
 
@@ -800,28 +822,153 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
-  // --- Render Capacity Grid ---
-  function renderCapacityGrid(tools) {
+  // --- Render Capacity Hub (live platform cards) ---
+  function renderCapacityHub(data) {
     const grid = document.getElementById('toolsCapacityGrid');
     if (!grid) return;
     grid.innerHTML = '';
+    const defaultModelId = state.defaultWorkerModel && state.defaultWorkerModel.model;
 
-    tools.forEach(tool => {
+    (data.platforms || []).forEach(p => {
       const card = document.createElement('div');
       card.className = 'capacity-item-card';
+      const modelRows = (p.models || []).map(m => {
+        const meta = [m.context, m.pricing].filter(Boolean).join(' \u00B7 ');
+        const isDefault = m.id === defaultModelId;
+        return `<div class="model-row">
+          <span class="m-id" title="${escapeHTML(m.label || m.id)}">${escapeHTML(m.id)}</span>
+          <span class="m-meta${m.free ? ' m-free' : ''}">${escapeHTML(meta)}</span>
+          <button type="button" class="btn-set-default${isDefault ? ' is-default' : ''}"
+                  data-model="${escapeHTML(m.id)}" data-tool="${escapeHTML(p.key)}"
+                  ${isDefault ? 'disabled' : ''}>${isDefault ? 'Default \u2713' : 'Set default'}</button>
+        </div>`;
+      }).join('');
       card.innerHTML = `
         <div class="capacity-card-top">
-          <span class="capacity-tool-title">${tool.label}</span>
-          <span class="capacity-slots">${tool.slots}</span>
+          <span class="capacity-tool-title">${escapeHTML(p.label)}${p.version ? `<span class="platform-version">${escapeHTML(p.version)}</span>` : ''}</span>
+          <span class="status-badge ${escapeHTML(p.status)}">${escapeHTML(p.status_label || p.status)}</span>
         </div>
-        <div style="font-size:0.82rem; color:var(--text-subtle); margin-bottom:12px;">${tool.note}</div>
-        <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem;">
-          <span class="status-indicator online"></span>
-          <span style="color:var(--text-muted); text-transform:uppercase; font-weight:600">${tool.status}</span>
-        </div>
+        ${p.note ? `<div class="platform-note">${escapeHTML(p.note)}</div>` : ''}
+        ${(p.models || []).length ? `<details class="platform-models">
+          <summary>${p.models.length} available model${p.models.length === 1 ? '' : 's'}</summary>
+          <div class="platform-model-list">${modelRows}</div>
+        </details>` : ''}
       `;
+      card.querySelectorAll('.btn-set-default[data-model]').forEach(btn => {
+        btn.addEventListener('click', () => setDefaultWorkerModel(btn.dataset.model, btn.dataset.tool));
+      });
       grid.appendChild(card);
     });
+
+    const meta = document.getElementById('capacityScanMeta');
+    if (meta) {
+      const platforms = data.platforms || [];
+      const active = platforms.filter(p => p.status === 'active').length;
+      meta.textContent = `Scanned ${platforms.length} platforms \u00B7 ${active} active \u00B7 ${data.generated_at || ''}${data.cached ? ` \u00B7 cached (TTL ${data.ttl}s)` : ''}`;
+    }
+    renderLocalFreeSection(data.local_free || {}, defaultModelId);
+    updateDefaultModelPill();
+  }
+
+  function renderLocalFreeSection(localFree, defaultModelId) {
+    const instEl = document.getElementById('localModelsInstalled');
+    const sugEl = document.getElementById('localModelsSuggested');
+    if (instEl) {
+      const installed = localFree.installed || [];
+      instEl.innerHTML = installed.length
+        ? ''
+        : '<div class="empty-state">No local models detected on 127.0.0.1:11434 - install Ollama and pull an open-weight model.</div>';
+      installed.forEach(m => {
+        const isDefault = m.id === defaultModelId;
+        const item = document.createElement('div');
+        item.className = 'local-model-item';
+        item.innerHTML = `
+          <div><div class="lm-id">${escapeHTML(m.id)}</div><div class="lm-note">${escapeHTML(m.context || m.family || '')}</div></div>
+          <span class="lm-free">$0 local</span>
+          <button type="button" class="btn-set-default${isDefault ? ' is-default' : ''}" ${isDefault ? 'disabled' : ''}>${isDefault ? 'Default \u2713' : 'Set default'}</button>`;
+        item.querySelector('.btn-set-default').addEventListener('click', () => setDefaultWorkerModel(m.id, 'ollama'));
+        instEl.appendChild(item);
+      });
+    }
+    if (sugEl) {
+      const suggested = localFree.suggested || [];
+      sugEl.innerHTML = suggested.length ? '' : '<div class="empty-state">No suggestions.</div>';
+      suggested.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'local-model-item';
+        item.innerHTML = `
+          <div><div class="lm-id">${escapeHTML(s.id)}</div><div class="lm-note">${escapeHTML(s.note || '')}</div><code class="lm-install">${escapeHTML(s.install || '')}</code></div>
+          <span class="lm-free">$0</span>`;
+        sugEl.appendChild(item);
+      });
+    }
+  }
+
+  function updateDefaultModelPill() {
+    const pill = document.getElementById('defaultWorkerModelPill');
+    if (!pill) return;
+    const d = state.defaultWorkerModel;
+    pill.textContent = d && d.model ? `Default: ${d.model}` : 'Default: \u2014';
+    pill.title = d && d.model
+      ? `Project default worker model: ${d.model}${d.tool ? ' (' + d.tool + ')' : ''}`
+      : 'No project default worker model set';
+  }
+
+  async function setDefaultWorkerModel(modelId, tool) {
+    const res = await fetchJSON('/api/capacity/default-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: state.currentProject, model: modelId, tool: tool })
+    });
+    if (res && res.ok) {
+      state.defaultWorkerModel = res.default_model;
+      state.chatModel = modelId;
+      ensureChatModelListed(modelId, tool);
+      try { sessionStorage.setItem('af_chat_model', modelId); } catch (err) { /* storage unavailable */ }
+      updateDefaultModelPill();
+      updateChatModelPill();
+      renderModelDropdown();
+      if (state.capacityData) renderCapacityHub(state.capacityData);
+    } else {
+      alert('Could not persist default model: ' + (res && res.error ? res.error : 'unknown error'));
+    }
+  }
+
+  function ensureChatModelListed(modelId, tool) {
+    if (!state.chatModels.some(m => m.id === modelId)) {
+      state.chatModels.unshift({ id: modelId, label: `${tool || 'CLI'} ${modelId}`, note: modelId });
+    }
+  }
+
+  function applyCapacityModels(data) {
+    const live = [];
+    (data.platforms || []).forEach(p => {
+      (p.models || []).forEach(m => {
+        if (!live.some(x => x.id === m.id)) {
+          live.push({ id: m.id, label: `${p.label} ${m.id}`, note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label) });
+        }
+      });
+    });
+    live.sort((a, b) => {
+      const af = /free/i.test(a.note) ? 0 : 1;
+      const bf = /free/i.test(b.note) ? 0 : 1;
+      return af - bf;
+    });
+    const merged = live.slice(0, 40).concat(CHAT_MODELS.filter(c => !live.slice(0, 40).some(l => l.id === c.id)));
+    state.chatModels = merged;
+    const d = data.default_model;
+    let saved = null;
+    try { saved = sessionStorage.getItem('af_chat_model'); } catch (err) { /* storage unavailable */ }
+    if (saved && merged.some(m => m.id === saved)) {
+      state.chatModel = saved;
+    } else if (d && d.model) {
+      state.chatModel = d.model;
+      ensureChatModelListed(d.model, d.tool);
+    } else if (!merged.some(m => m.id === state.chatModel)) {
+      state.chatModel = merged[0] ? merged[0].id : CHAT_MODELS[0].id;
+    }
+    updateChatModelPill();
+    renderModelDropdown();
   }
 
   // --- Create Task Form Handler ---
@@ -902,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProjectAccordion();
     updateProjectChrome();
     resetExplorerPane();
-    await Promise.all([loadStatus(path), loadTasks(path)]);
+    await Promise.all([loadStatus(path), loadTasks(path), loadCapacity()]);
     updateAnalyticsFrame();
   }
 
@@ -1607,8 +1754,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Chat model selector ---
+  function chatModelList() {
+    return state.chatModels && state.chatModels.length ? state.chatModels : CHAT_MODELS;
+  }
+
   function currentChatModel() {
-    return CHAT_MODELS.find(m => m.id === state.chatModel) || CHAT_MODELS[0];
+    const list = chatModelList();
+    return list.find(m => m.id === state.chatModel) || list[0];
   }
 
   function updateChatModelPill() {
@@ -1621,7 +1773,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderModelDropdown() {
     if (!chatModelDropdown) return;
     chatModelDropdown.innerHTML = '';
-    CHAT_MODELS.forEach(m => {
+    chatModelList().forEach(m => {
       const opt = document.createElement('button');
       opt.type = 'button';
       opt.className = `model-option${m.id === state.chatModel ? ' active' : ''}`;
@@ -1641,9 +1793,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setupModelSelector() {
     if (!chatModelSelector || !chatModelPill) return;
+    state.chatModels = CHAT_MODELS.slice();
     try {
       const saved = sessionStorage.getItem('af_chat_model');
-      if (saved && CHAT_MODELS.some(m => m.id === saved)) state.chatModel = saved;
+      if (saved && chatModelList().some(m => m.id === saved)) state.chatModel = saved;
     } catch (err) { /* storage unavailable */ }
     updateChatModelPill();
     renderModelDropdown();

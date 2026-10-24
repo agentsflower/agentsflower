@@ -837,6 +837,194 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* Model Quota Hub */
+.capacity-hub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.capacity-hub-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.default-model-pill {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+.capacity-scan-meta {
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+  margin-top: 10px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.status-badge.active {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+.status-badge.limited {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.status-badge.missing {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.10);
+  border: 1px solid rgba(148, 163, 184, 0.30);
+}
+
+.platform-version {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-subtle);
+  margin-left: 6px;
+}
+.platform-note {
+  font-size: 0.76rem;
+  color: var(--text-subtle);
+  margin-bottom: 8px;
+}
+.platform-models summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 0;
+  list-style: none;
+}
+.platform-models summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.platform-models[open] summary::before {
+  transform: rotate(90deg);
+}
+.platform-model-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.model-row .m-id {
+  font-family: var(--font-mono);
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-row .m-meta {
+  color: var(--text-subtle);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.model-row .m-free {
+  color: #34d399;
+}
+.btn-set-default {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-accent);
+  background: transparent;
+  color: #a5b4fc;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-set-default:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+.btn-set-default.is-default {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.45);
+  cursor: default;
+}
+
+.local-models-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  margin-top: 16px;
+}
+.local-group-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-subtle);
+  margin-bottom: 10px;
+}
+.local-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.local-model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+.local-model-item .lm-id {
+  font-family: var(--font-mono);
+  color: #e2e8f0;
+}
+.local-model-item .lm-note {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+}
+.local-model-item .lm-free {
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.local-model-item code.lm-install {
+  font-size: 0.7rem;
+  color: #93c5fd;
+}
+
 /* Creator Form */
 .creator-container {
   max-width: 820px;
