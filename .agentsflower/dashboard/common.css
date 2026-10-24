@@ -55,3 +55,22 @@ details.fold summary{cursor:pointer;color:var(--accent);font-size:13px}
 .fbcard{background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:12px!important;padding:10px 12px!important;margin:0!important}
 
 .side.right>#detail{height:100%}
+
+/* ===== Embedded mode (?embedded=1): harmonize with the Studio Cockpit chrome ===== */
+/* Studio supplies the toolbar, so this page's own topbar is suppressed; rows are pinned
+   because a display:none grid item would shift the auto-placed cards up one track. */
+html[data-embedded] #hdr{display:none}
+html[data-embedded] .app{grid-template-rows:auto 26px minmax(0,1fr)}
+html[data-embedded] .app>.fbcard{grid-row:1}
+html[data-embedded] .app>.fbchosen{grid-row:2}
+html[data-embedded] .app>.side,html[data-embedded] .app>.center,html[data-embedded] .app>#mainc,html[data-embedded] .app>#ctl,html[data-embedded] .app>#detail{grid-row:3}
+/* dark cockpit palette: Studio surfaces #111625 / #161c2d (an explicit light choice is still honored) */
+html[data-embedded]:not([data-theme=light]){
+  --bg:#111625;--panel:#161c2d;--ink:#e6e9f0;--mut:#8b93a7;--line:#232b3f;--chip:#1b2236;--accent:#5b82f0;--band:#1b2236;
+  --s-done:#3fbf86;--s-review:#9b86e6;--s-work:#5aa0f5;--s-ready:#7b8598;--s-block:#f0a03a;--s-rej:#ef6a62;--s-canc:#4a5266;--pred:#e879f9;
+  scrollbar-color:#2a3140 transparent;
+}
+html[data-embedded] ::-webkit-scrollbar{width:8px;height:8px}
+html[data-embedded] ::-webkit-scrollbar-track{background:transparent}
+html[data-embedded] ::-webkit-scrollbar-thumb{background:#2a3140;border-radius:4px}
+html[data-embedded] ::-webkit-scrollbar-thumb:hover{background:#33405c}

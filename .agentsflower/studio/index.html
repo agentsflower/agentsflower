@@ -93,6 +93,15 @@
       </div>
     </header>
 
+    <!-- Workspace Context Subheader -->
+    <div class="workspace-subheader" id="workspaceSubheader">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+      </svg>
+      <span class="ws-label">WORKSPACE</span>
+      <span class="ws-path" id="workspacePath" title="Active workspace path">—</span>
+    </div>
+
     <div class="app-body">
       <!-- Workspace Sidebar -->
       <aside class="sidebar">
@@ -483,11 +492,15 @@
           <div class="analytics-container">
             <div class="analytics-toolbar glass-card">
               <div class="analytics-tabs">
-                <button type="button" class="btn-subtab active" data-sub="index">Tasks & Overview</button>
-                <button type="button" class="btn-subtab" data-sub="graph">Gantt & Dependency Graph</button>
+                <button type="button" class="btn-subtab" data-sub="index">Tasks & Overview</button>
+                <button type="button" class="btn-subtab active" data-sub="graph">Gantt & Dependency Graph</button>
                 <button type="button" class="btn-subtab" data-sub="roadmap">Roadmap & Milestones</button>
               </div>
               <div class="analytics-actions">
+                <span class="analytics-built" id="analyticsBuiltStamp" title="Dashboard build timestamp">Built —</span>
+                <button type="button" class="chat-icon-btn" id="btnDashThemeToggle" title="Dashboard: switch theme">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                </button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnRebuildDashboard">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   <span>Rebuild Analytics</span>
@@ -499,7 +512,7 @@
               </div>
             </div>
             <div class="analytics-frame-wrapper glass-card">
-              <iframe id="analyticsFrame" src="/dashboard/out/index.html" title="Classic Analytics and Roadmap"></iframe>
+              <iframe id="analyticsFrame" src="about:blank" title="Classic Analytics and Roadmap"></iframe>
             </div>
           </div>
         </section>

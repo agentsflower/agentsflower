@@ -363,6 +363,39 @@ body {
   flex-shrink: 0;
 }
 
+/* Workspace Context Subheader */
+.workspace-subheader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
+}
+.workspace-subheader svg {
+  width: 13px;
+  height: 13px;
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}
+.ws-label {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}
+.ws-path {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 .topnav-actions {
   display: flex;
   align-items: center;
@@ -1401,11 +1434,15 @@ body {
 }
 
 /* Analytics View & Iframe */
+#view-analytics {
+  height: 100%;
+}
 .analytics-container {
   display: flex;
   flex-direction: column;
   gap: 16px;
   height: 100%;
+  min-height: 520px;
 }
 .analytics-toolbar {
   display: flex;
@@ -1419,7 +1456,7 @@ body {
 }
 .btn-subtab {
   padding: 6px 14px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-muted);
@@ -1433,26 +1470,36 @@ body {
   color: var(--text-main);
 }
 .btn-subtab.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: #2b5fd9;
+  color: #fff;
+  border-color: #2b5fd9;
+}
+.btn-subtab.active:hover {
+  background: #2b7de0;
+  color: #fff;
 }
 .analytics-actions {
   display: flex;
+  align-items: center;
   gap: 10px;
+}
+.analytics-built {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-subtle);
+  white-space: nowrap;
 }
 .analytics-frame-wrapper {
   flex: 1;
-  min-height: 750px;
+  min-height: 0;
   border-radius: var(--radius-md);
   overflow: hidden;
   padding: 0;
-  background: #0f141c;
+  background: #111625;
 }
 #analyticsFrame {
   width: 100%;
   height: 100%;
-  min-height: 750px;
   border: none;
 }
 

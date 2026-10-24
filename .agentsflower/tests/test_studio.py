@@ -321,6 +321,97 @@ class TestStudioShell(StudioApiCase):
 
 
 
+class TestAnalyticsRoadmapContract(StudioApiCase):
+    """Analytics & Roadmap view: toolbar contract, embedded dashboard harmonization."""
+
+    def dash_asset(self, name):
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{self.port}/dashboard/{name}"
+        ) as resp:
+            return resp.read().decode("utf-8")
+
+    def test_analytics_toolbar_subtabs_and_actions(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        for marker in (
+            'id="view-analytics"',
+            'data-sub="index"',
+            'data-sub="graph"',
+            'data-sub="roadmap"',
+            "Tasks & Overview",
+            "Gantt & Dependency Graph",
+            "Roadmap & Milestones",
+            'id="analyticsBuiltStamp"',
+            'id="btnDashThemeToggle"',
+            'id="btnRebuildDashboard"',
+            "Rebuild Analytics",
+            'id="btnOpenExternalDashboard"',
+            "Open Fullscreen",
+            'id="analyticsFrame"',
+        ):
+            self.assertIn(marker, html)
+        # mockup shows the Gantt sub-tab active by default
+        self.assertIn('class="btn-subtab active" data-sub="graph"', html)
+
+    def test_workspace_subheader_and_persistent_sidebar(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        for marker in ('id="workspaceSubheader"', 'id="workspacePath"'):
+            self.assertIn(marker, html)
+        # the workspace sidebar lives outside the analytics view panel:
+        # it stays mounted (and visible) whatever sub-view is active
+        self.assertLess(html.index('class="sidebar"'), html.index('id="view-analytics"'))
+        section = html.split('id="view-analytics"', 1)[1].split("</section>", 1)[0]
+        self.assertNotIn('class="sidebar"', section)
+
+    def test_studio_js_embedded_query_and_dashboard_bridge(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        for marker in (
+            "embedded=1",
+            "dash-meta",
+            "dash-theme",
+            "btnDashThemeToggle",
+            "analyticsBuiltStamp",
+            "analyticsSubTab",
+        ):
+            self.assertIn(marker, js)
+        # the fullscreen link must NOT carry the embedded flag - standalone view keeps #hdr
+        href_lines = [l for l in js.splitlines() if "btnOpenExternalDashboard.href" in l]
+        self.assertTrue(href_lines, "external dashboard link never assigned")
+        for l in href_lines:
+            self.assertNotIn("embedded", l)
+
+    def test_dashboard_embedded_hides_hdr_and_dark_palette(self):
+        cjs = self.dash_asset("common.js")
+        for marker in ("embedded", "dash-meta", "dash-theme", "postMessage"):
+            self.assertIn(marker, cjs)
+        ccss = self.dash_asset("common.css")
+        for marker in ("[data-embedded]", "#hdr", "#111625", "#161c2d", "display:none"):
+            self.assertIn(marker, ccss)
+
+    def test_gantt_layout_contract_markers(self):
+        tpl = self.dash_asset("graph_template.html")
+        for marker in (
+            'id="fbar"',
+            'id="fchosen"',
+            'id="ctl"',
+            'id="ganttOnly"',
+            'id="vGantt"',
+            'id="vBoard"',
+            'id="vSum"',
+            'id="asof"',
+            'id="play"',
+            'id="nowBtn"',
+            'id="gl"',
+            'id="gr"',
+            'id="detail"',
+            'id="legend"',
+        ):
+            self.assertIn(marker, tpl)
+
+
+
 class TestTaskSynthesisAndPool(StudioApiCase):
     def test_synthesize_generates_task_pool_from_dialogue(self):
         code, res = self.api(
