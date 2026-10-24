@@ -1,0 +1,80 @@
+# AgentsFlower Studio Visual Mockup Specifications
+
+This directory contains the canonical visual mockups approved by the human:
+- `mockup-explorer.png` - Explorer Dual-Pane Code & Task Inception View
+- `mockup-taskboard.png` - Task Board Kanban & Metrics View
+
+## 1. Global Shell & Top Navigation Bar
+
+The top navigation bar is HORIZONTAL across the entire application width:
+- **Far Left Brand:** Purple icon with layered flower, `AgentsFlower`, subtitle `Studio Cockpit v2.17.0`.
+- **Horizontal Primary Navigation Tabs:**
+  - `Explorer` — Pill button, highlighted with blue border/background when active.
+  - `Task Board` — Pill button with task count badge (e.g. `110`), highlighted when active.
+  - Sub-navigation links directly next to primary tabs:
+    - `Analytics & Roadmap` (bar chart icon)
+    - `Knowledge Graph` (AST node icon)
+    - `Model Quota Hub` (signal/capacity icon)
+    - `Task Contract Creator` (plus circle icon)
+    - `Quick Start Guide` (compass icon)
+- **Top-level navigation tabs MUST NOT be placed in the left sidebar.**
+
+## 2. Left Sidebar (Active Workspace & Portfolio)
+
+The left sidebar is dedicated strictly to workspace and project tree navigation:
+- **Header:** `ACTIVE WORKSPACE` in small tracking font, accompanied by `+ Attach` and `+ New` pill buttons.
+- **Multi-Project Accordion Cards:**
+  - **Active Workspace Card:**
+    - Green square indicator.
+    - Name and count: `code - v2.17.0 (110 tasks)`.
+    - Caret icon `v` (expanded).
+    - Nested file tree:
+      - `.agentsflower` (yellow folder icon)
+      - `.claude` (purple folder icon)
+      - `.github` (gray folder icon)
+      - `runbook` (gray folder icon)
+      - `src` (gray folder icon)
+      - `.gitignore` (orange git icon)
+      - `AGENTS.md` (blue markdown icon, glowing border when selected)
+  - **Inactive Workspace Cards:**
+    - Square checkbox indicator, e.g. `code - v2.17.0 (11 tasks)`, collapse caret `^`.
+
+## 3. Explorer View (Dual-Pane Layout)
+
+When `Explorer` is active in top navigation:
+- **Center Pane (Code Viewer):**
+  - Top breadcrumbs bar: `src > agentsflower > cli.py > AGENTS.md > ..`
+  - Code Editor container:
+    - Line numbers column (`1, 2, 3...`)
+    - Syntax-highlighted code block with dark editor background (`#111625`).
+    - Monospace JetBrains Mono font.
+- **Right Pane (Task Inception & AI Copilot Chat):**
+  - Header: Task title / action ("Upload Latest") with `+` and panel controls.
+  - Chat stream with rich execution cards:
+    - User prompt bubble (e.g. "приступай к T-030").
+    - Collapsible status line: "Worked for 2m >".
+    - Execution status card:
+      - Bold announcement: "Задача T-030: Stealth verification harness успешно разблокирована, утверждена в реестре и запущена на исполнение!".
+      - Status bullets: Задача, Исполнитель (Devin swe-2-high), Worktree path, Статус (RUNNING Attempt 1).
+    - Diff summary widget:
+      - "3 files changed +4 -9 >"
+      - Colored + / - file badges with paths.
+  - Bottom chat bar:
+    - Textarea placeholder: "Ask anything, @ to mention, / for actions".
+    - Bottom toolbar: `+` action button, model selector dropdown (e.g. `Gemini 1.5 Flash Medium ^` / active model), send button.
+
+## 4. Task Board View (Kanban & Metrics)
+
+When `Task Board` is active in top navigation:
+- **Stage Filter Bar:** `All Stages` (active blue pill), `Stage 5`, `Stage 6`, `Stage 7`.
+- **Metrics Summary Row:**
+  - `110 Total Tasks` (white)
+  - `0 In Progress` (amber)
+  - `0 In Review` (purple)
+  - `81 Completed` (emerald)
+- **4 Kanban Columns:**
+  - `Ready to Launch (29)` with blue dot
+  - `In Progress (0)` with amber dot
+  - `Verification / Review (0)` with purple dot
+  - `Done & Merged (81)` with green dot
+- **Task Cards:** Task ID badge (`T-001`), Stage badge (`Stage 6`), Title text, Role (`Developer`), Tool (`devin`).
