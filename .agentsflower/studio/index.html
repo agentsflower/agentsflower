@@ -18,7 +18,7 @@
   <div class="studio-app">
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
-      <div class="brand-header">
+      <div class="brand-header clickable" id="brandHomeBtn" title="Back to Task Board">
         <div class="brand-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -26,15 +26,21 @@
         </div>
         <div class="brand-text">
           <span class="brand-title">AgentsFlower</span>
-          <span class="brand-subtitle">Studio Cockpit <span class="version-tag" id="appVersion">v2.16.0</span></span>
+          <span class="brand-subtitle">Studio Cockpit <span class="version-tag" id="appVersion">v2.17.0</span></span>
         </div>
       </div>
 
       <!-- Project Switcher Selector -->
       <div class="project-selector-card">
-        <label class="section-label">ACTIVE WORKSPACE</label>
+        <div class="project-selector-header">
+          <label class="section-label">ACTIVE WORKSPACE</label>
+          <div class="project-header-actions">
+            <button type="button" class="btn-xs" id="btnOpenAttachModal" title="Attach Existing Project Folder">+ Attach</button>
+            <button type="button" class="btn-xs" id="btnOpenCreateModal" title="Scaffold New AgentsFlower Project">+ New</button>
+          </div>
+        </div>
         <div class="project-select-wrapper">
-          <div class="active-dot"></div>
+          <div class="active-dot" id="projectActiveDot"></div>
           <select id="projectSelect" class="project-dropdown">
             <option value="">Loading workspaces...</option>
           </select>
@@ -52,6 +58,17 @@
           </svg>
           <span>Task Board</span>
           <span class="badge" id="taskTotalBadge">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v18h18"/>
+            <path d="M18 17V9"/>
+            <path d="M13 17V5"/>
+            <path d="M8 17v-3"/>
+          </svg>
+          <span>Analytics & Roadmap</span>
+          <span class="badge badge-accent">Gantt</span>
         </button>
 
         <button class="nav-item" data-tab="graft">
@@ -82,6 +99,14 @@
           </svg>
           <span>Task Contract Creator</span>
         </button>
+
+        <button class="nav-item" data-tab="guide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+          </svg>
+          <span>Quick Start Guide</span>
+        </button>
       </nav>
 
       <!-- Machine Capacity Mini Widget -->
@@ -101,7 +126,7 @@
       <!-- Top Bar Header -->
       <header class="topbar">
         <div class="breadcrumbs">
-          <span class="breadcrumb-root">Studio</span>
+          <span class="breadcrumb-root clickable" id="breadcrumbStudio" title="Return to Task Board">Studio</span>
           <span class="separator">/</span>
           <span class="breadcrumb-active" id="activeTabTitle">Task Board</span>
         </div>
@@ -127,6 +152,17 @@
 
       <!-- View Containers -->
       <div class="views-wrapper">
+        <!-- Uninitialized Project Banner -->
+        <div class="alert-banner" id="uninitProjectBanner" style="display: none;">
+          <div class="banner-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+              <strong>AgentsFlower is not initialized in this workspace.</strong>
+              <span>Initialize AgentsFlower to enable task contracts, AST knowledge graphs, and automated role verification gates.</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="btnInstallFramework">Initialize AgentsFlower (v2.17.0)</button>
+        </div>
         <!-- 1. Kanban Task Board View -->
         <section class="view-panel active" id="view-kanban">
           <div class="board-header">
@@ -333,22 +369,132 @@
                 </div>
 
                 <div class="form-group">
-                  <label>Allowed Files (Comma-separated or lines)</label>
-                  <textarea id="newTaskAllowed" rows="2" placeholder=".agentsflower/tools/xyz.py, .agentsflower/tests/test_xyz.py"></textarea>
+                  <div class="group-header">
+                    <label>Allowed Files (Explicit Blast Boundary)</label>
+                    <div class="quick-chips">
+                      <button type="button" class="chip-btn" data-add-path=".agentsflower/tools/*.py">+ tools</button>
+                      <button type="button" class="chip-btn" data-add-path=".agentsflower/tests/*.py">+ tests</button>
+                      <button type="button" class="chip-btn" data-add-path=".agentsflower/docs/*.md">+ docs</button>
+                    </div>
+                  </div>
+                  <div class="interactive-input-row">
+                    <input type="text" id="inputAllowedFile" placeholder="e.g. .agentsflower/tools/xyz.py">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnAddAllowedFile">+ Add File</button>
+                  </div>
+                  <div class="tag-container" id="allowedTagsContainer">
+                    <!-- Dynamic tag chips inserted here -->
+                  </div>
                 </div>
 
                 <div class="form-group">
-                  <label>Acceptance Criteria (One per line)</label>
-                  <textarea id="newTaskCriteria" rows="3" placeholder="C-01: Feature works cleanly under all configurations.&#10;C-02: All unit tests pass."></textarea>
+                  <div class="group-header">
+                    <label>Acceptance Criteria (Independently Verifiable)</label>
+                    <div class="quick-chips">
+                      <button type="button" class="chip-btn" data-add-crit="All unit tests pass without regressions.">+ tests pass</button>
+                      <button type="button" class="chip-btn" data-add-crit="Git working tree clean and no untracked artifacts.">+ clean git</button>
+                      <button type="button" class="chip-btn" data-add-crit="SDLC Gate checks pass: python -m unittest discover.">+ gate pass</button>
+                    </div>
+                  </div>
+                  <div class="criteria-list-builder" id="criteriaListBuilder">
+                    <!-- Dynamic criteria items with auto-incrementing C-01, C-02 -->
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnAddCriterion">+ Add Acceptance Criterion</button>
                 </div>
 
                 <div class="form-actions">
+                  <button type="button" class="btn btn-secondary" id="btnCancelCreate">
+                    <span>Cancel / Return to Board</span>
+                  </button>
                   <button type="submit" class="btn btn-primary" id="btnSubmitTask">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     <span>Generate Contract & Register in Ledger</span>
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. Classic Analytics & Roadmap View -->
+        <section class="view-panel" id="view-analytics">
+          <div class="analytics-container">
+            <div class="analytics-toolbar glass-card">
+              <div class="analytics-tabs">
+                <button type="button" class="btn-subtab active" data-sub="index">Tasks & Overview</button>
+                <button type="button" class="btn-subtab" data-sub="graph">Gantt & Dependency Graph</button>
+                <button type="button" class="btn-subtab" data-sub="roadmap">Roadmap & Milestones</button>
+              </div>
+              <div class="analytics-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnRebuildDashboard">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                  <span>Rebuild Analytics</span>
+                </button>
+                <a href="/dashboard/out/index.html" target="_blank" class="btn btn-secondary btn-sm" id="btnOpenExternalDashboard">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span>Open Fullscreen</span>
+                </a>
+              </div>
+            </div>
+            <div class="analytics-frame-wrapper glass-card">
+              <iframe id="analyticsFrame" src="/dashboard/out/index.html" title="Classic Analytics and Roadmap"></iframe>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. Quick Start & Onboarding Guide View -->
+        <section class="view-panel" id="view-guide">
+          <div class="guide-container">
+            <div class="card glass-card">
+              <h3>🚀 AgentsFlower Quick Start & Protocol Cockpit</h3>
+              <p class="subtitle">Complete guide for autonomous pair programming, multi-project workflows, and zero-trust verification.</p>
+
+              <div class="guide-grid">
+                <div class="guide-card">
+                  <div class="guide-card-icon">🛡️</div>
+                  <h4>Zero-Trust SDLC Authority</h4>
+                  <p>In AgentsFlower, tasks <strong>cannot be manually dragged to Done</strong>. A task is only marked <code>done</code> when an independent tester or the verification gate checks the exact git commit and automated test suite.</p>
+                </div>
+
+                <div class="guide-card">
+                  <div class="guide-card-icon">👥</div>
+                  <h4>Role Specialization</h4>
+                  <p><strong>developer:</strong> writes implementation strictly inside <code>Allowed files</code>.<br>
+                  <strong>tester:</strong> runs independent verification without editing task code.<br>
+                  <strong>deployer:</strong> packaging, releases, and distribution.</p>
+                </div>
+
+                <div class="guide-card">
+                  <div class="guide-card-icon">🧠</div>
+                  <h4>Graft AST Knowledge Graph</h4>
+                  <p>Zero-token code navigation powered by Tree-sitter. Query function signatures, compute Blast Radius before editing, and locate symbols without burning model context tokens.</p>
+                </div>
+
+                <div class="guide-card">
+                  <div class="guide-card-icon">⚡</div>
+                  <h4>Adaptive Failover Policy</h4>
+                  <p>If cloud CLI models hit token rate limits, Studio automatically routes sessions to backup cloud tools or zero-cost local models (Ollama / DeepSeek-R1) while preserving memory.</p>
+                </div>
+              </div>
+
+              <div class="guide-cli-section">
+                <h4>Essential CLI Cheat Sheet</h4>
+                <div class="cli-command-row">
+                  <code>python .agentsflower/tools/studio.py</code>
+                  <span>Launch this modern web cockpit on http://127.0.0.1:8888</span>
+                </div>
+                <div class="cli-command-row">
+                  <code>python .agentsflower/tools/ledger.py list</code>
+                  <span>Print current task ledger status in terminal</span>
+                </div>
+                <div class="cli-command-row">
+                  <code>python -m unittest discover -s .agentsflower/tests</code>
+                  <span>Run full autonomous regression test suite</span>
+                </div>
+                <div class="cli-command-row">
+                  <code>python .agentsflower/tools/graft.py impact &lt;symbol&gt;</code>
+                  <span>Compute Blast Radius across callers before code change</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -369,8 +515,46 @@
         <!-- Injected dynamically -->
       </div>
     </div>
+
+    <!-- Attach Project Modal -->
+    <div class="modal-backdrop" id="modalAttachBackdrop" style="display:none;">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3>Attach Existing Project</h3>
+          <button type="button" class="btn-close" id="btnCloseAttachModal">&times;</button>
+        </div>
+        <p class="subtitle">Enter the absolute path of an existing folder to add it to your Studio Cockpit.</p>
+        <div class="form-group">
+          <label>Project Directory Path</label>
+          <input type="text" id="inputAttachPath" placeholder="E:\Projects\MyProject">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelAttach">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnConfirmAttach">Attach Workspace</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create / Scaffold Project Modal -->
+    <div class="modal-backdrop" id="modalCreateBackdrop" style="display:none;">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3>Scaffold New AgentsFlower Project</h3>
+          <button type="button" class="btn-close" id="btnCloseCreateModal">&times;</button>
+        </div>
+        <p class="subtitle">Install the complete AgentsFlower v2.17.0 template into any target directory.</p>
+        <div class="form-group">
+          <label>Target Directory Path</label>
+          <input type="text" id="inputCreatePath" placeholder="E:\Projects\NewWorkspace">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelScaffold">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnConfirmScaffold">Scaffold Project</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <script src="studio.js?v=2"></script>
+  <script src="studio.js?v=3"></script>
 </body>
 </html>

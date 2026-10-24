@@ -13,6 +13,11 @@
 - **T-123 (Skills Ecosystem Taxonomy):** 9-domain registry (`.agentsflower/skills/INDEX.md`) packaged as template-owned files via `install.py`.
 - **T-124 (Domain 9 Skill - geo-seo-audit):** Autonomous SEO/GEO auditor (`scripts/geo_audit.py`) with 100-pt AI Citability Index, Schema.org JSON-LD validator, and llms.txt drift detector.
 - **T-125 (Studio Kanban Card Shrink Fix):** Fixed flexbox card squashing (`flex-shrink: 0; min-height: fit-content;`), verified in browser with full multi-line title and footer visibility.
+- **T-126 (Studio Navigation & Breadcrumb Links):** Clickable breadcrumbs (`Studio / Task Board`), brand home navigation, and cancel button in Task Creator.
+- **T-127 (Task Contract Creator Interactive Lists):** Dynamic file tag inputs, interactive criteria builder (`C-01:`, `C-02:`), and preset chips replacing malformed raw textareas.
+- **T-128 (Multi-Project Gateway):** Dynamic project switcher with `?project=` task loading, external folder attachment modal, and uninitialized workspace banner with auto-installer.
+- **T-129 (Classic Dashboard & Analytics):** Embedded Tasks Overview, Gantt & Timeline, and Roadmap tabs with live on-demand rebuild action.
+- **Quick Start Guide:** Built-in protocol cockpit explaining role specialization, zero-trust gate authority, AST querying, and CLI cheat sheet.
 
 ## 3. Ready in the Queue
 - **T-120:** Local Model Protocol & Adapter Architecture (Ollama / LM Studio / local LLM zero-cost fallback adapter).

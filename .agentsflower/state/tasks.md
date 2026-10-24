@@ -110,6 +110,10 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-123 | Specialized Skills Ecosystem: 9-Domain Taxonomy & Packaging | 7 | developer | devin | done | T-113 |  | Template-owned `.agentsflower/skills/` registry across 9 high-impact domains | 2026-10-24 00:40 |
 | T-124 | Domain 9 Specialized Skill: geo-seo-audit & AI Citability | 7 | developer | devin | done | T-123 |  | Autonomous SEO/GEO auditor (`scripts/geo_audit.py`) with 100-pt AI Citability Index | 2026-10-24 00:45 |
 | T-125 | Fix task card vertical shrink and title clipping in Studio Kanban | 7 | developer | devin | done | T-121 | b500ee4 | Fix flexbox card shrinkage (`flex-shrink: 0; min-height: fit-content`) and full title rendering | 2026-10-24 04:20 |
+| T-126 | Studio Navigation: breadcrumb links, cancel handler, and version sync | 7 | developer | devin | done | T-125 |  | Clickable breadcrumb root, brand home return, cancel button in creator, dynamic version badge | 2026-10-24 05:15 |
+| T-127 | Studio Task Contract Creator: interactive file tags and criteria builder | 7 | developer | devin | done | T-126 |  | Interactive tag chips, quick chips, and auto-numbered C-01: list items replacing raw textareas | 2026-10-24 05:15 |
+| T-128 | Studio Multi-Project Gateway: dynamic project query, attach and scaffold | 7 | developer | devin | done | T-127 |  | Project switching with ?project= query, folder attachment modal, and framework auto-install banner | 2026-10-24 05:15 |
+| T-129 | Studio Classic Dashboard Integration: Analytics & Roadmap views | 7 | developer | devin | done | T-128 |  | Embedded overview, Gantt and roadmap views in Studio with on-demand rebuild action | 2026-10-24 05:15 |
 
 
 

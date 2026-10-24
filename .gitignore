@@ -1,6 +1,7 @@
 
 # local FPF spec copy, not part of the template
 FPF-Spec/
+.agentsflower/state/attached_projects.json
 
 # agentsflower:begin
 .agentsflower/tasks/.runtime/
