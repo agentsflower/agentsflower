@@ -106,7 +106,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-118 | Independently verify Graft integration and tooling | 6 | tester | codex | done | T-117 | 47f33956173e430f0dff9c1eda35d34161591b29 |  | 2026-10-23 21:17 |
 | T-120 | Local Model Protocol & Adapter Architecture | 7 | developer | devin | done | none |  | Zero-cost local model adapter (`local_adapter.py`) and tiered failover protocol (`failover.py`) | 2026-10-24 05:25 |
 | T-121 | AgentsFlower Studio Local Web UI & Multi-Project Gateway | 7 | developer | devin | done | none |  | Zero-pip-dep http.server backend + modern dark glassmorphism web cockpit (`agentsflower studio`) | 2026-10-24 00:30 |
-| T-122 | Project Scaffolding CLI & Template Engine | 7 | developer | devin | done | T-120 |  | Project management CLI (`agentsflower project list|attach|new|update`) | 2026-10-24 05:25 |
+| T-122 | Project Scaffolding CLI & Template Engine | 7 | developer | devin | done | T-120 |  | Project management CLI (`agentsflower project list | attach |
 | T-123 | Specialized Skills Ecosystem: 9-Domain Taxonomy & Packaging | 7 | developer | devin | done | T-113 |  | Template-owned `.agentsflower/skills/` registry across 9 high-impact domains | 2026-10-24 00:40 |
 | T-124 | Domain 9 Specialized Skill: geo-seo-audit & AI Citability | 7 | developer | devin | done | T-123 |  | Autonomous SEO/GEO auditor (`scripts/geo_audit.py`) with 100-pt AI Citability Index | 2026-10-24 00:45 |
 | T-125 | Fix task card vertical shrink and title clipping in Studio Kanban | 7 | developer | devin | done | T-121 | b500ee4 | Fix flexbox card shrinkage (`flex-shrink: 0; min-height: fit-content`) and full title rendering | 2026-10-24 04:20 |
@@ -114,7 +114,8 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-127 | Studio Task Contract Creator: interactive file tags and criteria builder | 7 | developer | devin | done | T-126 |  | Interactive tag chips, quick chips, and auto-numbered C-01: list items replacing raw textareas | 2026-10-24 05:15 |
 | T-128 | Studio Multi-Project Gateway: dynamic project query, attach and scaffold | 7 | developer | devin | done | T-127 |  | Project switching with ?project= query, folder attachment modal, and framework auto-install banner | 2026-10-24 05:15 |
 | T-129 | Studio Classic Dashboard Integration: Analytics & Roadmap views | 7 | developer | devin | done | T-128 |  | Embedded overview, Gantt and roadmap views in Studio with on-demand rebuild action | 2026-10-24 05:15 |
-| T-130 | AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate | 7 | developer | devin | ready | none |  | Multi-project file tree accordion, Explorer tab, global context broadcast, and consent-gated install | 2026-10-24 13:50 |
+| T-130 | AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate | 7 | developer | devin | done | none | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 | Multi-project file tree accordion, Explorer tab, global context broadcast, and consent-gated install | 2026-10-24 12:31 |
+| T-131 | Verify Studio multi-project explorer and authorization gate | 7 | tester | devin | done |  | 1d2aafed623222e1b4b88d3cea068bc7cee351c4 |  | 2026-10-24 12:31 |
 
 
 

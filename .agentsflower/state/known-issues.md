@@ -127,3 +127,13 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   flagged '/' and 'roles/_template/protocol' from a quoted example; fixed by
   rewording). Authoring rule for workers: the literal `evidence:` may appear
   once per line, before the real claim paths only.
+- 2026-10-24 - Evidence files under `.agentsflower/tasks/.runtime/` must have a
+  basename starting `T-NNN.` (the task's own id), not just live inside a
+  `T-NNN.evidence/` folder (gate.py `evidence_problems` checks the basename).
+  Cost T-131 a verify refusal on otherwise complete work (`check1_test_studio.txt`
+  -> renamed `T-131.check1_test_studio.txt`). Task Files already instruct
+  workers via AGENTFLOW_EVIDENCE; the devin worker missed the prefix rule.
+- 2026-10-24 - `gate.py stage 7` FAIL: ledger rows T-121, T-123, T-124,
+  T-126, T-127, T-128, T-129 are `done` but their Task Files do not exist in
+  `.agentsflower/tasks/` (never committed - no trace in git history or
+  worktrees). Stage 7 cannot close until the human decides how to reconcile.

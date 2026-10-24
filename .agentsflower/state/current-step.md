@@ -19,7 +19,8 @@
 - **T-129 (Classic Dashboard & Analytics):** Embedded Tasks Overview, Gantt & Timeline, and Roadmap tabs with live on-demand rebuild action.
 - **T-120 (Local Model Protocol & Failover Architecture):** Probes local inference servers (Ollama, LM Studio) and provides tiered failover protocol preserving context when cloud limits are reached.
 - **T-122 (Project Scaffolding CLI):** Workspace management commands (`agentsflower project list|attach|new|update`).
+- **T-130 / T-131 (Multi-Project Explorer + verify):** Multi-project file tree accordion, Explorer tab, global context broadcast, consent-gated install; independently verified (510/0/4 suite, traversal + 403-gate probes). Merged main 3d89d3c.
 
 ## 3. Ready in the Queue
-- **T-130:** AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate (Assigned to Devin swe-2-max).
+- Ledger is empty of open tasks. `gate.py stage 7` FAILs on missing Task Files for done rows T-121/T-123/T-124/T-126..T-129 - human decision in questions.md (2026-10-24).
 - **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps).

@@ -420,3 +420,19 @@ repointed Depends T-036 -> T-099 and launched. known-issues annotated:
 agy CLI automation note, paths() marked resolved, install.py:269 section
 name nit, evidence:-marker quoting rule. decisions.md train entry proposed
 by T-098/T-099 workers - left for the human's session (background limit).
+
+## 2026-10-24: T-131 evidence rename repair -> accept; T-130 merged (main 3d89d3c)
+
+Background session devin (devin-background). Opened on one need: T-131 accept
+had stopped at `gate.py verify` - evidence files existed under
+`.runtime/T-131.evidence/` but lacked the required `T-131.` basename prefix
+("belongs to another task"). Mechanical repair per the T-100 surgical-fix
+precedent: renamed the three evidence files to `T-131.*` and corrected the
+two claimed evidence paths plus one mention in the Result; verdict, criteria
+outcomes and evidence content untouched. verify #2/#3 PASS -> accept.py
+accepted T-131 (tester, nothing to merge; worktree cleaned). tick then
+mechanically accepted T-130 (its tester done): merged to main 3d89d3c,
+branch t-130-studio-multiproject-explorer deleted, ledger T-130/T-131 done.
+Ledger fully clean - no open tasks. Ran `gate.py stage 7` read-only: FAIL,
+seven done rows (T-121, T-123, T-124, T-126..T-129) have no Task File in the
+repository - recorded in known-issues and questions.md for the human.

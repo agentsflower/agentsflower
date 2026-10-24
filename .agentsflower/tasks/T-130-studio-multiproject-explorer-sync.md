@@ -77,3 +77,27 @@ Align AgentsFlower Studio with the dual-pane IDE/Explorer mockups and resolve th
 ## Result
 
 <!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 1d2aafe on t-130-studio-multiproject-explorer
+Files:
+- .agentsflower/tools/studio.py - new endpoints /api/project/tree, /api/file/read, /api/project/git; resolve_known_project + safe_under boundary validation; authorized:true required on project create/update; project-scoped graft, dashboard build and dashboard static serving; criteria payload in /api/tasks
+- .agentsflower/studio/index.html - project accordion replaces dropdown, Explorer view (tree/code/inspector), authorization modal, active-project chip, creator target hint
+- .agentsflower/studio/studio.css - accordion, file tree, explorer grid, code viewer, inspector and modal styles
+- .agentsflower/studio/studio.js - renderProjectAccordion, lazy fetchTree/renderTreeNodes, switchProject global broadcast, Explorer file open + breadcrumbs + highlightCode, Task Context Inspector, requestInstallAuthorization gate on all install paths
+- .agentsflower/tests/test_studio.py - 18 HTTP-level tests for the new endpoints, traversal protection, auth gate and criteria payload
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (18 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (510 passed / 0 failed, 4 skipped)
+Criteria:
+- C-01: pass - sidebar accordion lists every registered workspace with expandable lazy file tree: .agentsflower/studio/index.html #projectAccordion, studio.js renderProjectAccordion/fetchTree/renderTreeNodes, backend /api/project/tree in .agentsflower/tools/studio.py
+- C-02: pass - Explorer view view-explorer with workspace tree, breadcrumb + syntax-highlighted code viewer (highlightCode, /api/file/read), and right-pane Task Context Inspector (contract metadata, criteria checklist, git diff via /api/project/git)
+- C-03: pass - switchProject() broadcasts the active project: /api/tasks, /api/status, dashboard iframe ?project= plus project-scoped /api/dashboard/build, graft query/impact and task creation all carry the selected project
+- C-04: pass - every install path routes through the authorization modal (requestInstallAuthorization); backend returns 403 requires_authorization for create/update without authorized:true, enforced before any mkdir/install run
+- C-05: pass - /api/project/tree and /api/file/read resolve the project against the registered workspace set and enforce safe_under (absolute paths, .., NUL, symlink escapes rejected); unregistered projects get 403
+- C-06: pass - full suite ran green as listed in Checks
+Found, not fixed:
+- /api/status and /api/tasks still accept an arbitrary existing directory for read-only ledger/status reads (pre-existing behavior, out of scope); new file/git/graft endpoints require a registered project
+- The referenced dual-pane IDE/Explorer mockup file is not in the repository; the view implements the layout described in the Goal text
+- Task criteria checkboxes in the inspector are read-only by design (contract state, not UI toggles)
+Proposed memory updates:
+- Studio now exposes file-content and git-summary APIs bound to registered workspaces only; future file-write or execute endpoints should reuse resolve_known_project + safe_under

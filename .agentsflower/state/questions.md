@@ -96,3 +96,16 @@ No additional plan approval is needed for the completed local task pool.
   Option C (waiting for agy reset) discarded. T-066 will proceed via dynamic rotation
   to an adequate available model or re-scoping when reached in the queue.
 - What waits on it: only T-066; the documentation chain proceeds regardless.
+
+## 2026-10-24 - Stage 7 cannot close: seven `done` ledger rows lack Task Files
+
+- Found by `gate.py stage 7` (read-only check after T-130/T-131 acceptance).
+- Missing Task Files in `.agentsflower/tasks/`: T-121, T-123, T-124, T-126,
+  T-127, T-128, T-129 - all ledgered `done` (Studio UI, skills ecosystem,
+  multi-project gateway work, already on main at 2.17.0). No trace of the
+  files in git history or any worktree, so they were likely authored in a
+  session that never committed them, or executed without one.
+- Options: (a) reconstruct skeletal Task Files matching the merged diffs so the
+  gate has contracts to check; (b) a human decision to retire/amend those rows
+  or the stage's exit accounting; (c) leave Stage 7 open.
+- What waits on it: Stage 7 closure only. No open tasks depend on the answer.
