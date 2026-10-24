@@ -32,6 +32,20 @@ agentsflower/agentsflower.
 Read: project-rules.md, current-step.md, questions.md, ledger,
 session-log.md tail.
 
+Background session devin-background, 2026-10-24 ~21:57Z: claimed heartbeat
+for the T-138 tick need ("launch refused on launch.lock") - already stale:
+attempt 1 had launched 13s later (devin, pid 25632, deadline 22:32:26Z).
+Ledger: T-136/T-137 done. Human had just committed T-139/T-140 Phase P1
+skill contracts as `ready` with `Routing exception` (ee71a9c). They share
+INDEX.md/ATTRIBUTION.md/test_skills.py: launched T-139 attempt 1 on devin
+(pid 94900, human-exception admission) and set T-140 `Depends on: T-139`
+so tick launches it at T-139 done; ledger note records why. Tick clean.
+
+What waits: T-138 and T-139 outcomes (both `Independent check: tester`).
+On each `completed`: write the tester task (devin preferred per human) and
+proceed to acceptance per the decision table. Committed T-137's pending
+Result, the T-140 edit and memory; released.
+
 Background session devin-background, 2026-10-24 ~19:05Z: claimed heartbeat,
 found the tick need (T-136 launch refused on launch.lock) already resolved -
 attempt 1 launched at 19:02:34Z, devin worker pid 80600 alive, argon model

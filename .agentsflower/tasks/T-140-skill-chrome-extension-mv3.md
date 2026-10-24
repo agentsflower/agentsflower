@@ -4,7 +4,7 @@ Role: developer
 Tool: devin
 Model: swe-2-high
 Stage: 7
-Depends on: none
+Depends on: T-139
 Branch: t-140-skill-chrome-extension-mv3
 Worktree: E:\Projects\AgentFlow\worktrees\agentsflower-t-140-skill-chrome-extension-mv3
 Independent check: tester

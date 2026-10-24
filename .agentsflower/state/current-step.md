@@ -23,6 +23,8 @@
 - **T-130 / T-131 (Multi-Project Explorer + verify):** Multi-project file tree accordion, Explorer tab, global context broadcast, consent-gated install; independently verified (510/0/4 suite, traversal + 403-gate probes). Merged main 3d89d3c.
 
 ## 3. Ready in the Queue
-- Ledger is empty of open tasks. `gate.py stage 7` PASSes (16 tasks) after the human's skeletal Task File reconstruction (b3b9bd2).
-- **Latest merges:** T-134 (studio splitters/editor tabs/4-tab topnav/model selector) verified by T-135 (devin tester, jsdom harness 30/30 assertions) and merged at db7e22f.
-- **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps) - awaiting human approval.
+- **In flight (2026-10-24 ~21:57Z):** T-138 (dynamic model quota hub) devin attempt 1 running, deadline 22:32Z; T-139 (frontend-art-direction skill) devin attempt 1 running. Both `Independent check: tester`.
+- **T-140** (chrome-extension-mv3 skill) `ready`, `Depends on: T-139` - shares INDEX.md/ATTRIBUTION.md/test_skills.py; tick auto-launches it at T-139 done.
+- **Next:** on each worker `completed`, write its tester task (devin preferred) then accept per the decision table.
+- **Latest merges:** T-136 (conversational task inception, verified by T-137) merged at 25fdad6.
+- **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps) - Phase P1 skills (T-139/T-140) human-authorized 2026-10-25; remainder awaits human approval.

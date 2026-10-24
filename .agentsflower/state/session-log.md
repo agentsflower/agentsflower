@@ -452,3 +452,21 @@ db7e22f, worktree+branch cleaned). Ledger fully clean. `gate.py stage 7`
 PASS (16 tasks); recorded the human-declared Stage 7 closure (b3b9bd2,
 questions.md 2026-10-24) in project-plan.md and current-step.md. Stage 8
 remains new scope awaiting human approval.
+
+## 2026-10-24: T-138/T-139 workers running; T-140 serialized on T-139
+
+Background session devin-background. Opened on the tick need "T-138 launch
+refused on launch.lock" - already stale: T-138 attempt 1 had launched at
+21:52:26Z (devin, pid 25632, deadline 22:32:26Z) seconds after the refusal.
+Ledger: T-136/T-137 done. The human had just formalized T-139/T-140 Phase P1
+skill contracts (ee71a9c) as `ready` with `Routing exception` headers.
+T-139/T-140 share INDEX.md/ATTRIBUTION.md/test_skills.py, so only one may
+run: launched T-139 attempt 1 on devin (pid 94900, human-exception
+admission) and set T-140 `Depends on: T-139` (ledger note explains) so tick
+launches it automatically at T-139 done instead of recording a doomed
+overlap refusal. Tick clean: no needs; waits T-138, T-139, T-140(dep).
+
+What waits: T-138 and T-139 outcomes (both `Independent check: tester`).
+On each `completed`: write the tester task (devin preferred) and proceed to
+acceptance. Committed T-137's pending Result, the T-140 Depends-on edit and
+memory.

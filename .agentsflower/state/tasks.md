@@ -123,8 +123,8 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-136 | Conversational Task Inception, AST Blast Radius, and Task Pool Synthesis from Chat | 7 | developer | devin | done | none | 1afb577c9c500ad5d250e22c2127c357dde7b551 | Research thread, /api/task/synthesize, Graft AST blast radius, interactive pool card, batch ledger registration | 2026-10-24 20:17 |
 | T-137 | Verify conversational task inception, AST blast radius, and task pool synthesis | 7 | tester | devin | done |  | 1afb577c9c500ad5d250e22c2127c357dde7b551 | Tester for T-136 @ 1afb577; same tool per human Devin preference | 2026-10-24 20:17 |
 | T-138 | Dynamic Model Quota Hub, Real CLI Model Probing, and Default Model Configuration | 7 | developer | devin | in progress | none |  | Real CLI probe (/api/capacity/probe), live platform cards, free offline models list, default model setter | 2026-10-24 21:52 |
-| T-139 | Domain 1 Specialized Skill: frontend-art-direction and UI Polish | 7 | developer | devin | ready | none |  | Spec-compliant frontend-art-direction skill, anti-slop guidelines, micro-motion easing, design tokens WCAG | 2026-10-25 00:53 |
-| T-140 | Domain 4 Specialized Skill: chrome-extension-mv3 and Manifest V3 Linter | 7 | developer | devin | ready | none |  | Spec-compliant chrome-extension-mv3 skill, service worker lifecycle, mv3_lint.py CLI linter | 2026-10-25 00:53 |
+| T-139 | Domain 1 Specialized Skill: frontend-art-direction and UI Polish | 7 | developer | devin | in progress | none |  | Spec-compliant frontend-art-direction skill, anti-slop guidelines, micro-motion easing, design tokens WCAG | 2026-10-24 21:55 |
+| T-140 | Domain 4 Specialized Skill: chrome-extension-mv3 and Manifest V3 Linter | 7 | developer | devin | ready | none |  | Depends on T-139 (shares INDEX.md/ATTRIBUTION.md/test_skills.py); Spec-compliant chrome-extension-mv3 skill, service worker lifecycle, mv3_lint.py CLI linter | 2026-10-24 21:56 |
 
 
 

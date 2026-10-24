@@ -66,3 +66,25 @@ Independently verify T-136 (Studio conversational task inception: Research/Incep
 ## Result
 
 <!-- Filled by the worker below this heading only. Format: its role file. Nothing above this heading may change, and the header never repeats this heading text. -->
+
+Outcome: completed
+Verdict: pass
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (33 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> fail (524 passed / 1 failed / 4 skipped); the single failure is test_run_task.py test_env_override_downgrade_is_refused_on_launch_and_retry, a documented Windows orphaned-fixture-child flake (known-issues 2026-10-24, also hit T-132): the same test passes in isolation and the whole test_run_task.py module passes standalone (63/63); the module is outside T-136 scope (git show --stat 1afb577 touches only studio/index.html, studio.css, studio.js, tools/studio.py, tests/test_studio.py). No regression attributable to T-136.
+Criteria:
+- V-01: pass - test_studio.py 33/33 OK at verifies commit 1afb577; evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.check_test_studio.txt
+- V-02: pass - full suite ran 525 tests with zero regressions in T-136 scope; the one failure is the known flaky launcher fixture (passes isolated and module-only); evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.check_full_suite.txt
+- V-03: pass - served shell (:8902) carries inspectorTaskSelect with Research & Inception option and btnSynthesizeTasks action in composer; studio.js renders Task Pool Card with task-tid, task-stage-badge, effort-badge, model-tier-pill, collapsible pool-task-details (Allowed Files & Acceptance Criteria) and btn-approve-pool wired to POST /api/task/pool/register; studio.css styles all classes; evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.markup_check.txt
+- V-04: pass - POST /api/task/synthesize returned structured candidates (id, title, stage, role, tool, effort, complexity, tier, model, allowed_files, criteria, blast_radius); tier assessment distinguishes floor swe-2-high vs escalation gemini-4-argon-high; blast_radius engine graft-ast resolved file mentions, symbol matches and Graft dependents (dispatch.py, tick.py and their tests); evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.synthesize_response.json
+- V-05: pass - POST /api/task/pool/register atomically wrote 2 ledger rows (T-137, T-138, status ready) and generated 2 Task Files under .agentsflower/tasks/ inside the served disposable checkout; main repo ledger hash unchanged (ce04f39), main tasks/ gained nothing, T-136 worktree clean at 1afb577; evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.register_response.json, .agentsflower/tasks/.runtime/T-137.evidence/T-137.registered_taskfile.md, .agentsflower/tasks/.runtime/T-137.evidence/T-137.isolation_check.txt
+- V-06: pass - GET /api/task/context?id=T-136 returned contract context (allowed_files, checks, contract_file, recent_log with git log, diff summary); evidence: .agentsflower/tasks/.runtime/T-137.evidence/T-137.context_response.json
+- V-07: pass - all criteria verified with evidence; developer's Found-not-fixed declaration of none is consistent with findings
+New defects (outside the task):
+- test_run_task.py orphaned-fixture-child flake recurred under the full-suite run on Windows (already logged in known-issues 2026-10-24); not caused by T-136
+Cannot verify, needs:
+- none
+Proposed memory updates:
+- none
+
+Observation within checked scope (non-blocking, not a criterion violation): synthesize merges trailing unnumbered discussion text into the last numbered item, so a "minor typo" item inherited escalation keywords from the tail and was assessed escalation/gemini-4-argon-high; heuristic behaves as coded in _assess_task_complexity.
