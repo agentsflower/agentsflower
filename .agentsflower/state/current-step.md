@@ -21,5 +21,5 @@
 - **T-122 (Project Scaffolding CLI):** Workspace management commands (`agentsflower project list|attach|new|update`).
 
 ## 3. Ready in the Queue
-- **Stage 7 Gate Verification & Review:** Independent verification pass across Stage 7 deliverables.
+- **T-130:** AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate (Assigned to Devin swe-2-max).
 - **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps).

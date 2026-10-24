@@ -114,6 +114,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-127 | Studio Task Contract Creator: interactive file tags and criteria builder | 7 | developer | devin | done | T-126 |  | Interactive tag chips, quick chips, and auto-numbered C-01: list items replacing raw textareas | 2026-10-24 05:15 |
 | T-128 | Studio Multi-Project Gateway: dynamic project query, attach and scaffold | 7 | developer | devin | done | T-127 |  | Project switching with ?project= query, folder attachment modal, and framework auto-install banner | 2026-10-24 05:15 |
 | T-129 | Studio Classic Dashboard Integration: Analytics & Roadmap views | 7 | developer | devin | done | T-128 |  | Embedded overview, Gantt and roadmap views in Studio with on-demand rebuild action | 2026-10-24 05:15 |
+| T-130 | AgentsFlower Studio: Multi-Project Explorer, Global Context Sync, and Explicit Authorization Gate | 7 | developer | devin | ready | none |  | Multi-project file tree accordion, Explorer tab, global context broadcast, and consent-gated install | 2026-10-24 13:50 |
 
 
 
