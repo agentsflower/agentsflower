@@ -120,7 +120,7 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-133 | Verify Studio pixel-perfect mockup alignment | 7 | tester | devin | done |  | 14dcc0f52b93bf3fd46a1b86cb60798e08615869 | Tester for T-132 @ 14dcc0f5; verifies mockup contract (mockups/README.md + PNGs), suite, payload fields | 2026-10-24 16:02 |
 | T-134 | Studio Interactive Enhancements: Draggable Splitters, Editor File Tabs, and Model Selector | 7 | developer | devin | done | none | f5355b5941673a91ad1702f7d727f8e588aa5d9f | Bounded draggable resizers (// grip), editor file tabs bar, clean topnav (4 tabs), chat model selector dropdown | 2026-10-24 18:29 |
 | T-135 | Verify Studio splitters, editor tabs, topnav cleanliness, and model selector | 7 | tester | devin | done |  | f5355b5941673a91ad1702f7d727f8e588aa5d9f | Tester for T-134 @ f5355b5; verifies mockup-3 splitters/tabs/topnav/model-selector, suite, persistence; same tool per human Devin preference | 2026-10-24 18:29 |
-| T-136 | Conversational Task Inception, AST Blast Radius, and Task Pool Synthesis from Chat | 7 | developer | devin | ready | none |  | Research thread, /api/task/synthesize, Graft AST blast radius, interactive pool card, batch ledger registration | 2026-10-24 22:01 |
+| T-136 | Conversational Task Inception, AST Blast Radius, and Task Pool Synthesis from Chat | 7 | developer | devin | in progress | none |  | Research thread, /api/task/synthesize, Graft AST blast radius, interactive pool card, batch ledger registration | 2026-10-24 19:02 |
 
 
 
