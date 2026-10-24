@@ -529,5 +529,227 @@ class TestTaskSynthesisAndPool(StudioApiCase):
             self.assertIn(marker, css)
 
 
+DEVIN_MODELS_OUT = """\
+Available models (2 families)
+
+SWE-2 (swe-2)
+  aliases: swe
+  swe-2-high                                                              SWE-2 High  [262K context, Free]
+  swe-2-max                                                               SWE-2 Max  [262K context, Free]
+
+GPT-5.5 (gpt-5.5)
+  gpt-5-5-high                                                            GPT-5.5 High Thinking  [272K context, $5 / 1M Input \u00b7 $0.5 / 1M Cached input \u00b7 $30 / 1M Output]
+"""
+
+AGY_MODELS_OUT = (
+    "Fetching available models...\n"
+    "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+    "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n"
+)
+
+
+class TestCapacityHub(StudioApiCase):
+    """Live CLI probe and default worker model endpoints (/api/capacity/*)."""
+
+    def setUp(self):
+        self._cache = dict(studio._capacity_probe_cache)
+        studio._capacity_probe_cache.update(at=0.0, data=None)
+
+    def tearDown(self):
+        studio._capacity_probe_cache.update(self._cache)
+
+    @staticmethod
+    def _fake_which(name):
+        return f"/fake/bin/{name}.exe" if name in ("devin", "claude", "agy") else None
+
+    @staticmethod
+    def _fake_run(argv, timeout=None):
+        exe = Path(str(argv[0])).name.lower()
+        args = list(argv[1:])
+        if exe.startswith("devin"):
+            if args == ["auth", "status"]:
+                return 0, "Logged in (via Devin).\nUser: tester"
+            if args == ["--version"]:
+                return 0, "devin 9.9.9"
+            if args == ["models", "list"]:
+                return 0, DEVIN_MODELS_OUT
+        if exe.startswith("claude"):
+            if args == ["--version"]:
+                return 0, "9.9.9 (Claude Code)"
+            if args == ["auth", "status"]:
+                return 0, json.dumps({"loggedIn": True, "subscriptionType": "pro"})
+            if args == ["models"]:
+                return 0, "Failed to authenticate: OAuth session expired"
+        if exe.startswith("agy"):
+            if args == ["--version"]:
+                return 0, "9.9.9"
+            if args == ["models"]:
+                return 0, AGY_MODELS_OUT
+        return None, ""
+
+    @staticmethod
+    def _fake_ollama(path, timeout=3):
+        if path == "/api/tags":
+            return {"models": [{"name": "qwen2.5-coder:7b", "size": 4000000000,
+                                "details": {"family": "qwen2", "parameter_size": "7.6B"}}]}
+        if path == "/api/version":
+            return {"version": "0.5.0"}
+        return None
+
+    def _probe_patches(self):
+        from unittest.mock import patch
+        return (
+            patch.object(studio.shutil, "which", side_effect=self._fake_which),
+            patch.object(studio, "_probe_run", side_effect=self._fake_run),
+            patch.object(studio, "_fetch_ollama_json", side_effect=self._fake_ollama),
+        )
+
+    def test_probe_scans_platforms_and_serves_cache(self):
+        pw, pr, po = self._probe_patches()
+        with pw, pr as run_mock, po:
+            code, res = self.api("/api/capacity/probe")
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertFalse(res.get("cached", True))
+            platforms = {p["key"]: p for p in res["platforms"]}
+            self.assertEqual(set(platforms), {"devin", "claude", "agy", "ollama"})
+
+            devin = platforms["devin"]
+            self.assertEqual(devin["status"], "active")
+            self.assertEqual(devin["status_label"], "Active & Authenticated")
+            self.assertEqual(devin["version"], "devin 9.9.9")
+            ids = {m["id"] for m in devin["models"]}
+            self.assertIn("swe-2-high", ids)
+            swe = next(m for m in devin["models"] if m["id"] == "swe-2-high")
+            self.assertTrue(swe["free"])
+            self.assertEqual(swe["context"], "262K context")
+            gpt = next(m for m in devin["models"] if m["id"] == "gpt-5-5-high")
+            self.assertFalse(gpt["free"])
+            self.assertIn("$5 / 1M Input", gpt["pricing"])
+
+            claude = platforms["claude"]
+            self.assertEqual(claude["status"], "limited")
+            self.assertEqual(claude["version"], "9.9.9 (Claude Code)")
+            self.assertIn("Failed to authenticate", claude["note"])
+
+            agy = platforms["agy"]
+            self.assertEqual(agy["status"], "active")
+            self.assertIn("claude-opus-4-6-thinking", {m["id"] for m in agy["models"]})
+
+            ollama = platforms["ollama"]
+            self.assertEqual(ollama["status"], "active")
+            self.assertTrue(all(m["free"] for m in ollama["models"]))
+            self.assertEqual([m["id"] for m in res["local_free"]["installed"]],
+                             ["qwen2.5-coder:7b"])
+            self.assertTrue(res["local_free"]["suggested"])
+
+            calls = run_mock.call_count
+            code2, res2 = self.api("/api/capacity/probe")
+            self.assertEqual(code2, 200)
+            self.assertTrue(res2.get("cached"))
+            self.assertEqual(run_mock.call_count, calls)
+
+    def test_probe_marks_missing_platforms(self):
+        from unittest.mock import patch
+        with patch.object(studio.shutil, "which", return_value=None), \
+                patch.object(studio, "_fetch_ollama_json", return_value=None):
+            code, res = self.api("/api/capacity/probe")
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"))
+            for p in res["platforms"]:
+                self.assertEqual(p["status"], "missing", p)
+                self.assertEqual(p["status_label"], "Not Installed")
+            self.assertEqual(res["local_free"]["installed"], [])
+
+    def test_probe_rejects_unregistered_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api("/api/capacity/probe?" + self.q({"project": td}))
+            self.assertEqual(code, 403)
+            self.assertFalse(res.get("ok", True))
+
+    def test_default_model_persists_in_model_options(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "hub_proj"
+            docs = proj / ".agentsflower" / "docs"
+            docs.mkdir(parents=True)
+            (docs / "model-options.json").write_text(
+                json.dumps({"options": {"x": {"tool": "devin"}}}, indent=2),
+                encoding="utf-8")
+            studio.save_attached_project(str(proj))
+            try:
+                code, res = self.api(
+                    "/api/capacity/default-model", method="POST",
+                    body={"project": str(proj), "model": "swe-2-high", "tool": "devin"})
+                self.assertEqual(code, 200, res)
+                self.assertTrue(res.get("ok"), res)
+                self.assertEqual(res["default_model"]["model"], "swe-2-high")
+
+                cfg = json.loads((docs / "model-options.json").read_text(encoding="utf-8"))
+                self.assertEqual(cfg["default_worker_model"]["model"], "swe-2-high")
+                self.assertEqual(cfg["default_worker_model"]["tool"], "devin")
+                self.assertIn("x", cfg["options"])
+
+                with patch.object(studio.shutil, "which", return_value=None), \
+                        patch.object(studio, "_fetch_ollama_json", return_value=None):
+                    code, res2 = self.api(
+                        "/api/capacity/probe?" + self.q({"project": str(proj)}))
+                    self.assertEqual(code, 200, res2)
+                    self.assertEqual(res2["default_model"]["model"], "swe-2-high")
+            finally:
+                try:
+                    attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                    attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                    studio.ATTACHED_FILE.write_text(
+                        json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                    )
+                except Exception:
+                    pass
+
+    def test_default_model_rejects_bad_input(self):
+        code, res = self.api(
+            "/api/capacity/default-model", method="POST",
+            body={"project": str(studio.REPO_ROOT), "model": "x; rm -rf /", "tool": "devin"})
+        self.assertEqual(code, 400)
+        self.assertFalse(res.get("ok", True))
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api(
+                "/api/capacity/default-model", method="POST",
+                body={"project": td, "model": "swe-2-high"})
+            self.assertEqual(code, 403)
+            self.assertFalse(res.get("ok", True))
+
+    def test_capacity_hub_ui_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            'id="view-capacity"',
+            'id="toolsCapacityGrid"',
+            'id="defaultWorkerModelPill"',
+            'id="localModelsInstalled"',
+            'id="localModelsSuggested"',
+            'id="btnCapacityRefresh"',
+            "Free &amp; Local Offline Models",
+        ):
+            self.assertIn(marker, html)
+
+        for marker in (
+            "/api/capacity/probe",
+            "/api/capacity/default-model",
+            "status-badge",
+            "setDefaultWorkerModel",
+            "local_free",
+        ):
+            self.assertIn(marker, js)
+
+        for marker in (".status-badge", ".local-model-item", ".btn-set-default"):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()

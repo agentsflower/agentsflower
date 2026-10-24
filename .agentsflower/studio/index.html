@@ -339,11 +339,40 @@
         <section class="view-panel" id="view-capacity">
           <div class="capacity-dashboard">
             <div class="card glass-card">
-              <h3>Machine Dispatch Capacity & Model Health</h3>
-              <p class="subtitle">Automatic routing, tool holds, and failover policy state.</p>
-              
+              <div class="capacity-hub-header">
+                <div>
+                  <h3>Model Quota Hub — Live CLI Scan</h3>
+                  <p class="subtitle">Real-time detection of installed agent CLIs, authenticated model catalogs, and quota state.</p>
+                </div>
+                <div class="capacity-hub-actions">
+                  <span class="default-model-pill" id="defaultWorkerModelPill" title="Project default worker model">Default: —</span>
+                  <button class="btn btn-secondary btn-sm" id="btnCapacityRefresh" title="Force a fresh CLI probe">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>Rescan</span>
+                  </button>
+                </div>
+              </div>
+              <div class="capacity-scan-meta" id="capacityScanMeta">Probing installed CLIs...</div>
+
               <div class="tools-capacity-grid" id="toolsCapacityGrid">
-                <!-- Dynamically populated -->
+                <!-- Dynamically populated from /api/capacity/probe -->
+              </div>
+            </div>
+
+            <div class="card glass-card">
+              <h3>Free &amp; Local Offline Models</h3>
+              <p class="subtitle">Zero-token local models for autonomous offline execution (Ollama / 127.0.0.1:11434).</p>
+              <div class="local-models-section">
+                <div class="local-models-group">
+                  <div class="local-group-title">Installed on this machine</div>
+                  <div id="localModelsInstalled" class="local-model-list">
+                    <div class="empty-state">Waiting for probe results...</div>
+                  </div>
+                </div>
+                <div class="local-models-group">
+                  <div class="local-group-title">Suggested open-weight installs</div>
+                  <div id="localModelsSuggested" class="local-model-list"></div>
+                </div>
               </div>
             </div>
           </div>

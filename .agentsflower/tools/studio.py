@@ -15,11 +15,14 @@ import mimetypes
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -34,6 +37,7 @@ except ImportError:
 
 import ledger  # noqa: E402
 import gate  # noqa: E402
+import machine_capacity  # noqa: E402
 try:
     import graft  # noqa: E402
 except ImportError:
@@ -891,16 +895,287 @@ def get_task_context(target_root: Path, task_id: str) -> dict:
     }
 
 
-def get_quotas_data() -> dict:
-    """Fetch quota health and tool limits."""
-    tools = [
-        {"name": "devin", "label": "Devin AI", "status": "online", "slots": "1/2", "note": "High-confidence SWE engine"},
-        {"name": "claude", "label": "Claude Code", "status": "ready", "slots": "Unlimited", "note": "Sonnet 3.7 / Opus"},
-        {"name": "codex", "label": "Codex / OpenAI", "status": "ready", "slots": "Active", "note": "TypeSafe Sol reasoning"},
-        {"name": "graft", "label": "Graft AST Engine", "status": "active", "slots": "Local", "note": "Tree-sitter knowledge graph ($0)"},
-        {"name": "local_llm", "label": "Local Models (Ollama)", "status": "connected", "slots": "Infinite", "note": "DeepSeek R1 / Qwen 2.5 Coder"},
+# --- Live CLI capacity probe (Model Quota Hub) ---
+# Bounded subprocess/HTTP scans of the installed agent CLIs; results are cached for a
+# short TTL so repeated UI queries stay instantaneous. Probe output is returned to the
+# caller of this process only - it is never written to disk.
+
+CAPACITY_PROBE_TTL = 60
+CLI_PROBE_TIMEOUT = 20
+OLLAMA_URL = "http://127.0.0.1:11434"
+
+_capacity_probe_cache = {"at": 0.0, "data": None}
+_capacity_probe_lock = threading.Lock()
+
+SUGGESTED_LOCAL_MODELS = [
+    {"id": "qwen2.5-coder", "note": "Code-focused open-weight model for autonomous local runs",
+     "install": "ollama pull qwen2.5-coder"},
+    {"id": "deepseek-r1", "note": "Reasoning open-weight model, zero token cost",
+     "install": "ollama pull deepseek-r1"},
+    {"id": "llama3.3", "note": "General-purpose open-weight model, zero token cost",
+     "install": "ollama pull llama3.3"},
+]
+
+
+def _kill_probe_tree(pid: int):
+    """Best-effort kill of a timed-out probe and its children."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        else:
+            os.killpg(pid, signal.SIGKILL)
+    except (OSError, AttributeError):
+        pass
+
+
+def _probe_run(argv: list, timeout: int = CLI_PROBE_TIMEOUT):
+    """One bounded CLI probe: (exit code, combined output); (None, "") on launch failure/timeout."""
+    kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
+          "text": True, "encoding": "utf-8", "errors": "replace"}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kw["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(argv, **kw)
+    except OSError:
+        return None, ""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_probe_tree(proc.pid)
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
+        return None, ""
+    return proc.returncode, (out or "").strip()
+
+
+def _probe_version(exe: str) -> str:
+    code, out = _probe_run([exe, "--version"], timeout=15)
+    line = next((ln.strip() for ln in out.splitlines() if ln.strip()), "")
+    return line[:120] if code == 0 and line else ""
+
+
+_DEVIN_FAMILY = re.compile(r"^([A-Za-z0-9][^\n()]*?)\s*\(([a-z0-9_.-]+)\)\s*$")
+_DEVIN_MODEL = re.compile(r"^\s+(\S+)\s{2,}(.*?)(?:\s{2,}\[(.*?)\])?\s*$")
+
+
+def parse_devin_models(text: str) -> list[dict]:
+    """`devin models list` -> [{id,label,context,pricing,family,free}]."""
+    models = []
+    family = ""
+    for line in (text or "").splitlines():
+        if not line.strip():
+            continue
+        if line[:1] in (" ", "\t"):
+            if line.strip().startswith("aliases:"):
+                continue
+            m = _DEVIN_MODEL.match(line)
+            if not m:
+                continue
+            bracket = m.group(3) or ""
+            context, pricing = "", ""
+            if bracket:
+                head, _, rest = bracket.partition(",")
+                if "context" in head:
+                    context, pricing = head.strip(), rest.strip()
+                else:
+                    pricing = bracket.strip()
+            models.append({"id": m.group(1), "label": m.group(2).strip() or m.group(1),
+                           "context": context, "pricing": pricing, "family": family,
+                           "free": "free" in bracket.lower()})
+            continue
+        fam = _DEVIN_FAMILY.match(line.strip())
+        if fam:
+            family = fam.group(2)
+    return models
+
+
+def parse_agy_models(text: str) -> list[dict]:
+    """`agy models` -> [{id,label}]: tab- or column-separated rows."""
+    models = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        m = re.match(r"^(\S+)\t+(.+?)\s*$", line) or re.match(r"^(\S+)\s{2,}(.+?)\s*$", line)
+        if m:
+            models.append({"id": m.group(1), "label": m.group(2).strip(), "context": "",
+                           "pricing": "", "family": "", "free": False})
+    return models
+
+
+def _fetch_ollama_json(path: str, timeout: int = 3):
+    try:
+        req = urllib.request.Request(OLLAMA_URL + path, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _platform(key: str, label: str, installed: bool, authenticated: bool,
+              version: str = "", models: list = None, note: str = "") -> dict:
+    if not installed:
+        status, status_label = "missing", "Not Installed"
+    elif authenticated:
+        status, status_label = "active", "Active & Authenticated"
+    else:
+        status, status_label = "limited", "Limited / Unauthenticated"
+    return {"key": key, "label": label, "status": status, "status_label": status_label,
+            "version": version, "authenticated": bool(authenticated),
+            "models": models or [], "note": note}
+
+
+def _probe_devin() -> dict:
+    exe = shutil.which("devin")
+    if not exe:
+        return _platform("devin", "Devin", False, False, note="devin CLI not found on PATH")
+    code, auth_out = _probe_run([exe, "auth", "status"])
+    authed = code == 0 and "logged in" in auth_out.lower()
+    mcode, mout = _probe_run([exe, "models", "list"])
+    models = parse_devin_models(mout) if mcode == 0 else []
+    note = ""
+    if mcode != 0:
+        note = "model catalog probe failed"
+    elif not models:
+        note = "model catalog returned no models"
+    return _platform("devin", "Devin", True, authed,
+                     version=_probe_version(exe), models=models, note=note)
+
+
+def _probe_claude() -> dict:
+    exe = shutil.which("claude")
+    if not exe:
+        return _platform("claude", "Claude Code", False, False, note="claude CLI not found on PATH")
+    version = _probe_version(exe)
+    code, out = _probe_run([exe, "auth", "status"])
+    try:
+        logged_in = bool(json.loads(out).get("loggedIn")) if code == 0 else False
+    except (ValueError, AttributeError):
+        logged_in = False
+    # `auth status` reports the stored credential; `claude models` proves it still works.
+    mcode, mout = _probe_run([exe, "models"])
+    auth_failed = any(marker in mout.lower() for marker in
+                      ("failed to authenticate", "not logged in", "unauthorized"))
+    authed = logged_in and not auth_failed
+    note = mout.splitlines()[0].strip()[:140] if auth_failed and mout else ""
+    return _platform("claude", "Claude Code", True, authed, version=version, note=note)
+
+
+def _probe_agy() -> dict:
+    exe = shutil.which("agy")
+    if not exe:
+        return _platform("agy", "Antigravity", False, False, note="agy CLI not found on PATH")
+    version = _probe_version(exe)
+    code, out = _probe_run([exe, "models"])
+    models = parse_agy_models(out) if code == 0 else []
+    note = "" if code == 0 else "account model probe failed"
+    return _platform("agy", "Antigravity", True, code == 0 and bool(models),
+                     version=version, models=models, note=note)
+
+
+def _probe_ollama() -> dict:
+    tags = _fetch_ollama_json("/api/tags")
+    if not isinstance(tags, dict):
+        return _platform("ollama", "Ollama (Local)", False, False,
+                         note="no Ollama server answering on 127.0.0.1:11434")
+    version = (_fetch_ollama_json("/api/version") or {}).get("version", "")
+    models = []
+    for m in tags.get("models") or []:
+        models.append({"id": m.get("name", ""), "label": m.get("name", ""),
+                       "context": (m.get("details") or {}).get("parameter_size", ""),
+                       "pricing": "$0 local", "family": (m.get("details") or {}).get("family", ""),
+                       "free": True, "local": True})
+    return _platform("ollama", "Ollama (Local)", True, True,
+                     version=f"v{version}" if version else "", models=models,
+                     note="offline zero-token models")
+
+
+def probe_capacity(force: bool = False) -> dict:
+    """Scan the agent CLIs on this machine; results are cached for CAPACITY_PROBE_TTL seconds."""
+    now = time.time()
+    with _capacity_probe_lock:
+        cached = _capacity_probe_cache["data"]
+        if not force and cached and now - _capacity_probe_cache["at"] < CAPACITY_PROBE_TTL:
+            data = dict(cached)
+            data["cached"] = True
+            return data
+
+    results: dict = {}
+    probes = (("devin", _probe_devin), ("claude", _probe_claude),
+              ("agy", _probe_agy), ("ollama", _probe_ollama))
+    threads = [
+        threading.Thread(target=lambda n=n, f=f: results.__setitem__(n, f()), daemon=True)
+        for n, f in probes
     ]
-    return {"tools": tools}
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=CLI_PROBE_TIMEOUT + 15)
+
+    platforms = []
+    for name, _fn in probes:
+        p = results.get(name) or _platform(
+            name, name, True, False, note="probe timed out or crashed")
+        if p["status"] == "active" and name in machine_capacity.TOOLS:
+            try:
+                hold = machine_capacity.limit_until(name)
+            except Exception:
+                hold = None
+            if hold:
+                p["status"], p["status_label"] = "limited", "Limited / Unauthenticated"
+                p["hold_until"] = hold.isoformat()
+                p["note"] = (f"{p['note']} " if p["note"] else "") + f"quota hold until {p['hold_until']}"
+        platforms.append(p)
+
+    ollama = next((p for p in platforms if p["key"] == "ollama"), {})
+    data = {
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ttl": CAPACITY_PROBE_TTL,
+        "cached": False,
+        "platforms": platforms,
+        "local_free": {
+            "installed": ollama.get("models", []),
+            "suggested": SUGGESTED_LOCAL_MODELS,
+        },
+    }
+    with _capacity_probe_lock:
+        _capacity_probe_cache["at"] = time.time()
+        _capacity_probe_cache["data"] = data
+    return data
+
+
+def get_default_worker_model(flow_root: Path):
+    """The Studio-persisted default worker model from docs/model-options.json, or None."""
+    try:
+        cfg = json.loads((flow_root / "docs" / "model-options.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    entry = cfg.get("default_worker_model")
+    return entry if isinstance(entry, dict) and entry.get("model") else None
+
+
+def set_default_worker_model(flow_root: Path, model: str, tool: str = "") -> dict:
+    """Persist the project's default worker model inside docs/model-options.json."""
+    docs = flow_root / "docs"
+    path = docs / "model-options.json"
+    if not docs.is_dir():
+        return {"ok": False, "error": "project has no docs/model-options.json location"}
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+    except ValueError:
+        return {"ok": False, "error": "model-options.json is not valid JSON"}
+    cfg["default_worker_model"] = {
+        "model": model, "tool": tool,
+        "set_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": "studio",
+    }
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"ok": True, "default_model": cfg["default_worker_model"]}
 
 
 class StudioHandler(BaseHTTPRequestHandler):
@@ -993,8 +1268,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_json(get_git_summary(root))
             return
 
-        if path == "/api/quotas":
-            self.send_json({"ok": True, "data": get_quotas_data()})
+        if path == "/api/capacity/probe":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            flow = get_project_flow_root(root)
+            data = probe_capacity(force=qs.get("refresh", [""])[0] in ("1", "true"))
+            data["default_model"] = get_default_worker_model(flow) if flow else None
+            self.send_json(data)
             return
 
         if path == "/api/failover/status":
@@ -1098,6 +1380,27 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "message": "Success", "output": proc.stdout, "projects": find_projects()})
             except subprocess.CalledProcessError as e:
                 self.send_json({"ok": False, "error": e.stderr or e.stdout or str(e)}, 500)
+            return
+
+        if path == "/api/capacity/default-model":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            flow_root = get_project_flow_root(target_root)
+            if not flow_root:
+                self.send_json({"ok": False, "error": "project has no AgentsFlower install"}, 400)
+                return
+            model = str(body.get("model") or "").strip()
+            tool = str(body.get("tool") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9][\w./:-]{0,80}", model):
+                self.send_json({"ok": False, "error": "invalid model id"}, 400)
+                return
+            if tool and not re.fullmatch(r"[A-Za-z0-9][\w.-]{0,30}", tool):
+                self.send_json({"ok": False, "error": "invalid tool id"}, 400)
+                return
+            res = set_default_worker_model(flow_root, model, tool)
+            self.send_json(res, 200 if res.get("ok") else 400)
             return
 
         if path == "/api/dashboard/build":
