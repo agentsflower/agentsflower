@@ -2,6 +2,10 @@
 
 ## 2026-10-24: Stage 7 Studio Local Web UI, Graft On-Demand Auto-Installation and Specialized Skills Ecosystem
 
+4. **Strict Conductor / Chat Boundary vs Autonomous Worker Execution:**
+   - Human instruction: strict prohibition of writing or editing code directly inside the chat/IDE orchestrator session. The chat exists solely for high-level discussion, contract formalization, and human authorization.
+   - Decision: All implementation, refactoring, and fixes must be executed exclusively by autonomous AgentsFlower worker roles (`developer`, `tester`, etc.) in isolated task worktrees via `run-task.py` or `dispatch.py`. Conductor must never execute code changes directly in the main session.
+
 1. **Graft On-Demand Global Installation via npm `--ignore-scripts` (T-117, T-118):**
    - Human instruction: approved automatic installation of Graft directly from code on first invocation if missing.
    - Decision: `graft.py` checks for `graft` CLI in PATH or local npm prefix. If absent, runs `npm i -g @nanonets/graft --ignore-scripts` with subprocess capture, automatically sets telemetry to disabled (`graft telemetry disable`), and uses WebAssembly bindings without requiring node-gyp, Python C++ build tools or administrator elevation.

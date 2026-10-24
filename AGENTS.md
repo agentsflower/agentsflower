@@ -25,6 +25,13 @@ Workflow and instruction authority: `.agentsflower/docs/ai-handoff-protocol.md`.
 - For version checks, report local VERSION and the version in origin's actual default branch separately. State the exact repository/ref checked. Do not conflate a newer parent release with an update of this project.
 - Existing generic instructions mentioning upstream refer to the project's configured local template workflow; they do not override this source-authority rule. Never modify remotes or push without explicit authorization.
 
+### Strict prohibition of direct coding in chat / Conductor role boundary (human instruction, 2026-10-24)
+
+- The main IDE / chat session functions EXCLUSIVELY as the Conductor / Single-window Cockpit for communication, architectural discussion, task contract formalization, and human approvals.
+- Modifying, writing, or hacking production/project code directly in this chat session is STRICTLY FORBIDDEN.
+- All code implementation, refactoring, and bug fixes MUST be executed exclusively by autonomous AgentsFlower worker roles (`developer`, `tester`, etc.) dispatched via `.agentsflower/tools/run-task.py` or `.agentsflower/tools/dispatch.py` in isolated task worktrees.
+- No task can be marked done without independent verification by the `tester` role and gate validation.
+
 - Repository parameters: [.agentsflower/docs/project-rules.md](.agentsflower/docs/project-rules.md).
 
 - This repository develops the template itself: template-owned files are its product (`.agentsflower/README.md`).

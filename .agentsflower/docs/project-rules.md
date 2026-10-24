@@ -104,3 +104,10 @@ progress; rationale and scoped routing exceptions are in state/decisions.md.
   they are statically excluded via `until` fields in docs/model-options.json.
   Devin-hosted model families are unaffected. Restore by removing those
   fields when the human reports resources back.
+
+## Conductor / Chat Boundary vs Autonomous Worker Execution (human, 2026-10-24)
+
+- The main IDE / chat session functions EXCLUSIVELY as the Conductor / Cockpit for communication, architectural discussion, task contract formalization, and human approvals.
+- Modifying, writing, or hacking production/project code directly in this chat session is STRICTLY FORBIDDEN.
+- All code implementation, refactoring, and bug fixes MUST be executed exclusively by autonomous AgentsFlower worker roles (`developer`, `tester`, etc.) dispatched via `.agentsflower/tools/run-task.py` or `.agentsflower/tools/dispatch.py` in isolated task worktrees.
+- No task can be marked done without independent verification by the `tester` role and gate validation.
