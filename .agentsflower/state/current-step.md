@@ -1,11 +1,12 @@
 # Current Step
 
-2026-10-24 (Stage 7 live, AgentsFlower 2.17.0 on main@ac6710a):
+2026-10-24 (Stage 7 closed, AgentsFlower 2.17.0 on main@db7e22f):
 
 ## 1. Project Milestone & Version
 - **Current Version:** `AgentsFlower 2.17.0` (remote authority `origin`: `https://github.com/agentsflower/agentsflower`).
-- **Active Stage:** `Stage 7. AgentsFlower Studio, Multi-Project Gateway and Specialized Skills Ecosystem`.
-- **Closed Stages:** Stages 1, 2, 3, 4, 5, and 6 are closed.
+- **Active Stage:** none - Stage 7 closed on 2026-10-24 (all 16 tasks `done`, `gate.py stage 7` PASS; human declared closure in b3b9bd2/questions.md).
+- **Closed Stages:** Stages 1, 2, 3, 4, 5, 6, and 7 are closed.
+- **Next:** Stage 8 (Advanced Domain Skills) is new scope and waits for human approval.
 
 ## 2. Completed Stage 7 Tasks
 - **T-116 / T-117 / T-118 (Graft Integration):** AST knowledge graph with on-demand auto-install (`npm i -g @nanonets/graft --ignore-scripts`), CLI tooling (`agentsflower graft`), MCP tools (`graft_query`, `graft_impact`, `graft_symbols`), and Blast Radius preflight integration.
@@ -22,5 +23,6 @@
 - **T-130 / T-131 (Multi-Project Explorer + verify):** Multi-project file tree accordion, Explorer tab, global context broadcast, consent-gated install; independently verified (510/0/4 suite, traversal + 403-gate probes). Merged main 3d89d3c.
 
 ## 3. Ready in the Queue
-- Ledger is empty of open tasks. `gate.py stage 7` FAILs on missing Task Files for done rows T-121/T-123/T-124/T-126..T-129 - human decision in questions.md (2026-10-24).
-- **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps).
+- Ledger is empty of open tasks. `gate.py stage 7` PASSes (16 tasks) after the human's skeletal Task File reconstruction (b3b9bd2).
+- **Latest merges:** T-134 (studio splitters/editor tabs/4-tab topnav/model selector) verified by T-135 (devin tester, jsdom harness 30/30 assertions) and merged at db7e22f.
+- **Stage 8:** Advanced Domain Skills (Chrome Extensions, Backend Architecture, Algorithms, DevOps) - awaiting human approval.

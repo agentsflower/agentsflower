@@ -87,4 +87,24 @@ Implement interactive refinements in AgentsFlower Studio matching `.agentsflower
 
 ## Result
 
-<!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: f5355b5 on t-134-studio-splitters-tabs
+Files:
+- .agentsflower/studio/index.html - removed junk nav tabs (Knowledge Graph, Task Contract Creator, Quick Start Guide) keeping 4 core tabs; added #sidebarResizer between sidebar and main content and #chatResizer between code viewer and chat pane, each with a centered || .resizer-grip; added #editorTabsBar above the breadcrumbs in the code pane; wrapped #chatModelPill in .model-selector-wrap with #chatModelDropdown menu; bumped asset versions
+- .agentsflower/studio/studio.css - .topnav-menu overflow-x:hidden; .explorer-grid now 3 columns (code | 10px resizer | chat width, JS-driven); .pane-resizer/.resizer-grip/dragging styles with hover glow; body.pane-resizing cursor/selection lock and iframe pointer-events guard; .editor-tabs/.editor-tab/.editor-tab-close styles with blue glowing active border; .model-selector-wrap/.model-dropdown/.model-option dropdown styles; 1200px media query updated for the resizer column
+- .agentsflower/studio/studio.js - CHAT_MODELS (5 options) and PANE_LIMITS (sidebar 200-450px, chat 320-650px); bindResizer mouse-drag with clamping and localStorage persistence (af_sidebar_width, af_chat_width) plus restorePaneWidths on init; state.openTabs with renderEditorTabs/closeFileTab wired into openExplorerFile and resetExplorerPane; interactive model pill: setupModelSelector, renderModelDropdown, updateChatModelPill, selection persisted in state.chatModel + sessionStorage af_chat_model
+- .agentsflower/tests/test_studio.py - topnav marker test aligned to 4 core tabs; new tests: exactly 4 data-tab items and junk tabs absent, resizer/tabs-bar/dropdown HTML markers, studio.js persistence and model-id markers, topnav-menu overflow-x hidden in studio.css
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (26 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (518 passed / 0 failed / 4 skipped)
+Criteria:
+- C-01: pass - .agentsflower/studio/index.html #sidebarResizer/#chatResizer with || .resizer-grip; .agentsflower/studio/studio.js bindResizer + PANE_LIMITS bounds 200-450 (sidebar) / 320-650 (chat), localStorage keys af_sidebar_width and af_chat_width written on mouseup and restored on load; center code pane is a minmax(0,1fr) grid track that flexes dynamically
+- C-02: pass - .agentsflower/studio/index.html #editorTabsBar above .explorer-breadcrumbs in the code pane; .agentsflower/studio/studio.js state.openTabs, renderEditorTabs (icon + filename + x close, .active blue glowing border), closeFileTab switching to the previous tab or resetting the viewer when empty; tree clicks reuse openExplorerFile which opens or focuses the tab
+- C-03: pass - .agentsflower/studio/index.html .topnav-menu contains exactly 4 data-tab buttons (explorer, kanban + badge, analytics, capacity); .agentsflower/studio/studio.css .topnav-menu uses overflow-x:hidden; test_index_topnav_has_only_four_core_tabs asserts count 4 and junk tabs absent
+- C-04: pass - .agentsflower/studio/index.html .model-selector-wrap > #chatModelPill + #chatModelDropdown; .agentsflower/studio/studio.js CHAT_MODELS with Devin swe-2-high (floor default), gemini-4-argon-high, claude-opus-4-6-thinking, gpt-5-5-high and Local/Ollama; selection updates the pill, persists in state.chatModel and sessionStorage af_chat_model
+- C-05: pass - 26/26 tests in test_studio.py pass including 5 new marker tests; full suite 518 pass / 4 skipped (see Checks)
+Found, not fixed:
+- view-graft and view-guide sections remain in the DOM but are unreachable through the top nav (their nav tabs were removed per mockup 3); view-creator stays reachable via the New Task and chat + buttons
+- Sidebar minimum is 200px per the Task File; mockups/README.md Section 5 says 220px - contract text followed
+Proposed memory updates:
+- none

@@ -12,9 +12,12 @@ Tasks are not listed here: they live in `state/tasks.md` with a `Stage` column. 
 
 ### Stage 7. AgentsFlower Studio, Multi-Project Gateway and Specialized Skills Ecosystem (2.17.0)
 
-Status: current.
+Status: closed.
 
 Human approved the transition to Stage 7 and the Specialized Skills Ecosystem on 2026-10-23.
+Closed on 2026-10-24: all 16 stage tasks `done`, `gate.py stage 7` PASS; the human declared
+closure in commit b3b9bd2 and questions.md (2026-10-24). Next stage is new scope and waits
+for human approval.
 Focus areas:
 - AgentsFlower Studio: modern Local Web UI (`.agentsflower/studio/`) with dark mode, glassmorphism, multi-project switching, Kanban task board, task creation wizard, and AST knowledge graph explorer.
 - Graft AST Semantic Knowledge Graph (`@nanonets/graft` via WASM with auto-install and blast radius analysis).
