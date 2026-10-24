@@ -8,7 +8,7 @@ Depends on: none
 Branch: t-136-conversational-task-inception
 Worktree: E:\Projects\AgentFlow\worktrees\agentsflower-t-136-conversational-task-inception
 Independent check: tester
-Resume: none
+Resume: 1afb577c9c500ad5d250e22c2127c357dde7b551
 Routing exception: human authorized argon model for high-reasoning conversational task synthesis (2026-10-24)
 
 ## Goal

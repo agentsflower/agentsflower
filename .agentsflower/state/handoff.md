@@ -38,3 +38,18 @@ attempt 1 launched at 19:02:34Z, devin worker pid 80600 alive, argon model
 probe ok, deadline 19:42:34Z. No needs remain; T-136 waits on the worker.
 On completion the tester spawn/acceptance becomes the next tick's need.
 Committed ledger row (T-136 in progress) and this note; released.
+
+Background session devin-background, 2026-10-24 ~19:50Z: claimed heartbeat for
+the T-136 need ("developer Outcome missing (attempt error): decide"). Attempt 1
+hit the 2400s wall-clock timeout at 19:42:35Z after committing the full
+implementation - 1afb577 on t-136-conversational-task-inception (1101 insertions,
+all inside Allowed files) - with a clean worktree and no Result written. Decided
+per Recovery: set `Resume: 1afb577` in the Task File (ROUTING_FIELDS, no
+requirementsHash impact) and relaunched - attempt 2 running in devin pid 100048,
+argon admission by the same human exception, same 2400s bound. The successor
+prompt carries the preserved-draft handover, so the worker continues the
+committed work and writes the Result.
+
+What waits: attempt 2 outcome. If `completed`, spawn the tester task
+(Independent check: tester, devin preferred) and proceed to acceptance; if it
+errors again, Recovery per the table. Committed Task File + ledger row; released.
