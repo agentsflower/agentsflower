@@ -137,3 +137,9 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   T-126, T-127, T-128, T-129 are `done` but their Task Files do not exist in
   `.agentsflower/tasks/` (never committed - no trace in git history or
   worktrees). Stage 7 cannot close until the human decides how to reconcile.
+- 2026-10-24 - test_run_task.py on Windows: an orphaned fixture child
+  (notepad.exe, PID seen 38452) can outlive its test under a full-suite run,
+  failing a later launch test ("process still running" refusal) and a runtime
+  temp-file read (PermissionError). Both tests pass in isolated rerun; T-132
+  hit this, unrelated to its change. Candidate fix: harden fixture teardown
+  or serialize those tests.
