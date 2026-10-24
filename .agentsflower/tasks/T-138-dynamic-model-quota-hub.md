@@ -80,3 +80,25 @@ Replace the static mock/hardcoded capacity dashboard in AgentsFlower Studio with
 ## Result
 
 <!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 4f611e6b75e0567e9025fc04f993acc489412109 on t-138-dynamic-model-quota-hub
+Files:
+- .agentsflower/tools/studio.py - bounded CLI probe runner, devin/agy/ollama parsers, 60s-TTL cached probe_capacity, GET /api/capacity/probe, POST /api/capacity/default-model persisting default_worker_model in docs/model-options.json; static /api/quotas mock removed
+- .agentsflower/studio/index.html - #view-capacity rebuilt: live hub header, scan meta, platform grid, Free & Local Offline Models section
+- .agentsflower/studio/studio.css - status badges (active/limited/missing), model rows, set-default buttons, local model list styles
+- .agentsflower/studio/studio.js - loadCapacity/renderCapacityHub live rendering, per-model Set default action, dynamic chat model list fed by probe, persisted default drives composer pill
+- .agentsflower/tests/test_studio.py - TestCapacityHub: mocked-probe endpoint, cache, missing-platform, persistence, validation, and UI marker tests
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (39 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (531 passed / 0 failed, 4 skipped)
+Criteria:
+- C-01: pass - GET /api/capacity/probe runs parallel bounded probes of devin (auth status + models list parser), claude (--version + auth status + live models access check), agy (--version + models parser) and local Ollama /api/tags with a 60s TTL cache; verified live on this machine (devin active/816 models, claude limited, agy active, ollama missing). evidence: .agentsflower/tools/studio.py
+- C-02: pass - #view-capacity renders live platform cards with status badges and collapsible model listings populated only from the probe endpoint; static mock cards and /api/quotas removed. evidence: .agentsflower/studio/index.html .agentsflower/studio/studio.js
+- C-03: pass - dedicated Free & Local Offline Models section lists installed Ollama models plus suggested open-weight installs. evidence: .agentsflower/studio/index.html
+- C-04: pass - per-model Set default buttons POST /api/capacity/default-model, which validates input and persists default_worker_model into docs/model-options.json; UI updates the default pill and chat composer model. evidence: .agentsflower/tools/studio.py .agentsflower/studio/studio.js
+- C-05: pass - test_studio.py suite green: 39 tests including the new TestCapacityHub class. evidence: .agentsflower/tests/test_studio.py
+Found, not fixed:
+- /api/failover/status still returns a static hardcoded tier chain; out of this task's scope and not referenced by the frontend.
+- claude.exe auth status reports loggedIn=true while real calls fail OAuth; the card truthfully shows Limited via the live `claude models` access check.
+Proposed memory updates:
+- none
