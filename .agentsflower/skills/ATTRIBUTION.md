@@ -27,3 +27,5 @@ distilled.
 |---|---|---|---|---|
 | `frontend-art-direction` | [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) | `skills/taste-skill` (skill name `design-taste-frontend`) | MIT | `6010f91a9935f1c167dfc500fb1a475681892e6b` (`main`, pinned 2026-10-25) |
 | `frontend-art-direction` | [emilkowalski/skills](https://github.com/emilkowalski/skills) | `skills/emil-design-eng` (`metadata.source` id `emilkowalski/design-eng`) | MIT | `2d228630ba1446365f614a108cb8252f1feda202` (`main`, pinned 2026-10-25) |
+| `chrome-extension-mv3` | [GoogleChrome/chrome-extensions-samples](https://github.com/GoogleChrome/chrome-extensions-samples) | `functional-samples` / `api-samples` (MV3 sample extensions) | Apache-2.0 | `1bdfa5a730396cc4615d1e32d7c7152a92a6babe` (`main`, pinned 2026-10-25) |
+| `chrome-extension-mv3` | [GoogleChrome/modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) | `skills/chrome-extensions` (MV3 mandatory-rules skill; `metadata.source` id `GoogleChrome/modern-web-guidance@main`) | Apache-2.0 | `65e7edd67e77420eaf02c5df00fdc0521417d809` (`main`, pinned 2026-10-25) |

@@ -7,7 +7,7 @@ Based on the multi-agent ecosystem research (T-113), the AgentsFlower skills reg
 | 1 | **UI/UX & Web Aesthetics** | Dark mode design systems, glassmorphism, micro-animations, accessible contrast ratios (WCAG 2.1 AA/AAA), typography scales. | `frontend-art-direction` *(Built-in)*, `modern-web-ui`, `design-tokens` |
 | 2 | **Algorithms & Performance** | AST traversal, complexity analysis ($O(N)$ bounds), memory leak diagnostics, caching strategies. | `graft-ast-analyzer`, `perf-benchmark` |
 | 3 | **Architecture & Refactoring** | Clean architecture, bounded contexts, dependency inversion, least-privilege scoping. | `code-arch-audit`, `modular-refactor` |
-| 4 | **Browser & Extension MV3** | Manifest V3 compliance, declarativeNetRequest, offscreen documents, service worker lifecycle, automated browser subagent test flows. | `chrome-extension-mv3`, `browser-automation` |
+| 4 | **Browser & Extension MV3** | Manifest V3 compliance, declarativeNetRequest, offscreen documents, service worker lifecycle, automated browser subagent test flows. | `chrome-extension-mv3` *(Built-in)*, `browser-automation` |
 | 5 | **Backend, APIs & Services** | Zero-dependency HTTP servers, RESTful schema design, SSE (Server-Sent Events), WebSocket gateways. | `lightweight-api`, `sse-streaming` |
 | 6 | **Modern Frontend Frameworks** | React 19, Astro SSG, Next.js App Router, Vite, pure Vanilla reactive web components. | `astro-ssg-deploy`, `vanilla-reactive` |
 | 7 | **DevOps & Multi-OS CI/CD** | Cross-platform compatibility (Windows PowerShell, Linux bash, macOS zsh), isolated worktrees, GitHub Actions workflows. | `cross-os-ci`, `worktree-isolation` |
@@ -20,3 +20,4 @@ Based on the multi-agent ecosystem research (T-113), the AgentsFlower skills reg
 
 - [`geo-seo-audit`](geo-seo-audit/SKILL.md): Complete audit and automated scoring of website search engine optimization (SEO) and generative engine optimization (GEO/AIO) for AI discovery.
 - [`frontend-art-direction`](frontend-art-direction/SKILL.md): Anti-slop UI design direction, typography scales, micro-motion easing rules, and WCAG 2.1 AA design-token guidance for frontend and UI tasks.
+- [`chrome-extension-mv3`](chrome-extension-mv3/SKILL.md): Strict Chrome Extension Manifest V3 development — service worker lifecycle, declarativeNetRequest rules, CSP security, permissions auditing, and a deterministic `mv3_lint.py` gate.
