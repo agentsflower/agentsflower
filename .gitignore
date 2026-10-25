@@ -9,3 +9,7 @@ FPF-Spec/
 .agentsflower/dashboard/versions/
 __pycache__/
 # agentsflower:end
+
+# Model Quota Hub provider secrets (never committed)
+.agentsflower/state/.secrets.json
+.agentflow/state/.secrets.json

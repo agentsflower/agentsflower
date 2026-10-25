@@ -9,6 +9,7 @@ A modern, zero-dependency local web dashboard and multi-project cockpit:
 """
 import argparse
 import ast
+import copy
 from datetime import datetime, timezone
 import json
 import mimetypes
@@ -2537,26 +2538,60 @@ def _apply_quota_hold(p: dict) -> dict:
     return p
 
 
-def _single_platform_probe(key: str, force: bool, flow_root: Path = None):
+def _single_platform_probe(key: str, force: bool, flow_root: Path = None, scope: str = ""):
     """Probe one platform on demand (?platform=<key>); each key has its own TTL cache entry."""
+    cache_key = f"{scope}|{key}" if scope else key
     now = time.time()
     with _capacity_probe_lock:
-        ent = _platform_probe_cache.get(key)
+        ent = _platform_probe_cache.get(cache_key)
         if not force and ent and now - ent["at"] < CAPACITY_PROBE_TTL:
-            return dict(ent["data"]), True
+            return copy.deepcopy(ent["data"]), True
     p = _apply_quota_hold(_PLATFORM_PROBES[key](flow_root))
     with _capacity_probe_lock:
-        _platform_probe_cache[key] = {"at": time.time(), "data": p}
+        _platform_probe_cache[cache_key] = {"at": time.time(), "data": copy.deepcopy(p)}
     return p, False
 
 
-def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = None) -> dict:
-    """Scan the agent CLIs on this machine; results are cached for CAPACITY_PROBE_TTL seconds.
-    `platform` limits the scan to one platform key (/api/capacity/probe?platform=<tool>)."""
+def _provider_probe(pid: str, force: bool, project_root: Path, scope: str = ""):
+    """Probe one configured third-party provider (?platform=<provider id>); own TTL cache entry."""
+    cache_key = f"{scope}|provider:{pid}"
     now = time.time()
+    with _capacity_probe_lock:
+        ent = _platform_probe_cache.get(cache_key)
+        if not force and ent and now - ent["at"] < CAPACITY_PROBE_TTL:
+            return copy.deepcopy(ent["data"]), True
+    state = load_project_state(project_root) if project_root else {"providers": {}}
+    conf = (state.get("providers") or {}).get(pid)
+    if not conf:
+        return _platform(pid, pid, False, False, note="provider not configured"), False
+    secrets = load_project_secrets(project_root)
+    api_key = (secrets.get("providers") or {}).get(pid, {}).get("api_key", "")
+    p, live = _probe_provider(pid, dict(conf), api_key)
+    if live is not None and live != conf.get("models"):
+        state["providers"][pid]["models"] = live
+        save_project_state(project_root, state)
+    with _capacity_probe_lock:
+        _platform_probe_cache[cache_key] = {"at": time.time(), "data": copy.deepcopy(p)}
+    return p, False
+
+
+def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = None,
+                   project_root: Path = None) -> dict:
+    """Scan the agent CLIs on this machine; results are cached for CAPACITY_PROBE_TTL seconds.
+    `platform` limits the scan to one platform key (/api/capacity/probe?platform=<tool>) or
+    to one configured provider id. `project_root` overlays that project's enabled flags on
+    platforms/models and appends its configured third-party providers."""
+    now = time.time()
+    scope = _norm(Path(project_root)) if project_root else ""
     if platform:
-        p, cached = _single_platform_probe(platform, force, flow_root or FLOW_ROOT)
-        return {
+        state = (load_project_state(project_root) if project_root
+                 else {"platforms": {}, "models": {}, "providers": {}})
+        if platform in _PLATFORM_PROBES:
+            p, cached = _single_platform_probe(platform, force, flow_root or FLOW_ROOT, scope)
+        else:
+            p, cached = _provider_probe(platform, force, project_root, scope)
+        _apply_project_state([p], state)
+        data = {
             "ok": True,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "ttl": CAPACITY_PROBE_TTL,
@@ -2564,11 +2599,18 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
             "platform": p,
             "platforms": [p],
         }
+        if project_root:
+            data["project_state"] = project_state_view(project_root)
+        return data
+    state = (load_project_state(project_root) if project_root
+             else {"platforms": {}, "models": {}, "providers": {}})
     with _capacity_probe_lock:
         cached = _capacity_probe_cache["data"]
-        if not force and cached and now - _capacity_probe_cache["at"] < CAPACITY_PROBE_TTL:
-            data = dict(cached)
+        if (not force and cached and now - _capacity_probe_cache["at"] < CAPACITY_PROBE_TTL
+                and _capacity_probe_cache.get("scope") == scope):
+            data = copy.deepcopy(cached)
             data["cached"] = True
+            _apply_project_state(data.get("platforms") or [], state)
             return data
 
     results: dict = {}
@@ -2588,6 +2630,21 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
             name, name, True, False, note="probe timed out or crashed")
         platforms.append(_apply_quota_hold(p))
 
+    if project_root:
+        secrets = load_project_secrets(project_root)
+        dirty = False
+        for pid, conf in list(state.get("providers", {}).items()):
+            api_key = (secrets.get("providers") or {}).get(pid, {}).get("api_key", "")
+            p, live = _probe_provider(pid, dict(conf), api_key)
+            if live is not None and live != conf.get("models"):
+                state["providers"][pid]["models"] = live
+                dirty = True
+            platforms.append(p)
+        if dirty:
+            save_project_state(project_root, state)
+
+    _apply_project_state(platforms, state)
+
     ollama = next((p for p in platforms if p["key"] == "ollama"), {})
     data = {
         "ok": True,
@@ -2600,9 +2657,12 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
             "suggested": SUGGESTED_LOCAL_MODELS,
         },
     }
+    if project_root:
+        data["project_state"] = project_state_view(project_root)
     with _capacity_probe_lock:
         _capacity_probe_cache["at"] = time.time()
         _capacity_probe_cache["data"] = data
+        _capacity_probe_cache["scope"] = scope
     return data
 
 
@@ -2635,6 +2695,249 @@ def set_default_worker_model(flow_root: Path, model: str, tool: str = "") -> dic
     }
     path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return {"ok": True, "default_model": cfg["default_worker_model"]}
+
+
+# --- Per-project model state & third-party provider engine (Model Quota Hub) ---
+# Enabled flags and provider configs persist under <project>/<flow>/state/
+# (project-models.json); API keys live only in .secrets.json - kept git-ignored in
+# the target project and never returned, raw or unmasked, by any API response.
+
+PROJECT_MODELS_FILE = "project-models.json"
+PROVIDER_SECRETS_FILE = ".secrets.json"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+PROVIDER_TIMEOUT = 15
+_PROVIDER_KINDS = ("openrouter", "openai-compatible")
+_SECRETS_GITIGNORE = (".agentsflower/state/.secrets.json", ".agentflow/state/.secrets.json")
+
+
+def _project_state_dir(project_root: Path) -> Path:
+    flow = get_project_flow_root(Path(project_root)) or (Path(project_root) / ".agentsflower")
+    return flow / "state"
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.parent / f"{path.name}.{os.getpid()}.tmp"
+    try:
+        temp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def load_project_state(project_root: Path) -> dict:
+    """<project>/<flow>/state/project-models.json -> normalized per-project state."""
+    raw = _read_json(_project_state_dir(project_root) / PROJECT_MODELS_FILE)
+    state = {"version": 1, "platforms": {}, "models": {}, "providers": {}}
+    for section in ("platforms", "models", "providers"):
+        if isinstance(raw.get(section), dict):
+            state[section] = raw[section]
+    return state
+
+
+def save_project_state(project_root: Path, state: dict):
+    state = dict(state)
+    state["version"] = 1
+    _write_json(_project_state_dir(project_root) / PROJECT_MODELS_FILE, state)
+
+
+def load_project_secrets(project_root: Path) -> dict:
+    raw = _read_json(_project_state_dir(project_root) / PROVIDER_SECRETS_FILE)
+    providers = raw.get("providers")
+    return {"version": 1, "providers": providers if isinstance(providers, dict) else {}}
+
+
+def save_project_secrets(project_root: Path, secrets: dict):
+    _ensure_secrets_ignored(Path(project_root))
+    _write_json(_project_state_dir(project_root) / PROVIDER_SECRETS_FILE, secrets)
+
+
+def _ensure_secrets_ignored(project_root: Path):
+    """Guarantee the provider secrets file stays git-ignored in the target project."""
+    gitignore = Path(project_root) / ".gitignore"
+    try:
+        lines = gitignore.read_text(encoding="utf-8-sig").splitlines() if gitignore.is_file() else []
+        existing = {ln.strip() for ln in lines}
+        missing = [p for p in _SECRETS_GITIGNORE if p not in existing]
+        if missing:
+            block = ["", "# AgentsFlower provider secrets (never committed)"] + missing
+            with gitignore.open("a", encoding="utf-8") as fh:
+                fh.write("\n".join(block) + "\n")
+    except OSError:
+        pass
+
+
+def mask_api_key(key: str) -> str:
+    """'sk-or-v1-abc...' -> 'sk-or-••••••••'; the raw key never crosses an API boundary."""
+    key = str(key or "").strip()
+    if not key:
+        return ""
+    return (key[:6] if len(key) > 6 else "") + "••••••••"
+
+
+def project_state_view(project_root: Path) -> dict:
+    """The persisted per-project state as served to clients (credentials never included)."""
+    return load_project_state(project_root)
+
+
+def _apply_project_state(platforms: list, state: dict):
+    """Overlay per-project enabled flags on probed platforms and their models."""
+    plat_flags = (state or {}).get("platforms") or {}
+    model_flags = (state or {}).get("models") or {}
+    for p in platforms:
+        enabled = bool((plat_flags.get(p.get("key")) or {}).get("enabled", True))
+        p["enabled"] = enabled
+        overrides = model_flags.get(p.get("key")) or {}
+        for m in p.get("models") or []:
+            m["enabled"] = bool((overrides.get(m.get("id")) or {}).get("enabled", enabled))
+
+
+def _provider_request(url: str, api_key: str, timeout: int = PROVIDER_TIMEOUT) -> dict:
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def fetch_provider_models(base_url: str, api_key: str, timeout: int = PROVIDER_TIMEOUT):
+    """GET <base_url>/models (OpenRouter / OpenAI-compatible) -> (models, error)."""
+    url = base_url.rstrip("/") + "/models"
+    try:
+        payload = _provider_request(url, api_key, timeout)
+    except urllib.error.HTTPError as e:
+        return None, f"provider returned HTTP {e.code}"
+    except Exception as e:
+        return None, f"provider connection failed: {e}"
+    items = payload.get("data")
+    if not isinstance(items, list):
+        return None, "provider response carries no model list"
+    models = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        pricing = item.get("pricing") or {}
+        price = ""
+        if isinstance(pricing, dict) and pricing.get("prompt"):
+            try:
+                price = f"${float(pricing['prompt']) * 1_000_000:.2f} / 1M prompt"
+            except (TypeError, ValueError):
+                price = str(pricing["prompt"])
+        ctx = item.get("context_length") or (item.get("top_provider") or {}).get("context_length")
+        models.append({
+            "id": item["id"],
+            "label": item.get("name") or item["id"],
+            "context": f"{int(ctx):,} context" if ctx else "",
+            "pricing": price,
+            "family": str(item["id"]).split("/")[0] if "/" in str(item["id"]) else "",
+            "free": False,
+            "provider": True,
+        })
+    return models, ""
+
+
+def _provider_id(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return slug or "provider"
+
+
+def _probe_provider(pid: str, conf: dict, api_key: str) -> tuple[dict, list | None]:
+    """Build the platform entry for a configured provider; returns (entry, live models|None)."""
+    live, err = ([], "no stored credential") if not api_key else fetch_provider_models(
+        conf.get("base_url") or OPENROUTER_BASE_URL, api_key)
+    if live is None:
+        models = conf.get("models") or []
+        note = f"live model refresh failed ({err})" if api_key else "no stored credential"
+    else:
+        models = live
+        note = ""
+    p = _platform(pid, conf.get("name") or pid, True, bool(api_key),
+                  models=models, note=note or conf.get("base_url", ""))
+    p["provider"] = True
+    p["kind"] = conf.get("kind") or "openai-compatible"
+    p["base_url"] = conf.get("base_url") or ""
+    p["api_key_masked"] = conf.get("api_key_masked") or mask_api_key(api_key)
+    return p, live
+
+
+def add_provider(project_root: Path, body: dict) -> tuple[int, dict]:
+    """Verify a provider against its live /models API, then persist config + credential."""
+    name = str(body.get("name") or body.get("id") or "").strip()
+    if not name:
+        return 400, {"ok": False, "error": "provider name required"}
+    kind = str(body.get("kind") or "openrouter").strip().lower()
+    if kind not in _PROVIDER_KINDS:
+        return 400, {"ok": False, "error": f"unsupported provider kind: {kind}"}
+    base_url = str(body.get("base_url") or "").strip() or (
+        OPENROUTER_BASE_URL if kind == "openrouter" else "")
+    if not base_url or not re.fullmatch(r"https?://[^\s\"']+", base_url):
+        return 400, {"ok": False, "error": "valid provider base_url required"}
+    api_key = str(body.get("api_key") or body.get("key") or "").strip()
+    if not api_key or len(api_key) < 8:
+        return 400, {"ok": False, "error": "provider api_key required"}
+    pid = _provider_id(name)
+    if pid in _PLATFORM_PROBES:
+        return 400, {"ok": False, "error": f"provider id collides with CLI platform: {pid}"}
+    models, err = fetch_provider_models(base_url, api_key)
+    if models is None:
+        return 502, {"ok": False, "error": f"provider verification failed: {err}"}
+    state = load_project_state(project_root)
+    state["providers"][pid] = {
+        "id": pid, "name": name, "kind": kind, "base_url": base_url,
+        "api_key_masked": mask_api_key(api_key),
+        "models": models,
+        "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    save_project_state(project_root, state)
+    secrets = load_project_secrets(project_root)
+    secrets["providers"][pid] = {"api_key": api_key}
+    save_project_secrets(project_root, secrets)
+    return 200, {"ok": True, "provider": state["providers"][pid]}
+
+
+def remove_provider(project_root: Path, body: dict) -> tuple[int, dict]:
+    """Drop a provider's config and purge its stored credential."""
+    pid = _provider_id(body.get("id") or body.get("name") or "")
+    state = load_project_state(project_root)
+    if pid not in state["providers"]:
+        return 404, {"ok": False, "error": f"unknown provider: {pid}"}
+    state["providers"].pop(pid)
+    state["platforms"].pop(pid, None)
+    state["models"].pop(pid, None)
+    save_project_state(project_root, state)
+    secrets = load_project_secrets(project_root)
+    secrets["providers"].pop(pid, None)
+    save_project_secrets(project_root, secrets)
+    return 200, {"ok": True, "removed": pid}
+
+
+def toggle_project_model(project_root: Path, body: dict) -> tuple[int, dict]:
+    """Enable/disable a platform or one of its models for this project only."""
+    platform = str(body.get("platform") or "").strip()
+    model = str(body.get("model") or "").strip()
+    if not platform or not re.fullmatch(r"[A-Za-z0-9][\w.@:-]{0,60}", platform):
+        return 400, {"ok": False, "error": "valid platform key required"}
+    if model and not re.fullmatch(r"[A-Za-z0-9][\w./:@-]{0,160}", model):
+        return 400, {"ok": False, "error": "invalid model id"}
+    state = load_project_state(project_root)
+    target = (state["models"].setdefault(platform, {}).setdefault(model, {"enabled": True})
+              if model else state["platforms"].setdefault(platform, {"enabled": True}))
+    target["enabled"] = (not target.get("enabled", True)) if "enabled" not in body else bool(body["enabled"])
+    save_project_state(project_root, state)
+    return 200, {"ok": True, "state": project_state_view(project_root)}
 
 
 # --- Live CLI Chat Execution Engine (/api/chat) ---
@@ -3300,13 +3603,23 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             flow = get_project_flow_root(root)
             platform = qs.get("platform", [""])[0].strip().lower()
-            if platform and platform not in _PLATFORM_PROBES:
+            if platform and platform not in _PLATFORM_PROBES and \
+                    platform not in (load_project_state(root).get("providers") or {}):
                 self.send_json({"ok": False, "error": f"unknown platform: {platform}"}, 400)
                 return
             data = probe_capacity(force=qs.get("refresh", [""])[0] in ("1", "true"),
-                                  platform=platform, flow_root=flow)
+                                  platform=platform, flow_root=flow, project_root=root)
             data["default_model"] = get_default_worker_model(flow) if flow else None
             self.send_json(data)
+            return
+
+        if path == "/api/capacity/project-state":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            self.send_json({"ok": True, "project": str(root),
+                            "state": project_state_view(root)})
             return
 
         if path == "/api/failover/status":
@@ -3431,6 +3744,33 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             res = set_default_worker_model(flow_root, model, tool)
             self.send_json(res, 200 if res.get("ok") else 400)
+            return
+
+        if path == "/api/capacity/project-toggle":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            status_code, res = toggle_project_model(target_root, body)
+            self.send_json(res, status_code)
+            return
+
+        if path == "/api/capacity/provider/add":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            status_code, res = add_provider(target_root, body)
+            self.send_json(res, status_code)
+            return
+
+        if path == "/api/capacity/provider/remove":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            status_code, res = remove_provider(target_root, body)
+            self.send_json(res, status_code)
             return
 
         if path == "/api/dashboard/build":
