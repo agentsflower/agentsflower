@@ -905,6 +905,7 @@ CLI_PROBE_TIMEOUT = 20
 OLLAMA_URL = "http://127.0.0.1:11434"
 
 _capacity_probe_cache = {"at": 0.0, "data": None}
+_platform_probe_cache = {}
 _capacity_probe_lock = threading.Lock()
 
 SUGGESTED_LOCAL_MODELS = [
@@ -1005,6 +1006,43 @@ def parse_agy_models(text: str) -> list[dict]:
     return models
 
 
+_CLI_MODEL_SKIP = re.compile(r"^(model|models|id|name|available|error|failed|usage)\b", re.I)
+
+
+def parse_cli_models(text: str) -> list[dict]:
+    """Generic account model listing -> [{id,label}]: one model id per line; header/error lines skipped."""
+    models = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        first = line.split()[0]
+        if not re.fullmatch(r"[A-Za-z0-9][\w./:-]*", first) or _CLI_MODEL_SKIP.match(first):
+            continue
+        models.append({"id": first, "label": line, "context": "", "pricing": "",
+                       "family": "", "free": False})
+    return models
+
+
+def _configured_tool_models(flow_root: Path, tool: str) -> list[dict]:
+    """Fallback model list for a CLI with no catalog command: the project's docs/model-options.json."""
+    try:
+        cfg = json.loads((flow_root / "docs" / "model-options.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    ids = []
+    for opt in (cfg.get("options") or {}).values():
+        if not isinstance(opt, dict) or opt.get("tool") != tool:
+            continue
+        mbe = opt.get("model_by_effort")
+        values = list(mbe.values()) if isinstance(mbe, dict) else [opt.get("model")]
+        for v in values:
+            if isinstance(v, str) and v.strip() and v.strip() not in ids:
+                ids.append(v.strip())
+    return [{"id": i, "label": i, "context": "configured catalog", "pricing": "",
+             "family": "", "free": False} for i in ids]
+
+
 def _fetch_ollama_json(path: str, timeout: int = 3):
     try:
         req = urllib.request.Request(OLLAMA_URL + path, headers={"Accept": "application/json"})
@@ -1027,7 +1065,7 @@ def _platform(key: str, label: str, installed: bool, authenticated: bool,
             "models": models or [], "note": note}
 
 
-def _probe_devin() -> dict:
+def _probe_devin(flow_root: Path = None) -> dict:
     exe = shutil.which("devin")
     if not exe:
         return _platform("devin", "Devin", False, False, note="devin CLI not found on PATH")
@@ -1044,7 +1082,7 @@ def _probe_devin() -> dict:
                      version=_probe_version(exe), models=models, note=note)
 
 
-def _probe_claude() -> dict:
+def _probe_claude(flow_root: Path = None) -> dict:
     exe = shutil.which("claude")
     if not exe:
         return _platform("claude", "Claude Code", False, False, note="claude CLI not found on PATH")
@@ -1059,11 +1097,32 @@ def _probe_claude() -> dict:
     auth_failed = any(marker in mout.lower() for marker in
                       ("failed to authenticate", "not logged in", "unauthorized"))
     authed = logged_in and not auth_failed
+    models = parse_cli_models(mout) if mcode == 0 and not auth_failed else []
+    if authed and not models:
+        models = _configured_tool_models(flow_root or FLOW_ROOT, "claude")
     note = mout.splitlines()[0].strip()[:140] if auth_failed and mout else ""
-    return _platform("claude", "Claude Code", True, authed, version=version, note=note)
+    return _platform("claude", "Claude Code", True, authed, version=version,
+                     models=models, note=note)
 
 
-def _probe_agy() -> dict:
+def _probe_codex(flow_root: Path = None) -> dict:
+    exe = shutil.which("codex")
+    if not exe:
+        return _platform("codex", "Codex", False, False, note="codex CLI not found on PATH")
+    version = _probe_version(exe)
+    # `login status` exits nonzero when the CLI holds no usable credential.
+    code, out = _probe_run([exe, "login", "status"])
+    authed = code == 0 and not any(
+        marker in out.lower() for marker in ("not logged in", "logged out", "unauthorized"))
+    mcode, mout = _probe_run([exe, "models"])
+    models = parse_cli_models(mout) if mcode == 0 else []
+    if authed and not models:
+        models = _configured_tool_models(flow_root or FLOW_ROOT, "codex")
+    note = "" if code == 0 else (out.splitlines()[0].strip()[:140] if out else "login status probe failed")
+    return _platform("codex", "Codex", True, authed, version=version, models=models, note=note)
+
+
+def _probe_agy(flow_root: Path = None) -> dict:
     exe = shutil.which("agy")
     if not exe:
         return _platform("agy", "Antigravity", False, False, note="agy CLI not found on PATH")
@@ -1075,7 +1134,7 @@ def _probe_agy() -> dict:
                      version=version, models=models, note=note)
 
 
-def _probe_ollama() -> dict:
+def _probe_ollama(flow_root: Path = None) -> dict:
     tags = _fetch_ollama_json("/api/tags")
     if not isinstance(tags, dict):
         return _platform("ollama", "Ollama (Local)", False, False,
@@ -1092,9 +1151,55 @@ def _probe_ollama() -> dict:
                      note="offline zero-token models")
 
 
-def probe_capacity(force: bool = False) -> dict:
-    """Scan the agent CLIs on this machine; results are cached for CAPACITY_PROBE_TTL seconds."""
+_PLATFORM_PROBES = {
+    "devin": _probe_devin,
+    "claude": _probe_claude,
+    "codex": _probe_codex,
+    "agy": _probe_agy,
+    "ollama": _probe_ollama,
+}
+
+
+def _apply_quota_hold(p: dict) -> dict:
+    if p["status"] == "active" and p["key"] in machine_capacity.TOOLS:
+        try:
+            hold = machine_capacity.limit_until(p["key"])
+        except Exception:
+            hold = None
+        if hold:
+            p["status"], p["status_label"] = "limited", "Limited / Unauthenticated"
+            p["hold_until"] = hold.isoformat()
+            p["note"] = (f"{p['note']} " if p["note"] else "") + f"quota hold until {p['hold_until']}"
+    return p
+
+
+def _single_platform_probe(key: str, force: bool, flow_root: Path = None):
+    """Probe one platform on demand (?platform=<key>); each key has its own TTL cache entry."""
     now = time.time()
+    with _capacity_probe_lock:
+        ent = _platform_probe_cache.get(key)
+        if not force and ent and now - ent["at"] < CAPACITY_PROBE_TTL:
+            return dict(ent["data"]), True
+    p = _apply_quota_hold(_PLATFORM_PROBES[key](flow_root))
+    with _capacity_probe_lock:
+        _platform_probe_cache[key] = {"at": time.time(), "data": p}
+    return p, False
+
+
+def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = None) -> dict:
+    """Scan the agent CLIs on this machine; results are cached for CAPACITY_PROBE_TTL seconds.
+    `platform` limits the scan to one platform key (/api/capacity/probe?platform=<tool>)."""
+    now = time.time()
+    if platform:
+        p, cached = _single_platform_probe(platform, force, flow_root or FLOW_ROOT)
+        return {
+            "ok": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ttl": CAPACITY_PROBE_TTL,
+            "cached": cached,
+            "platform": p,
+            "platforms": [p],
+        }
     with _capacity_probe_lock:
         cached = _capacity_probe_cache["data"]
         if not force and cached and now - _capacity_probe_cache["at"] < CAPACITY_PROBE_TTL:
@@ -1103,10 +1208,9 @@ def probe_capacity(force: bool = False) -> dict:
             return data
 
     results: dict = {}
-    probes = (("devin", _probe_devin), ("claude", _probe_claude),
-              ("agy", _probe_agy), ("ollama", _probe_ollama))
+    probes = tuple(_PLATFORM_PROBES.items())
     threads = [
-        threading.Thread(target=lambda n=n, f=f: results.__setitem__(n, f()), daemon=True)
+        threading.Thread(target=lambda n=n, f=f: results.__setitem__(n, f(flow_root or FLOW_ROOT)), daemon=True)
         for n, f in probes
     ]
     for t in threads:
@@ -1118,16 +1222,7 @@ def probe_capacity(force: bool = False) -> dict:
     for name, _fn in probes:
         p = results.get(name) or _platform(
             name, name, True, False, note="probe timed out or crashed")
-        if p["status"] == "active" and name in machine_capacity.TOOLS:
-            try:
-                hold = machine_capacity.limit_until(name)
-            except Exception:
-                hold = None
-            if hold:
-                p["status"], p["status_label"] = "limited", "Limited / Unauthenticated"
-                p["hold_until"] = hold.isoformat()
-                p["note"] = (f"{p['note']} " if p["note"] else "") + f"quota hold until {p['hold_until']}"
-        platforms.append(p)
+        platforms.append(_apply_quota_hold(p))
 
     ollama = next((p for p in platforms if p["key"] == "ollama"), {})
     data = {
@@ -1274,7 +1369,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
                 return
             flow = get_project_flow_root(root)
-            data = probe_capacity(force=qs.get("refresh", [""])[0] in ("1", "true"))
+            platform = qs.get("platform", [""])[0].strip().lower()
+            if platform and platform not in _PLATFORM_PROBES:
+                self.send_json({"ok": False, "error": f"unknown platform: {platform}"}, 400)
+                return
+            data = probe_capacity(force=qs.get("refresh", [""])[0] in ("1", "true"),
+                                  platform=platform, flow_root=flow)
             data["default_model"] = get_default_worker_model(flow) if flow else None
             self.send_json(data)
             return

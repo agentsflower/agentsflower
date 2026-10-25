@@ -231,10 +231,15 @@
               <div class="chat-composer">
                 <textarea id="chatInput" rows="2" placeholder="Ask anything, @ to mention, / for actions"></textarea>
                 <div class="composer-toolbar">
+                  <div class="model-selector-wrap" id="chatPlatformSelector">
+                    <button type="button" class="model-pill platform-pill" id="chatPlatformPill" title="Chat platform selector">Devin <span class="model-caret">&#8963;</span></button>
+                    <div class="model-dropdown" id="chatPlatformDropdown" role="menu"></div>
+                  </div>
                   <div class="model-selector-wrap" id="chatModelSelector">
                     <button type="button" class="model-pill" id="chatModelPill" title="Chat model selector">Devin swe-2-high <span class="model-caret">&#8963;</span></button>
                     <div class="model-dropdown" id="chatModelDropdown" role="menu"></div>
                   </div>
+                  <span class="platform-status-pill status-badge" id="chatPlatformStatus" hidden></span>
                   <span class="composer-spacer"></span>
                   <button type="button" class="chat-send" id="btnChatSend" title="Send message">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>

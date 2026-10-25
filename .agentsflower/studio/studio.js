@@ -31,9 +31,19 @@ document.addEventListener('DOMContentLoaded', () => {
     openTabs: [],
     chatModel: 'swe-2-high',
     chatModels: [],
+    chatPlatform: 'devin',
+    platformData: {},
     capacityData: null,
     defaultWorkerModel: null,
   };
+
+  const CHAT_PLATFORMS = [
+    { key: 'devin', label: 'Devin' },
+    { key: 'claude', label: 'Claude Code' },
+    { key: 'codex', label: 'Codex' },
+    { key: 'agy', label: 'Antigravity' },
+    { key: 'ollama', label: 'Local Ollama' },
+  ];
 
   const CHAT_MODELS = [
     { id: 'swe-2-high', label: 'Devin swe-2-high', note: 'Floor default' },
@@ -150,6 +160,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatModelPill = document.getElementById('chatModelPill');
   const chatModelSelector = document.getElementById('chatModelSelector');
   const chatModelDropdown = document.getElementById('chatModelDropdown');
+  const chatPlatformPill = document.getElementById('chatPlatformPill');
+  const chatPlatformSelector = document.getElementById('chatPlatformSelector');
+  const chatPlatformDropdown = document.getElementById('chatPlatformDropdown');
+  const chatPlatformStatus = document.getElementById('chatPlatformStatus');
 
   // Authorization Gate Modal
   const modalAuthBackdrop = document.getElementById('modalAuthBackdrop');
@@ -982,9 +996,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (res && res.ok) {
       state.defaultWorkerModel = res.default_model;
       state.chatModel = modelId;
+      if (CHAT_PLATFORMS.some(p => p.key === tool)) {
+        state.chatPlatform = tool;
+        try { sessionStorage.setItem('af_chat_platform', tool); } catch (err) { /* storage unavailable */ }
+      }
       ensureChatModelListed(modelId, tool);
       try { sessionStorage.setItem('af_chat_model', modelId); } catch (err) { /* storage unavailable */ }
       updateDefaultModelPill();
+      updateChatPlatformPill();
+      renderPlatformDropdown();
+      updatePlatformStatusPill();
       updateChatModelPill();
       renderModelDropdown();
       if (state.capacityData) renderCapacityHub(state.capacityData);
@@ -999,35 +1020,129 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Map a probed platform record to the chat model dropdown entries for that platform.
+  function platformModelList(p) {
+    if (!p || !(p.models || []).length) return CHAT_MODELS.slice();
+    return p.models.map(m => ({
+      id: m.id,
+      label: `${p.label} ${m.id}`,
+      note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label || '')
+    }));
+  }
+
   function applyCapacityModels(data) {
-    const live = [];
-    (data.platforms || []).forEach(p => {
-      (p.models || []).forEach(m => {
-        if (!live.some(x => x.id === m.id)) {
-          live.push({ id: m.id, label: `${p.label} ${m.id}`, note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label) });
-        }
-      });
-    });
-    live.sort((a, b) => {
-      const af = /free/i.test(a.note) ? 0 : 1;
-      const bf = /free/i.test(b.note) ? 0 : 1;
-      return af - bf;
-    });
-    const merged = live.slice(0, 40).concat(CHAT_MODELS.filter(c => !live.slice(0, 40).some(l => l.id === c.id)));
-    state.chatModels = merged;
+    (data.platforms || []).forEach(p => { state.platformData[p.key] = p; });
     const d = data.default_model;
-    let saved = null;
-    try { saved = sessionStorage.getItem('af_chat_model'); } catch (err) { /* storage unavailable */ }
-    if (saved && merged.some(m => m.id === saved)) {
-      state.chatModel = saved;
+    let savedPlatform = null, savedModel = null;
+    try {
+      savedPlatform = sessionStorage.getItem('af_chat_platform');
+      savedModel = sessionStorage.getItem('af_chat_model');
+    } catch (err) { /* storage unavailable */ }
+    if (savedPlatform && CHAT_PLATFORMS.some(p => p.key === savedPlatform)) {
+      state.chatPlatform = savedPlatform;
+    } else if (d && d.tool && CHAT_PLATFORMS.some(p => p.key === d.tool)) {
+      state.chatPlatform = d.tool;
+    }
+    state.chatModels = platformModelList(state.platformData[state.chatPlatform]);
+    if (savedModel && state.chatModels.some(m => m.id === savedModel)) {
+      state.chatModel = savedModel;
     } else if (d && d.model) {
       state.chatModel = d.model;
       ensureChatModelListed(d.model, d.tool);
-    } else if (!merged.some(m => m.id === state.chatModel)) {
-      state.chatModel = merged[0] ? merged[0].id : CHAT_MODELS[0].id;
+    } else if (!state.chatModels.some(m => m.id === state.chatModel)) {
+      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : CHAT_MODELS[0].id;
     }
+    updateChatPlatformPill();
+    renderPlatformDropdown();
+    updatePlatformStatusPill();
     updateChatModelPill();
     renderModelDropdown();
+  }
+
+  // --- Chat platform selector (dynamic per-platform model probing) ---
+  function platformLabel(key) {
+    const pl = CHAT_PLATFORMS.find(p => p.key === key);
+    return pl ? pl.label : key;
+  }
+
+  function platformStatusOf(key) {
+    const p = state.platformData[key];
+    return p ? (p.status_label || p.status || '') : '';
+  }
+
+  function updateChatPlatformPill() {
+    if (!chatPlatformPill) return;
+    chatPlatformPill.innerHTML = `${escapeHTML(platformLabel(state.chatPlatform))} <span class="model-caret">&#8963;</span>`;
+    chatPlatformPill.title = `Chat platform: ${platformLabel(state.chatPlatform)}`;
+  }
+
+  function renderPlatformDropdown() {
+    if (!chatPlatformDropdown) return;
+    chatPlatformDropdown.innerHTML = '';
+    CHAT_PLATFORMS.forEach(pl => {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = `model-option${pl.key === state.chatPlatform ? ' active' : ''}`;
+      opt.setAttribute('role', 'menuitem');
+      opt.innerHTML = `<span>${escapeHTML(pl.label)}</span><span class="model-id">${escapeHTML(platformStatusOf(pl.key) || 'not probed yet')}</span>`;
+      opt.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        selectChatPlatform(pl.key);
+        chatPlatformSelector.classList.remove('open');
+      });
+      chatPlatformDropdown.appendChild(opt);
+    });
+  }
+
+  function updatePlatformStatusPill() {
+    if (!chatPlatformStatus) return;
+    const p = state.platformData[state.chatPlatform];
+    if (!p || p.status === 'active') {
+      chatPlatformStatus.hidden = true;
+      chatPlatformStatus.textContent = '';
+      return;
+    }
+    chatPlatformStatus.hidden = false;
+    chatPlatformStatus.className = `platform-status-pill status-badge ${p.status || 'missing'}`;
+    chatPlatformStatus.textContent = p.status_label || 'Not Installed';
+    chatPlatformStatus.title = `${p.note ? p.note + ' — ' : ''}Pick an Active platform or install/authenticate this CLI to use it.`;
+  }
+
+  function applyPlatformModels(key) {
+    const p = state.platformData[key];
+    state.chatModels = platformModelList(p);
+    if (!state.chatModels.some(m => m.id === state.chatModel)) {
+      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : CHAT_MODELS[0].id;
+      try { sessionStorage.setItem('af_chat_model', state.chatModel); } catch (err) { /* storage unavailable */ }
+    }
+    updatePlatformStatusPill();
+    updateChatModelPill();
+    renderModelDropdown();
+  }
+
+  // Live re-probe of one platform's CLI: populates the dependent model dropdown.
+  async function probeChatPlatform(key) {
+    const params = [`platform=${encodeURIComponent(key)}`];
+    if (state.currentProject) params.push(`project=${encodeURIComponent(state.currentProject)}`);
+    const res = await fetchJSON(`/api/capacity/probe?${params.join('&')}`);
+    if (res && res.ok && res.platform) {
+      state.platformData[key] = res.platform;
+    } else if (!state.platformData[key]) {
+      state.platformData[key] = {
+        key, label: platformLabel(key), status: 'missing',
+        status_label: 'Not Installed', models: [], note: 'platform probe unreachable'
+      };
+    }
+    renderPlatformDropdown();
+    if (key === state.chatPlatform) applyPlatformModels(key);
+  }
+
+  function selectChatPlatform(key) {
+    state.chatPlatform = key;
+    try { sessionStorage.setItem('af_chat_platform', key); } catch (err) { /* storage unavailable */ }
+    updateChatPlatformPill();
+    updatePlatformStatusPill();
+    probeChatPlatform(key);
   }
 
   // --- Create Task Form Handler ---
@@ -1836,6 +1951,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderModelDropdown() {
     if (!chatModelDropdown) return;
     chatModelDropdown.innerHTML = '';
+    const p = state.platformData[state.chatPlatform];
+    if (p && !(p.models || []).length) {
+      const info = document.createElement('div');
+      info.className = 'model-option model-empty';
+      info.textContent = `${p.status_label || 'Unavailable'}: ${p.note || 'no models reported'} — pick another platform`;
+      chatModelDropdown.appendChild(info);
+    }
     chatModelList().forEach(m => {
       const opt = document.createElement('button');
       opt.type = 'button';
@@ -1858,18 +1980,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chatModelSelector || !chatModelPill) return;
     state.chatModels = CHAT_MODELS.slice();
     try {
+      const savedPlatform = sessionStorage.getItem('af_chat_platform');
+      if (savedPlatform && CHAT_PLATFORMS.some(p => p.key === savedPlatform)) {
+        state.chatPlatform = savedPlatform;
+      }
       const saved = sessionStorage.getItem('af_chat_model');
       if (saved && chatModelList().some(m => m.id === saved)) state.chatModel = saved;
     } catch (err) { /* storage unavailable */ }
+    updateChatPlatformPill();
+    renderPlatformDropdown();
+    updatePlatformStatusPill();
     updateChatModelPill();
     renderModelDropdown();
     chatModelPill.addEventListener('click', (ev) => {
       ev.stopPropagation();
       chatModelSelector.classList.toggle('open');
     });
+    if (chatPlatformPill && chatPlatformSelector) {
+      chatPlatformPill.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        chatPlatformSelector.classList.toggle('open');
+      });
+    }
     document.addEventListener('click', (ev) => {
       if (!chatModelSelector.contains(ev.target)) {
         chatModelSelector.classList.remove('open');
+      }
+      if (chatPlatformSelector && !chatPlatformSelector.contains(ev.target)) {
+        chatPlatformSelector.classList.remove('open');
       }
     });
   }
