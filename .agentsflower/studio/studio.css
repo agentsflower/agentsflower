@@ -2705,6 +2705,17 @@ body.pane-resizing iframe {
   background: rgba(168, 85, 247, 0.22);
   color: #e9d5ff;
 }
+.skill-badge,
+.skill-pill {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  color: #6ee7b7;
+}
 .pool-task-details summary {
   font-size: 0.74rem;
   color: var(--text-muted);

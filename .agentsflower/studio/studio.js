@@ -2074,14 +2074,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const itemEl = document.createElement('div');
       itemEl.className = 'pool-task-item';
       const isEsc = (t.model || '').includes('argon') || t.tier === 'escalation';
+      const stgText = t.stage_label || stageLabel(t.stage || '1');
+      const skills = Array.isArray(t.skills)
+        ? t.skills
+        : (typeof t.skills === 'string' && t.skills && t.skills !== 'none'
+          ? t.skills.split(',').map(s => s.trim()).filter(Boolean)
+          : []);
+      const skillBadges = skills.map(s =>
+        '<span class="skill-badge skill-pill" data-skill="' + escapeHTML(s) + '">' + escapeHTML(s) + '</span>'
+      ).join('');
       const allowedList = (t.allowed_files || t.allowed || []).map(f => '<li><code>' + escapeHTML(f) + '</code></li>').join('');
       const critList = (t.criteria || []).map(c => '<li>' + escapeHTML(typeof c === 'object' ? (c.id + ': ' + c.text) : String(c)) + '</li>').join('');
       itemEl.innerHTML =
         '<div class="pool-task-top">' +
           '<span class="task-tid">' + escapeHTML(t.id) + '</span>' +
-          '<span class="task-stage-badge">Stage ' + escapeHTML(String(t.stage || '7')) + '</span>' +
+          '<span class="task-stage-badge">' + escapeHTML(stgText) + '</span>' +
           '<span class="effort-badge">Effort: ' + escapeHTML(t.effort || 'high') + '</span>' +
           '<span class="model-tier-pill' + (isEsc ? ' escalation' : '') + '">' + escapeHTML(t.model || 'swe-2-high') + '</span>' +
+          skillBadges +
         '</div>' +
         '<div class="task-card-title">' + escapeHTML(t.title) + '</div>' +
         '<details class="pool-task-details">' +
