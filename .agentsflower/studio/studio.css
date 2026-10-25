@@ -396,35 +396,10 @@ body {
   min-width: 0;
 }
 
-.topnav-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle);
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  width: 280px;
-}
-.search-box svg {
-  width: 16px;
-  height: 16px;
-  color: var(--text-subtle);
-}
-.search-box input {
-  background: transparent;
-  border: none;
-  color: var(--text-main);
-  font-size: 0.85rem;
-  outline: none;
-  width: 100%;
+.topnav-actions,
+.search-box,
+.active-project-chip {
+  display: none !important;
 }
 
 /* Buttons */
