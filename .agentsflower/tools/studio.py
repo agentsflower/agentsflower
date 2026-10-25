@@ -346,12 +346,18 @@ def get_tasks_data(project_path: str = None) -> dict:
                                     "done": chk.lower() == "x",
                                 })
                             allowed = [l.strip().lstrip("- `").rstrip("`") for l in re.findall(r"-\s*`([^`]+)`", t_content)]
-                            for field in ("Branch", "Worktree", "Model"):
+                            for field in ("Branch", "Worktree", "Model", "Skills"):
                                 fm = re.search(rf"^{field}:\s*(.+?)\s*$", t_content, re.M)
                                 if fm:
                                     header[field.lower()] = fm.group(1)
                         except Exception:
                             pass
+
+                    raw_sk = header.get("skills", "")
+                    task_skills = [
+                        s.strip() for s in raw_sk.split(",")
+                        if s.strip() and s.strip().lower() != "none"
+                    ] if raw_sk else []
 
                     tasks_list.append({
                         "id": tid,
@@ -363,6 +369,7 @@ def get_tasks_data(project_path: str = None) -> dict:
                         "branch": header.get("branch", ""),
                         "worktree": header.get("worktree", ""),
                         "model": header.get("model", ""),
+                        "skills": task_skills,
                         "depends": row_dict.get("Depends on", ""),
                         "commit": row_dict.get("Commit / artifact", row_dict.get("Commit", "")),
                         "notes": row_dict.get("Notes", ""),
@@ -449,7 +456,9 @@ def _index_repo_ast_symbols(root: Path) -> tuple[dict[str, str], dict[str, set[s
     return symbol_to_file, module_importers, basename_to_rel
 
 
-def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool = True) -> dict:
+def compute_conversation_blast_radius(
+    root: Path, text: str, invoke_graft: bool = True, fallback_defaults: bool = True
+) -> dict:
     symbol_to_file, module_importers, basename_to_rel = _index_repo_ast_symbols(root)
     affected: list[str] = []
     matched_symbols: list[str] = []
@@ -460,10 +469,21 @@ def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool 
         if norm and norm not in affected:
             affected.append(norm)
 
+    allowed_exts = (
+        ".py", ".js", ".css", ".html", ".md", ".json",
+        ".ts", ".tsx", ".txt", ".xml", ".scss", ".less", ".vue", ".svelte",
+    )
+    known_artifacts = {
+        "manifest.json", "llms.txt", "llms-full.txt", "robots.txt", "sitemap.xml",
+        "service-worker.js", "service_worker.js", "background.js",
+        "content-script.js", "content_script.js", "offscreen.html", "offscreen.js",
+        "popup.html", "popup.js", "mv3_lint.py",
+    }
+
     for m in re.finditer(r"([A-Za-z0-9_./-]+[.][A-Za-z0-9]+)", text or ""):
         token = m.group(1).strip(".,:;()[]" + chr(96) + chr(34) + chr(39))
         ext = Path(token).suffix.lower()
-        if ext not in (".py", ".js", ".css", ".html", ".md", ".json", ".ts", ".tsx"):
+        if ext not in allowed_exts:
             continue
         low = Path(token).name.lower()
         if (root / token).is_file():
@@ -473,6 +493,9 @@ def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool 
         elif low in basename_to_rel:
             _add_file(basename_to_rel[low])
             targets.append(basename_to_rel[low])
+        elif low in known_artifacts or ext in (".css", ".html", ".txt", ".xml", ".scss", ".less", ".vue", ".svelte"):
+            _add_file(token)
+            targets.append(token)
 
     for tok in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text or ""):
         if tok in symbol_to_file:
@@ -511,7 +534,7 @@ def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool 
             if test_key in basename_to_rel:
                 _add_file(basename_to_rel[test_key])
 
-    if not affected:
+    if not affected and fallback_defaults:
         flow_name = (get_project_flow_root(root) or (root / ".agentsflower")).name
         for default_rel in (f"{flow_name}/tools/studio.py", f"{flow_name}/tests/test_studio.py"):
             _add_file(default_rel)
@@ -522,6 +545,254 @@ def compute_conversation_blast_radius(root: Path, text: str, invoke_graft: bool 
         "affected_files": affected[:12],
         "engine": "graft-ast",
     }
+
+
+def _load_skills_catalog(root: Path) -> set[str]:
+    catalog = {
+        "frontend-art-direction",
+        "chrome-extension-mv3",
+        "geo-seo-audit",
+        "perf-benchmark",
+    }
+    flow = get_project_flow_root(root) or (root / ".agentsflower")
+    for candidate in (flow / "skills" / "INDEX.md", FLOW_ROOT / "skills" / "INDEX.md"):
+        if candidate.is_file():
+            try:
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+                for slug in re.findall(r"`([a-z0-9]+(?:-[a-z0-9]+)+)`", text):
+                    catalog.add(slug)
+                break
+            except Exception:
+                continue
+    return catalog
+
+
+def map_task_skills(root: Path, item_text: str, allowed_files: list[str] | None = None) -> list[str]:
+    """Match AST blast radius files and task keywords against skills/INDEX.md."""
+    catalog = _load_skills_catalog(root)
+    low = (item_text or "").lower()
+    files = [str(f).replace(chr(92), "/").lower() for f in (allowed_files or []) if f]
+    basenames = [Path(f).name.lower() for f in files]
+    suffixes = {Path(f).suffix.lower() for f in files}
+    matched: list[str] = []
+
+    def _add_skill(slug: str):
+        if slug in catalog and slug not in matched:
+            matched.append(slug)
+
+    mv3_files = {
+        "manifest.json", "service-worker.js", "service_worker.js", "background.js",
+        "content-script.js", "content_script.js", "offscreen.html", "offscreen.js",
+        "popup.html", "popup.js", "mv3_lint.py",
+    }
+    has_mv3_file = any(b in mv3_files for b in basenames) or any(
+        "chrome-extension" in f or "/mv3" in f or "mv3_" in f for f in files
+    )
+    has_mv3_kw = bool(re.search(
+        r"\b(chrome\s+extension|chrome-extension|browser\s+extension|manifest\s*v3|manifest\.json|"
+        r"mv3|declarativenetrequest|service\s+worker|service-worker|offscreen\s+document|"
+        r"content\s+script|webextension|chrome\.runtime|chrome\.tabs|chrome\.storage)\b",
+        low,
+    ))
+    if has_mv3_file or has_mv3_kw:
+        _add_skill("chrome-extension-mv3")
+
+    ui_exts = {".css", ".scss", ".sass", ".less", ".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte"}
+    non_mv3_ui_files = [
+        f for f in files
+        if Path(f).suffix.lower() in ui_exts and Path(f).name.lower() not in ("popup.html", "offscreen.html")
+    ]
+    has_ui_file = bool(non_mv3_ui_files)
+    has_ui_kw = bool(re.search(
+        r"\b(css|html|ui|ux|frontend|front-end|aesthetics?|typography|glassmorphism|"
+        r"dark\s+mode|light\s+mode|contrast|wcag|micro-animations?|animations?|"
+        r"design\s+tokens?|design\s+system|styles?|styling|theme|layout|cards?|badges?|"
+        r"pills?|modals?|drawers?|dropdowns?|sidebars?|buttons?|icons?|responsive)\b",
+        low,
+    ))
+    if has_ui_file or has_ui_kw:
+        _add_skill("frontend-art-direction")
+
+    seo_files = {"llms.txt", "llms-full.txt", "robots.txt", "sitemap.xml"}
+    has_seo_file = any(b in seo_files for b in basenames) or any(
+        "geo-seo" in f or "llms.txt" in f or "llms-full.txt" in f for f in files
+    )
+    has_seo_kw = bool(re.search(
+        r"\b(seo|geo|aio|llms\.txt|llms-full\.txt|citability|metadata|meta\s+tags?|"
+        r"opengraph|open\s+graph|json-ld|schema\.org|structured\s+data|microdata|"
+        r"robots\.txt|sitemap|canonical|search\s+engine|ai\s+search|ai\s+visibility|e-e-a-t)\b",
+        low,
+    ))
+    if has_seo_file or has_seo_kw:
+        _add_skill("geo-seo-audit")
+
+    has_perf_file = any(
+        "benchmark" in f or "bench_" in f or "_bench." in f or "perf_" in f or "profiler" in f
+        for f in files
+    )
+    has_perf_kw = bool(re.search(
+        r"\b(perf|performance|benchmarks?|benchmarking|latency|throughput|"
+        r"memory\s+leak|profiling|profiler|flamegraph|time\s+complexity|bottleneck|"
+        r"load\s+test|speedup)\b",
+        low,
+    ))
+    if has_perf_file or has_perf_kw:
+        _add_skill("perf-benchmark")
+
+    for slug in sorted(catalog):
+        if slug in low and slug not in matched:
+            matched.append(slug)
+
+    return matched
+
+
+def _infer_item_phase(item_text: str, allowed_files: list[str], skills: list[str]) -> int:
+    low = (item_text or "").lower()
+    files = [str(f).replace(chr(92), "/") for f in (allowed_files or []) if f]
+    is_test_only_files = bool(files) and all(Path(f).name.startswith("test_") for f in files)
+    is_test_intent = bool(re.search(
+        r"\b(unit\s+tests?|unittest|test\s+suite|write\s+tests?|add\s+tests?|"
+        r"regression\s+tests?|gate\s+verification)\b",
+        low,
+    )) or bool(re.match(r"^\s*(test|verify|validate|check)\b", low))
+    if is_test_only_files or is_test_intent:
+        return 5
+    if "perf-benchmark" in skills or re.search(r"\b(benchmarks?|benchmarking|profiling|profiler|latency|load\s+test)\b", low):
+        return 4
+    if "geo-seo-audit" in skills or re.search(r"\b(seo|llms\.txt|json-ld|schema\.org|opengraph|citability|integrate|wire\s+up)\b", low):
+        return 3
+    if "frontend-art-direction" in skills or any(
+        Path(f).suffix.lower() in (".css", ".html", ".js") and "service" not in f.lower()
+        for f in files if not f.endswith(".py")
+    ):
+        return 2
+    if "chrome-extension-mv3" in skills:
+        return 1
+    if re.search(r"\b(architect|schema|database|migration|ast|blast|graph|core|parser|engine|protocol|model)\b", low):
+        return 0
+    return 1
+
+
+def _assign_stage_topology(
+    draft_tasks: list[dict], next_num: int, base_stage: int = 1
+) -> tuple[list[dict], list[dict]]:
+    n = len(draft_tasks)
+    if n == 0:
+        return [], []
+
+    phases = [
+        _infer_item_phase(t["goal"], t.get("allowed_files") or [], t.get("skills") or [])
+        for t in draft_tasks
+    ]
+    explicit_deps: list[set[int]] = [set() for _ in range(n)]
+
+    for i, t in enumerate(draft_tasks):
+        low_i = (t["goal"] or "").lower()
+        for m in re.finditer(
+            r"\b(?:after|once|following|depends\s+on|depending\s+on|requires|based\s+on|from)\s+"
+            r"(?:step|task|item|stage|#)?\s*([1-9][0-9]*)\b",
+            low_i,
+        ):
+            ref_idx = int(m.group(1)) - 1
+            if 0 <= ref_idx < n and ref_idx != i:
+                explicit_deps[i].add(ref_idx)
+
+        for m in re.finditer(
+            r"\b(?:after|once|following|depends\s+on|depending\s+on|requires)\s+([a-z0-9_./ -]{3,40})",
+            low_i,
+        ):
+            phrase = m.group(1)
+            tokens = [
+                tok for tok in re.findall(r"[a-z0-9_./-]{4,}", phrase)
+                if tok not in ("step", "task", "item", "stage", "that", "this", "with", "from", "into")
+            ]
+            for j, other in enumerate(draft_tasks):
+                if j == i or i in explicit_deps[j]:
+                    continue
+                other_low = (other["goal"] or "").lower()
+                if any(tok in other_low for tok in tokens) and phases[j] <= phases[i]:
+                    explicit_deps[i].add(j)
+
+    deps: list[set[int]] = [set(s) for s in explicit_deps]
+
+    for i in range(n):
+        earlier_phases = [
+            phases[j] for j in range(n)
+            if j != i and phases[j] < phases[i] and i not in deps[j]
+        ]
+        if earlier_phases:
+            target_phase = max(earlier_phases)
+            for j in range(n):
+                if j != i and phases[j] == target_phase and i not in deps[j]:
+                    deps[i].add(j)
+
+    same_phase_all = len(set(phases)) == 1
+    for i in range(n):
+        low_i = (draft_tasks[i]["goal"] or "").lower()
+        if re.search(r"\b(in\s+parallel|independently|concurrently)\b", low_i):
+            continue
+        same_prev = [
+            j for j in range(i)
+            if phases[j] == phases[i] and i not in deps[j]
+        ]
+        if not same_prev:
+            continue
+        prev_j = same_prev[-1]
+        files_i = set(draft_tasks[i].get("allowed_files") or [])
+        files_j = set(draft_tasks[prev_j].get("allowed_files") or [])
+        has_seq_word = bool(re.search(r"\b(then|next|after|subsequently|finally|also|second|third)\b", low_i))
+        if same_phase_all or has_seq_word or bool(files_i & files_j):
+            deps[i].add(prev_j)
+
+    depths = [0] * n
+    for _ in range(n + 1):
+        changed = False
+        for i in range(n):
+            for d in list(deps[i]):
+                if i in deps[d]:
+                    if (phases[d], d) <= (phases[i], i):
+                        deps[d].discard(i)
+                    else:
+                        deps[i].discard(d)
+                        continue
+                if depths[d] + 1 > depths[i]:
+                    depths[i] = depths[d] + 1
+                    changed = True
+        if not changed:
+            break
+
+    unique_depths = sorted(set(depths))
+    depth_to_offset = {d: idx for idx, d in enumerate(unique_depths)}
+    order = sorted(range(n), key=lambda i: (depth_to_offset[depths[i]], phases[i], i))
+
+    orig_to_tid: dict[int, str] = {}
+    for new_pos, orig_idx in enumerate(order):
+        orig_to_tid[orig_idx] = f"T-{next_num + new_pos:03d}"
+
+    ordered_tasks: list[dict] = []
+    stage_buckets: dict[int, list[str]] = {}
+    for orig_idx in order:
+        t = dict(draft_tasks[orig_idx])
+        tid = orig_to_tid[orig_idx]
+        stg_num = base_stage + depth_to_offset[depths[orig_idx]]
+        stg_label = f"Stage {stg_num:02d}"
+        dep_ids = sorted(
+            (orig_to_tid[d] for d in deps[orig_idx] if depth_to_offset[depths[d]] < depth_to_offset[depths[orig_idx]]),
+            key=lambda x: int(x.split("-")[1]),
+        )
+        t["id"] = tid
+        t["stage"] = stg_num
+        t["stage_label"] = stg_label
+        t["depends"] = ", ".join(dep_ids) if dep_ids else "none"
+        t["depends_on"] = dep_ids
+        ordered_tasks.append(t)
+        stage_buckets.setdefault(stg_num, []).append(tid)
+
+    stages_summary = [
+        {"stage": s_num, "label": f"Stage {s_num:02d}", "tasks": t_ids}
+        for s_num, t_ids in sorted(stage_buckets.items())
+    ]
+    return ordered_tasks, stages_summary
 
 
 def _assess_task_complexity(item_text: str, allowed_files: list[str]) -> dict:
@@ -576,7 +847,11 @@ def _extract_discussion_items(text: str) -> list[str]:
 
 def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
     flow_root = get_project_flow_root(root) or (root / ".agentsflower")
-    stage = str(body.get("stage") or "7")
+    raw_base_stage = body.get("stage")
+    try:
+        base_stage = max(1, int(str(raw_base_stage).strip())) if raw_base_stage is not None else 1
+    except (ValueError, TypeError):
+        base_stage = 1
     thread = str(body.get("thread") or "research")
     nl = chr(10)
 
@@ -603,15 +878,14 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             "2. Verify synthesized task pool in test_studio.py.",
         ])
 
-    blast = compute_conversation_blast_radius(root, full_text, invoke_graft=True)
+    blast = compute_conversation_blast_radius(root, full_text, invoke_graft=True, fallback_defaults=True)
     items = _extract_discussion_items(full_text)
     next_num = _next_task_number(flow_root)
-    tasks: list[dict] = []
+    draft_tasks: list[dict] = []
 
     for idx, item in enumerate(items):
-        tid = f"T-{next_num + idx:03d}"
-        item_blast = compute_conversation_blast_radius(root, item, invoke_graft=False)
-        item_files = item_blast["affected_files"] or blast["affected_files"]
+        item_blast = compute_conversation_blast_radius(root, item, invoke_graft=False, fallback_defaults=False)
+        item_files = list(item_blast["affected_files"] or blast["affected_files"])
         for f in item_files:
             if f not in blast["affected_files"]:
                 blast["affected_files"].append(f)
@@ -621,21 +895,21 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             title = title[:75].rsplit(" ", 1)[0] + "..."
 
         assess = _assess_task_complexity(item, item_files)
+        skills = map_task_skills(root, item, item_files)
         role = "developer"
         criteria = [
             f"C-01: {title} implemented within allowed files ({', '.join(item_files[:3])}).",
             f"C-02: Verification suite passes cleanly: python -m unittest discover -s {flow_root.name}/tests.",
         ]
-        tasks.append({
-            "id": tid,
+        draft_tasks.append({
             "title": title,
-            "stage": stage,
             "role": role,
             "tool": "devin",
             "effort": assess["effort"],
             "complexity": assess["complexity"],
             "tier": assess["tier"],
             "model": assess["model"],
+            "skills": skills,
             "goal": item,
             "allowed": item_files,
             "allowed_files": item_files,
@@ -643,18 +917,21 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             "criteria": criteria,
         })
 
+    tasks, stages_summary = _assign_stage_topology(draft_tasks, next_num=next_num, base_stage=base_stage)
+
     result = {
         "ok": True,
         "project": str(root),
         "thread": thread,
-        "summary": f"Synthesized {len(tasks)} atomic task contracts with AST blast radius ({len(blast['affected_files'])} affected files).",
+        "summary": f"Synthesized {len(tasks)} atomic task contracts across {len(stages_summary)} stages with AST blast radius ({len(blast['affected_files'])} affected files).",
         "symbols": blast["symbols"],
         "blast_radius": blast,
+        "stages": stages_summary,
         "tasks": tasks,
         "pool": tasks,
     }
     if body.get("register") is True or body.get("approve") is True:
-        reg = register_task_pool(root, tasks, default_stage=stage)
+        reg = register_task_pool(root, tasks, default_stage=str(base_stage))
         result["registered"] = reg.get("registered", [])
         result["files"] = reg.get("files", [])
     return result
@@ -687,13 +964,30 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             next_num += 1
         title = str(raw.get("title") or f"Task {tid}").strip()
         role = str(raw.get("role") or "developer").strip()
-        stage = str(raw.get("stage") or default_stage).strip()
+        raw_stage = str(raw.get("stage") or default_stage).strip()
+        m_stg = re.search(r"\d+", raw_stage)
+        stage = str(int(m_stg.group(0))) if m_stg else (raw_stage or str(default_stage))
         tool = str(raw.get("tool") or "devin").strip()
         model = str(raw.get("model") or "swe-2-high").strip()
         effort = str(raw.get("effort") or "high").strip()
-        depends = str(raw.get("depends") or "none").strip()
+        raw_dep = raw.get("depends") or raw.get("depends_on") or "none"
+        if isinstance(raw_dep, list):
+            depends = ", ".join(str(d).strip() for d in raw_dep if str(d).strip()) or "none"
+        else:
+            depends = str(raw_dep).strip() or "none"
         goal = str(raw.get("goal") or title).strip()
         allowed = raw.get("allowed_files") or raw.get("allowed") or []
+        raw_skills = raw.get("skills")
+        if isinstance(raw_skills, list):
+            skills_list = [str(s).strip() for s in raw_skills if str(s).strip() and str(s).strip().lower() != "none"]
+        elif isinstance(raw_skills, str) and raw_skills.strip():
+            skills_list = [
+                s.strip() for s in raw_skills.split(",")
+                if s.strip() and s.strip().lower() != "none"
+            ]
+        else:
+            skills_list = map_task_skills(target_root, f"{title}\n{goal}", allowed)
+        skills_str = ", ".join(skills_list) if skills_list else "none"
         raw_criteria = raw.get("criteria") or []
 
         norm_criteria: list[str] = []
@@ -724,6 +1018,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             f"Effort: {effort}",
             f"Stage: {stage}",
             f"Depends on: {depends}",
+            f"Skills: {skills_str}",
             f"Branch: {tid.lower()}-{slug or 'task'}",
             f"Worktree: {wt_path}",
             "Independent check: tester",
@@ -781,7 +1076,10 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         row[cols.index("Tool")] = tool
         row[cols.index("Status")] = "ready"
         row[cols.index("Depends on")] = "" if depends == "none" else depends
-        row[cols.index("Notes")] = f"model={model}; effort={effort}"
+        notes_str = f"model={model}; effort={effort}"
+        if skills_list:
+            notes_str += f"; skills={','.join(skills_list)}"
+        row[cols.index("Notes")] = notes_str
         row[cols.index("Updated")] = now_str
         if tid in idx_map:
             rows[idx_map[tid]] = row
@@ -800,6 +1098,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             "tool": tool,
             "model": model,
             "effort": effort,
+            "skills": skills_list,
             "file": rel_path,
         })
 

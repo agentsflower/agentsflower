@@ -638,6 +638,180 @@ class TestTaskSynthesisAndPool(StudioApiCase):
         for marker in (".task-pool-card", ".btn-synthesize", ".btn-approve-pool"):
             self.assertIn(marker, css)
 
+    def test_synthesize_stage_topology_orders_dependencies_without_inversions(self):
+        code, res = self.api(
+            "/api/task/synthesize",
+            method="POST",
+            body={
+                "project": str(studio.REPO_ROOT),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "1. Add unit tests in test_studio.py to verify stage synthesis and skill badges. "
+                            "2. Render skill pills in studio.js and studio.css after step 3. "
+                            "3. Implement core stage topology and skills index parser in studio.py."
+                        ),
+                    }
+                ],
+            },
+        )
+        self.assertEqual(code, 200, res)
+        self.assertTrue(res.get("ok"), res)
+        tasks = res.get("tasks", [])
+        self.assertEqual(len(tasks), 3, tasks)
+
+        stages = [int(t["stage"]) for t in tasks]
+        self.assertEqual(stages, sorted(stages), "Tasks must be ordered by non-decreasing stage number")
+        self.assertEqual(stages[0], 1)
+        self.assertGreater(stages[-1], stages[0])
+
+        stage_by_id = {t["id"]: int(t["stage"]) for t in tasks}
+        idx_by_id = {t["id"]: idx for idx, t in enumerate(tasks)}
+        for t in tasks:
+            self.assertRegex(str(t.get("stage_label", "")), r"^Stage \d{2}$")
+            deps = t.get("depends_on") or []
+            for dep_id in deps:
+                self.assertIn(dep_id, stage_by_id)
+                self.assertLess(
+                    stage_by_id[dep_id],
+                    int(t["stage"]),
+                    f"Prerequisite {dep_id} must be in a lower stage than dependent {t['id']}",
+                )
+                self.assertLess(idx_by_id[dep_id], idx_by_id[t["id"]])
+
+        self.assertIn("studio.py", tasks[0]["title"])
+        self.assertIn("test_studio.py", tasks[-1]["title"])
+
+    def test_synthesize_autonomous_skills_mapping_heuristics_and_blast_radius(self):
+        code, res = self.api(
+            "/api/task/synthesize",
+            method="POST",
+            body={
+                "project": str(studio.REPO_ROOT),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "1. Build Chrome extension manifest.json and MV3 service worker lifecycle. "
+                            "2. Redesign UI layout and dark mode typography in studio.css and index.html. "
+                            "3. Optimize SEO metadata, schema.org JSON-LD, and llms.txt citability. "
+                            "4. Run performance benchmarks and latency profiling."
+                        ),
+                    }
+                ],
+            },
+        )
+        self.assertEqual(code, 200, res)
+        tasks = res.get("tasks", [])
+        self.assertEqual(len(tasks), 4, tasks)
+
+        by_kw = {}
+        for t in tasks:
+            self.assertIsInstance(t.get("skills"), list)
+            low = t["goal"].lower()
+            if "manifest.json" in low:
+                by_kw["mv3"] = t["skills"]
+            elif "studio.css" in low:
+                by_kw["ui"] = t["skills"]
+            elif "llms.txt" in low:
+                by_kw["seo"] = t["skills"]
+            elif "benchmark" in low:
+                by_kw["perf"] = t["skills"]
+
+        self.assertIn("chrome-extension-mv3", by_kw.get("mv3", []))
+        self.assertIn("frontend-art-direction", by_kw.get("ui", []))
+        self.assertIn("geo-seo-audit", by_kw.get("seo", []))
+        self.assertIn("perf-benchmark", by_kw.get("perf", []))
+
+        from unittest.mock import patch
+        with patch.object(
+            studio.graft,
+            "graft_blast_radius",
+            return_value=[".agentsflower/studio/studio.css", ".agentsflower/studio/index.html"],
+        ):
+            code2, res2 = self.api(
+                "/api/task/synthesize",
+                method="POST",
+                body={
+                    "project": str(studio.REPO_ROOT),
+                    "messages": [{"role": "user", "content": "Refactor module tokens"}],
+                },
+            )
+            self.assertEqual(code2, 200, res2)
+            self.assertIn("frontend-art-direction", res2["tasks"][0].get("skills", []))
+
+    def test_batch_register_pool_preserves_skills_in_generated_task_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "skills_pool_proj"
+            flow = proj / ".agentsflower"
+            (flow / "state").mkdir(parents=True)
+            (flow / "tasks").mkdir(parents=True)
+            studio.save_attached_project(str(proj))
+            try:
+                pool = [
+                    {
+                        "id": "T-301",
+                        "title": "Polish UI cards in studio.css",
+                        "stage": 1,
+                        "role": "developer",
+                        "tool": "devin",
+                        "model": "swe-2-high",
+                        "effort": "medium",
+                        "skills": ["frontend-art-direction"],
+                        "goal": "Update card styles in studio.css.",
+                        "allowed_files": [".agentsflower/studio/studio.css"],
+                        "criteria": ["C-01: Card styles updated."],
+                    },
+                    {
+                        "id": "T-302",
+                        "title": "Generate llms.txt and SEO tags",
+                        "stage": 2,
+                        "depends": "T-301",
+                        "role": "developer",
+                        "tool": "devin",
+                        "model": "swe-2-high",
+                        "effort": "medium",
+                        "skills": ["geo-seo-audit"],
+                        "goal": "Add llms.txt and structured metadata.",
+                        "allowed_files": ["llms.txt"],
+                        "criteria": ["C-01: llms.txt generated."],
+                    },
+                ]
+                code, res = self.api(
+                    "/api/task/pool/register",
+                    method="POST",
+                    body={"project": str(proj), "tasks": pool},
+                )
+                self.assertEqual(code, 200, res)
+                self.assertTrue(res.get("ok"), res)
+                t301_text = next((flow / "tasks").glob("T-301-*.md")).read_text(encoding="utf-8")
+                t302_text = next((flow / "tasks").glob("T-302-*.md")).read_text(encoding="utf-8")
+                self.assertIn("Skills: frontend-art-direction", t301_text)
+                self.assertIn("Stage: 1", t301_text)
+                self.assertIn("Skills: geo-seo-audit", t302_text)
+                self.assertIn("Stage: 2", t302_text)
+                self.assertIn("Depends on: T-301", t302_text)
+            finally:
+                try:
+                    attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                    attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                    studio.ATTACHED_FILE.write_text(
+                        json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                    )
+                except Exception:
+                    pass
+
+    def test_task_pool_card_ui_renders_skill_badges(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+        for marker in ("skill-badge", "skill-pill", "t.skills"):
+            self.assertIn(marker, js)
+        for marker in (".skill-badge", ".skill-pill"):
+            self.assertIn(marker, css)
+
 
 DEVIN_MODELS_OUT = """\
 Available models (2 families)
