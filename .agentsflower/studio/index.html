@@ -221,7 +221,10 @@
 
             <div class="explorer-chat-pane glass-card">
               <div class="chat-header">
-                <select id="inspectorTaskSelect" class="chat-task-select" title="Task or Research thread"><option value="research">🔍 Research &amp; Inception</option></select>
+                <div class="thread-selector-wrap" id="threadSelector">
+                  <button type="button" class="thread-pill" id="threadPill" title="Task or Research thread" aria-haspopup="menu" aria-expanded="false">🔍 Research &amp; Inception <span class="model-caret">&#8963;</span></button>
+                  <div class="thread-dropdown" id="threadDropdown" role="menu"></div>
+                </div>
               </div>
 
               <div class="chat-stream" id="chatStream">
