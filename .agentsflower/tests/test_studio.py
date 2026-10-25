@@ -1390,6 +1390,40 @@ class TestProviderEngineAndProjectState(StudioApiCase):
                 "project": td, "name": "x", "api_key": "k" * 12})
             self.assertEqual(code, 403)
 
+    def test_quota_hub_ui_markers(self):
+        """T-169: the capacity view ships auto-scan, toggle and provider-modal hooks."""
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/index.html") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        # Connect Custom Provider button + modal (name, kind, base url, masked key).
+        for marker in ("btnConnectProvider", "modalProviderBackdrop",
+                       "inputProviderName", "inputProviderKind",
+                       "inputProviderBaseUrl", "inputProviderKey"):
+            self.assertIn(marker, html)
+        self.assertIn('type="password" id="inputProviderKey"', html)
+        self.assertIn("https://openrouter.ai/api/v1", html)
+
+        # Auto-scan on tab open + skeleton while probing.
+        self.assertIn("tabName === 'capacity'", js)
+        self.assertIn("renderCapacitySkeleton", js)
+        self.assertIn("capacity-skeleton", js)
+
+        # Platform/model toggles -> project-toggle; provider add/remove endpoints.
+        for marker in ("platform-enable-toggle", "model-enable-toggle",
+                       "toggleCapacityItem", "/api/capacity/project-toggle",
+                       "/api/capacity/provider/add", "/api/capacity/provider/remove",
+                       "btn-remove-provider", "applyProjectStateToCapacity"):
+            self.assertIn(marker, js)
+
+        for marker in (".af-switch", ".sk-line", "capacityScanShimmer",
+                       ".platform-disabled", ".model-disabled",
+                       ".provider-modal-status", ".btn-remove-provider"):
+            self.assertIn(marker, css)
+
     def test_repo_gitignore_covers_secrets_file(self):
         text = (studio.REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
         self.assertIn(".agentsflower/state/.secrets.json", text)

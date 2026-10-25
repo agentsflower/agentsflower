@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="studio.css?v=3">
+  <link rel="stylesheet" href="studio.css?v=4">
 </head>
 <body>
   <!-- Ambient backdrop lights -->
@@ -333,6 +333,10 @@
                 </div>
                 <div class="capacity-hub-actions">
                   <span class="default-model-pill" id="defaultWorkerModelPill" title="Project default worker model">Default: —</span>
+                  <button class="btn btn-primary btn-sm" id="btnConnectProvider" title="Connect OpenRouter, Groq or a custom OpenAI-compatible provider">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>Connect Custom Provider</span>
+                  </button>
                   <button class="btn btn-secondary btn-sm" id="btnCapacityRefresh" title="Force a fresh CLI probe">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                     <span>Rescan</span>
@@ -705,8 +709,43 @@
         </div>
       </div>
     </div>
+
+    <!-- Connect Custom Provider Modal (Model Quota Hub) -->
+    <div class="modal-backdrop" id="modalProviderBackdrop" style="display:none;">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3>Connect Custom Provider</h3>
+          <button type="button" class="btn-close" id="btnCloseProviderModal">&times;</button>
+        </div>
+        <p class="subtitle">Attach OpenRouter, Groq or any OpenAI-compatible endpoint. The key is verified live, then stored in the project's git-ignored secrets file.</p>
+        <div class="form-group">
+          <label>Provider Name</label>
+          <input type="text" id="inputProviderName" placeholder="OpenRouter">
+        </div>
+        <div class="form-group">
+          <label>Provider Type</label>
+          <select id="inputProviderKind">
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai-compatible">OpenAI-compatible (Groq, custom gateway)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Base URL</label>
+          <input type="text" id="inputProviderBaseUrl" placeholder="https://openrouter.ai/api/v1" value="https://openrouter.ai/api/v1">
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="inputProviderKey" placeholder="sk-or-v1-..." autocomplete="off">
+        </div>
+        <div class="provider-modal-status" id="providerModalStatus"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelProvider">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSaveProvider">Test &amp; Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <script src="studio.js?v=4"></script>
+  <script src="studio.js?v=5"></script>
 </body>
 </html>

@@ -144,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDashThemeToggle = document.getElementById('btnDashThemeToggle');
   const workspacePathEl = document.getElementById('workspacePath');
   const btnCapacityRefresh = document.getElementById('btnCapacityRefresh');
+  const btnConnectProvider = document.getElementById('btnConnectProvider');
 
   // Explorer Elements
   const explorerBreadcrumbs = document.getElementById('explorerBreadcrumbs');
@@ -182,6 +183,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const authModalPath = document.getElementById('authModalPath');
   const authModalTitle = document.getElementById('authModalTitle');
   const authModalText = document.getElementById('authModalText');
+
+  // Custom Provider Modal (Model Quota Hub)
+  const modalProviderBackdrop = document.getElementById('modalProviderBackdrop');
+  const btnCloseProviderModal = document.getElementById('btnCloseProviderModal');
+  const btnCancelProvider = document.getElementById('btnCancelProvider');
+  const btnSaveProvider = document.getElementById('btnSaveProvider');
+  const inputProviderName = document.getElementById('inputProviderName');
+  const inputProviderKind = document.getElementById('inputProviderKind');
+  const inputProviderBaseUrl = document.getElementById('inputProviderBaseUrl');
+  const inputProviderKey = document.getElementById('inputProviderKey');
+  const providerModalStatus = document.getElementById('providerModalStatus');
 
   // --- API Client ---
   async function fetchJSON(url, options = {}) {
@@ -498,6 +510,69 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Custom Provider modal (Model Quota Hub)
+    if (btnConnectProvider) {
+      btnConnectProvider.addEventListener('click', () => {
+        setProviderStatus('');
+        if (inputProviderKey) inputProviderKey.value = '';
+        modalProviderBackdrop.style.display = 'flex';
+      });
+    }
+    if (btnCloseProviderModal) btnCloseProviderModal.addEventListener('click', () => { modalProviderBackdrop.style.display = 'none'; });
+    if (btnCancelProvider) btnCancelProvider.addEventListener('click', () => { modalProviderBackdrop.style.display = 'none'; });
+    if (inputProviderKind) {
+      inputProviderKind.addEventListener('change', () => {
+        if (!inputProviderBaseUrl || inputProviderBaseUrl.dataset.touched === '1') return;
+        if (inputProviderKind.value === 'openrouter') {
+          inputProviderBaseUrl.value = PROVIDER_DEFAULT_URL;
+        } else {
+          inputProviderBaseUrl.value = '';
+          inputProviderBaseUrl.placeholder = 'https://api.groq.com/openai/v1';
+        }
+      });
+    }
+    if (inputProviderBaseUrl) {
+      inputProviderBaseUrl.addEventListener('input', () => { inputProviderBaseUrl.dataset.touched = '1'; });
+    }
+    if (btnSaveProvider) {
+      btnSaveProvider.addEventListener('click', async () => {
+        const name = (inputProviderName.value || '').trim();
+        const kind = inputProviderKind.value;
+        const baseUrl = (inputProviderBaseUrl.value || '').trim() ||
+          (kind === 'openrouter' ? PROVIDER_DEFAULT_URL : '');
+        const apiKey = (inputProviderKey.value || '').trim();
+        if (!name) { setProviderStatus('Provider name is required.', true); return; }
+        if (!baseUrl) { setProviderStatus('Base URL is required for an OpenAI-compatible provider.', true); return; }
+        if (!apiKey) { setProviderStatus('API key is required.', true); return; }
+        btnSaveProvider.disabled = true;
+        btnSaveProvider.textContent = 'Verifying...';
+        setProviderStatus(`Verifying key against ${baseUrl} ...`);
+        // Direct fetch (not fetchJSON): non-2xx responses still carry the backend's error detail.
+        let res = null;
+        try {
+          const resp = await fetch('/api/capacity/provider/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project: state.currentProject, name: name,
+              kind: kind, base_url: baseUrl, api_key: apiKey
+            })
+          });
+          res = await resp.json();
+        } catch (err) { res = null; }
+        btnSaveProvider.disabled = false;
+        btnSaveProvider.textContent = 'Test & Save';
+        if (res && res.ok) {
+          modalProviderBackdrop.style.display = 'none';
+          inputProviderName.value = '';
+          inputProviderKey.value = '';
+          await loadCapacity(true);
+        } else {
+          setProviderStatus(res && res.error ? res.error : 'Provider verification failed.', true);
+        }
+      });
+    }
+
     // Task Creator Form Submit
     createTaskForm.addEventListener('submit', handleTaskCreate);
   }
@@ -511,6 +586,8 @@ document.addEventListener('DOMContentLoaded', () => {
     viewPanels.forEach(panel => {
       panel.classList.toggle('active', panel.id === `view-${tabName}`);
     });
+    // Opening the Model Quota Hub always triggers a fresh scan.
+    if (tabName === 'capacity') loadCapacity();
   }
 
   // --- Analytics Sub-tab Frame Updater ---
@@ -944,7 +1021,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Model Quota Hub: live CLI probe ---
+  const PROVIDER_DEFAULT_URL = 'https://openrouter.ai/api/v1';
+
+  function setProviderStatus(msg, isErr) {
+    if (!providerModalStatus) return;
+    providerModalStatus.textContent = msg || '';
+    providerModalStatus.classList.toggle('is-error', !!isErr);
+  }
+
+  // Animated placeholder shown while the CLI probe runs, so the view is never blank.
+  function renderCapacitySkeleton() {
+    const grid = document.getElementById('toolsCapacityGrid');
+    if (grid) {
+      grid.innerHTML = Array.from({ length: 5 }, () =>
+        '<div class="capacity-item-card capacity-skeleton">' +
+        '<div class="sk-line sk-w60"></div>' +
+        '<div class="sk-line sk-w90"></div>' +
+        '<div class="sk-line sk-w40"></div>' +
+        '</div>').join('');
+    }
+    const meta = document.getElementById('capacityScanMeta');
+    if (meta) meta.innerHTML = '<span class="scan-pulse"></span>Scanning installed CLIs and connected providers...';
+  }
+
   async function loadCapacity(force = false) {
+    renderCapacitySkeleton();
     const params = [];
     if (state.currentProject) params.push(`project=${encodeURIComponent(state.currentProject)}`);
     if (force) params.push('refresh=1');
@@ -957,6 +1058,10 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       const meta = document.getElementById('capacityScanMeta');
       if (meta) meta.textContent = 'CLI probe failed: /api/capacity/probe unreachable';
+      const grid = document.getElementById('toolsCapacityGrid');
+      if (grid) {
+        grid.innerHTML = '<div class="empty-state capacity-scan-error">Capacity scan unavailable - check that the Studio backend is running, then press Rescan.</div>';
+      }
     }
   }
 
@@ -1255,6 +1360,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Render Capacity Hub (live platform cards) ---
+  function afSwitch(cls, checked, title, inputAttrs) {
+    return `<label class="af-switch ${cls}" title="${escapeHTML(title)}"><input type="checkbox"${inputAttrs || ''}${checked ? ' checked' : ''}><span class="af-slider"></span></label>`;
+  }
+
   function renderCapacityHub(data) {
     const grid = document.getElementById('toolsCapacityGrid');
     if (!grid) return;
@@ -1263,29 +1372,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
     (data.platforms || []).forEach(p => {
       const card = document.createElement('div');
-      card.className = 'capacity-item-card';
+      const pEnabled = p.enabled !== false;
+      card.className = 'capacity-item-card' + (pEnabled ? '' : ' platform-disabled');
       const modelRows = (p.models || []).map(m => {
         const meta = [m.context, m.pricing].filter(Boolean).join(' \u00B7 ');
         const isDefault = m.id === defaultModelId;
-        return `<div class="model-row">
+        const mEnabled = m.enabled !== false;
+        return `<div class="model-row${mEnabled ? '' : ' model-disabled'}">
+          ${afSwitch('af-switch-sm', mEnabled,
+            mEnabled ? 'Enabled for this project - click to disable' : 'Disabled for this project - click to enable',
+            ` class="model-enable-toggle" data-platform="${escapeHTML(p.key)}" data-model="${escapeHTML(m.id)}"`)}
           <span class="m-id" title="${escapeHTML(m.label || m.id)}">${escapeHTML(m.id)}</span>
           <span class="m-meta${m.free ? ' m-free' : ''}">${escapeHTML(meta)}</span>
           <button type="button" class="btn-set-default${isDefault ? ' is-default' : ''}"
                   data-model="${escapeHTML(m.id)}" data-tool="${escapeHTML(p.key)}"
-                  ${isDefault ? 'disabled' : ''}>${isDefault ? 'Default \u2713' : 'Set default'}</button>
+                  ${isDefault || !mEnabled ? 'disabled' : ''}>${isDefault ? 'Default \u2713' : 'Set default'}</button>
         </div>`;
       }).join('');
       card.innerHTML = `
         <div class="capacity-card-top">
           <span class="capacity-tool-title">${escapeHTML(p.label)}${p.version ? `<span class="platform-version">${escapeHTML(p.version)}</span>` : ''}</span>
-          <span class="status-badge ${escapeHTML(p.status)}">${escapeHTML(p.status_label || p.status)}</span>
+          <span class="capacity-card-top-right">
+            <span class="status-badge ${escapeHTML(p.status)}">${escapeHTML(p.status_label || p.status)}</span>
+            <span class="toggle-state-label${pEnabled ? ' on' : ''}">${pEnabled ? 'Active' : 'Inactive'}</span>
+            ${afSwitch('', pEnabled,
+              pEnabled ? 'Active for this project - click to deactivate' : 'Inactive for this project - click to activate',
+              ` class="platform-enable-toggle" data-platform="${escapeHTML(p.key)}"`)}
+          </span>
         </div>
         ${p.note ? `<div class="platform-note">${escapeHTML(p.note)}</div>` : ''}
+        ${p.provider ? `<div class="provider-meta">
+          ${p.api_key_masked ? `<span class="provider-key" title="Stored API key (masked, never shown raw)">${escapeHTML(p.api_key_masked)}</span>` : ''}
+          ${p.base_url ? `<span class="provider-url" title="${escapeHTML(p.base_url)}">${escapeHTML(p.base_url)}</span>` : ''}
+        </div>` : ''}
         ${(p.models || []).length ? `<details class="platform-models">
           <summary>${p.models.length} available model${p.models.length === 1 ? '' : 's'}</summary>
           <div class="platform-model-list">${modelRows}</div>
         </details>` : ''}
+        ${p.provider ? `<button type="button" class="btn-remove-provider" data-platform="${escapeHTML(p.key)}">Remove provider</button>` : ''}
       `;
+      card.querySelectorAll('.platform-enable-toggle').forEach(t => {
+        t.addEventListener('change', () => toggleCapacityItem(t.dataset.platform, '', t.checked));
+      });
+      card.querySelectorAll('.model-enable-toggle').forEach(t => {
+        t.addEventListener('change', () => toggleCapacityItem(t.dataset.platform, t.dataset.model, t.checked));
+      });
+      card.querySelectorAll('.btn-remove-provider').forEach(btn => {
+        btn.addEventListener('click', () => removeCapacityProvider(btn.dataset.platform, p.label || btn.dataset.platform));
+      });
       card.querySelectorAll('.btn-set-default[data-model]').forEach(btn => {
         btn.addEventListener('click', () => setDefaultWorkerModel(btn.dataset.model, btn.dataset.tool));
       });
@@ -1300,6 +1434,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     renderLocalFreeSection(data.local_free || {}, defaultModelId);
     updateDefaultModelPill();
+  }
+
+  // Persist a platform/model activation change for the active project, then re-render.
+  async function toggleCapacityItem(platformKey, modelId, enabled) {
+    const body = { project: state.currentProject, platform: platformKey, enabled: enabled };
+    if (modelId) body.model = modelId;
+    const res = await fetchJSON('/api/capacity/project-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res && res.ok) {
+      applyProjectStateToCapacity(res.state);
+      if (state.capacityData) renderCapacityHub(state.capacityData);
+      if (state.capacityData) applyCapacityModels(state.capacityData);
+    } else {
+      alert('Could not persist activation state: ' + (res && res.error ? res.error : 'unknown error'));
+      if (state.capacityData) renderCapacityHub(state.capacityData);
+    }
+  }
+
+  // Overlay the server-returned project state onto the cached probe data.
+  function applyProjectStateToCapacity(projState) {
+    const data = state.capacityData;
+    if (!data || !projState) return;
+    const platFlags = projState.platforms || {};
+    const modelFlags = projState.models || {};
+    (data.platforms || []).forEach(p => {
+      if (platFlags[p.key]) p.enabled = !!platFlags[p.key].enabled;
+      const overrides = modelFlags[p.key] || {};
+      (p.models || []).forEach(m => {
+        if (overrides[m.id]) m.enabled = !!overrides[m.id].enabled;
+      });
+    });
+  }
+
+  async function removeCapacityProvider(pid, label) {
+    if (!confirm(`Disconnect provider "${label}"? Its stored API key is purged from this project.`)) return;
+    const res = await fetchJSON('/api/capacity/provider/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: state.currentProject, id: pid })
+    });
+    if (res && res.ok) {
+      await loadCapacity(true);
+    } else {
+      alert('Could not remove provider: ' + (res && res.error ? res.error : 'unknown error'));
+    }
   }
 
   function renderLocalFreeSection(localFree, defaultModelId) {
@@ -1380,9 +1562,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Map a probed platform record to the chat model dropdown entries for that platform.
+  // Models the project disabled are excluded from active usage.
   function platformModelList(p) {
+    if (p && p.enabled === false) return [];
     if (!p || !(p.models || []).length) return CHAT_MODELS.slice();
-    return p.models.map(m => ({
+    return p.models.filter(m => m.enabled !== false).map(m => ({
       id: m.id,
       label: `${p.label} ${m.id}`,
       note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label || '')
