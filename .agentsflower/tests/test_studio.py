@@ -2325,5 +2325,319 @@ class TestJevTokenBudgetEstimator(StudioApiCase):
             self.assertIn(marker, css)
 
 
+class TestTelemetryFactAndCostDashboard(StudioApiCase):
+    """Tests for T-165: Telemetry Fact Tracking and Studio Cost & ROI Dashboard (Plan vs Fact)."""
+
+    def _make_cost_project(self, td: str) -> tuple[Path, Path]:
+        proj = Path(td) / "cost_roi_proj"
+        flow = proj / ".agentsflower"
+        (flow / "state").mkdir(parents=True)
+        (flow / "tasks" / ".runtime").mkdir(parents=True)
+        (flow / "docs").mkdir(parents=True)
+        studio.save_attached_project(str(proj))
+        self.addCleanup(lambda: self._detach_project(proj))
+        return proj, flow
+
+    def _detach_project(self, proj: Path):
+        try:
+            if studio.ATTACHED_FILE.is_file():
+                attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                studio.ATTACHED_FILE.write_text(
+                    json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+        except Exception:
+            pass
+
+    def test_analytics_costs_aggregates_plan_vs_fact_and_stages(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_cost_project(td)
+            pool = [
+                {
+                    "id": "T-501",
+                    "title": "Implement telemetry parser",
+                    "stage": 7,
+                    "role": "developer",
+                    "tool": "devin",
+                    "model": "gemini-4-argon-high",
+                    "effort": "high",
+                    "planned_input_tokens": 4000,
+                    "planned_output_tokens": 12000,
+                    "planned_tokens": 16000,
+                    "planned_cost_usd": 0.04,
+                    "goal": "Parse worker runtime telemetry.",
+                    "allowed_files": [".agentsflower/tools/studio.py"],
+                    "criteria": ["C-01: Telemetry parsed."],
+                },
+                {
+                    "id": "T-502",
+                    "title": "Build Cost & ROI dashboard UI",
+                    "stage": 7,
+                    "depends": "T-501",
+                    "role": "developer",
+                    "tool": "claude",
+                    "model": "claude-opus-5.5",
+                    "effort": "max",
+                    "planned_input_tokens": 6000,
+                    "planned_output_tokens": 14000,
+                    "planned_tokens": 20000,
+                    "planned_cost_usd": 0.30,
+                    "goal": "Render Plan vs Fact Cost dashboard.",
+                    "allowed_files": [".agentsflower/studio/studio.js"],
+                    "criteria": ["C-01: Dashboard rendered."],
+                },
+                {
+                    "id": "T-503",
+                    "title": "Run local verification suite",
+                    "stage": 8,
+                    "depends": "T-502",
+                    "role": "tester",
+                    "tool": "ollama",
+                    "model": "qwen2.5-coder",
+                    "effort": "low",
+                    "planned_input_tokens": 2000,
+                    "planned_output_tokens": 4000,
+                    "planned_tokens": 6000,
+                    "planned_cost_usd": 0.0,
+                    "goal": "Run unit tests on local Ollama.",
+                    "allowed_files": [".agentsflower/tests/test_studio.py"],
+                    "criteria": ["C-01: Tests green."],
+                },
+            ]
+            reg_code, reg_res = self.api(
+                "/api/task/pool/register",
+                method="POST",
+                body={"project": str(proj), "tasks": pool},
+            )
+            self.assertEqual(reg_code, 200, reg_res)
+
+            rt_dir = flow / "tasks" / ".runtime"
+            # T-501: 12,000 actual tokens @ $2.50/1M = $0.03 (under plan $0.04 -> delta -$0.01 / -25%)
+            (rt_dir / "T-501.json").write_text(
+                json.dumps({
+                    "taskId": "T-501",
+                    "attempts": [
+                        {
+                            "n": 1,
+                            "tool": "devin",
+                            "requestedModel": "gemini-4-argon-high",
+                            "effectiveModel": "gemini-4-argon-high",
+                            "status": "exited",
+                            "exitCode": 0,
+                            "startedAt": "2026-10-25T05:00:00Z",
+                            "finishedAt": "2026-10-25T05:02:30Z",
+                            "input_tokens": 3000,
+                            "output_tokens": 9000,
+                            "model_calls": 2,
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            # T-502: 15,000 actual tokens @ $15.00/1M = $0.225 (under plan $0.30 -> delta -$0.075 / -25%)
+            (rt_dir / "T-502.json").write_text(
+                json.dumps({
+                    "taskId": "T-502",
+                    "attempts": [
+                        {
+                            "n": 1,
+                            "tool": "claude",
+                            "requestedModel": "claude-opus-5.5",
+                            "status": "exited",
+                            "exitCode": 0,
+                            "startedAt": "2026-10-25T05:05:00Z",
+                            "finishedAt": "2026-10-25T05:08:30Z",
+                            "usage": {
+                                "prompt_tokens": 5000,
+                                "completion_tokens": 10000,
+                            },
+                            "model_calls": 3,
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            # T-503: 9,000 actual tokens on local Ollama @ $0.00/1M = $0.00
+            (rt_dir / "T-503.json").write_text(
+                json.dumps({
+                    "taskId": "T-503",
+                    "attempts": [
+                        {
+                            "n": 1,
+                            "tool": "ollama",
+                            "requestedModel": "qwen2.5-coder",
+                            "status": "exited",
+                            "exitCode": 0,
+                            "startedAt": "2026-10-25T05:10:00Z",
+                            "finishedAt": "2026-10-25T05:10:45Z",
+                            "actual_tokens": 9000,
+                            "model_calls": 1,
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            code, res = self.api("/api/analytics/costs?" + self.q({"project": str(proj)}))
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+
+            tasks_map = {t["id"]: t for t in res.get("tasks", [])}
+            self.assertEqual(set(tasks_map.keys()), {"T-501", "T-502", "T-503"})
+
+            t501 = tasks_map["T-501"]
+            self.assertEqual(t501["planned_tokens"], 16000)
+            self.assertAlmostEqual(t501["planned_cost_usd"], 0.04, places=6)
+            self.assertEqual(t501["actual_tokens"], 12000)
+            self.assertAlmostEqual(t501["actual_cost_usd"], 0.03, places=6)
+            self.assertAlmostEqual(t501["delta_usd"], -0.01, places=6)
+            self.assertAlmostEqual(t501["delta_pct"], -25.0, places=2)
+            self.assertAlmostEqual(t501["execution_time_seconds"], 150.0, places=1)
+            self.assertEqual(t501["model_calls"], 2)
+
+            t502 = tasks_map["T-502"]
+            self.assertEqual(t502["planned_tokens"], 20000)
+            self.assertAlmostEqual(t502["planned_cost_usd"], 0.30, places=6)
+            self.assertEqual(t502["actual_tokens"], 15000)
+            self.assertAlmostEqual(t502["actual_cost_usd"], 0.225, places=6)
+            self.assertAlmostEqual(t502["delta_usd"], -0.075, places=6)
+            self.assertAlmostEqual(t502["delta_pct"], -25.0, places=2)
+            self.assertAlmostEqual(t502["execution_time_seconds"], 210.0, places=1)
+            self.assertEqual(t502["model_calls"], 3)
+
+            t503 = tasks_map["T-503"]
+            self.assertEqual(t503["actual_tokens"], 9000)
+            self.assertAlmostEqual(t503["actual_cost_usd"], 0.0, places=6)
+            self.assertAlmostEqual(t503["delta_usd"], 0.0, places=6)
+            self.assertTrue(t503["free"])
+
+            summary = res.get("summary", {})
+            self.assertAlmostEqual(summary["total_planned_usd"], 0.34, places=6)
+            self.assertAlmostEqual(summary["total_actual_usd"], 0.255, places=6)
+            self.assertAlmostEqual(summary["delta_usd"], -0.085, places=6)
+            self.assertAlmostEqual(summary["net_savings_usd"], 0.085, places=6)
+            self.assertEqual(summary["planned_tokens"], 42000)
+            self.assertEqual(summary["actual_tokens"], 36000)
+            self.assertAlmostEqual(summary["local_free_tokens_pct"], 25.0, places=1)
+            self.assertAlmostEqual(summary["execution_time_seconds"], 405.0, places=1)
+            self.assertEqual(summary["model_calls"], 6)
+
+            stages = {str(s["stage"]): s for s in res.get("stages", [])}
+            self.assertIn("7", stages)
+            self.assertIn("8", stages)
+            self.assertAlmostEqual(stages["7"]["planned_cost_usd"], 0.34, places=6)
+            self.assertAlmostEqual(stages["7"]["actual_cost_usd"], 0.255, places=6)
+            self.assertEqual(stages["7"]["task_count"], 2)
+            self.assertEqual(stages["8"]["task_count"], 1)
+
+    def test_analytics_costs_empty_telemetry_fallbacks_and_unknown_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            # 1. Unregistered project -> 403
+            unreg_code, unreg_res = self.api("/api/analytics/costs?" + self.q({"project": td}))
+            self.assertEqual(unreg_code, 403, unreg_res)
+
+            # 2. Empty initialized project -> zeroed fallbacks
+            proj, flow = self._make_cost_project(td)
+            code, empty_res = self.api("/api/analytics/costs?" + self.q({"project": str(proj)}))
+            self.assertEqual(code, 200, empty_res)
+            self.assertTrue(empty_res.get("ok"), empty_res)
+            self.assertEqual(empty_res["tasks"], [])
+            self.assertEqual(empty_res["stages"], [])
+            self.assertEqual(empty_res["summary"]["total_planned_usd"], 0.0)
+            self.assertEqual(empty_res["summary"]["total_actual_usd"], 0.0)
+            self.assertEqual(empty_res["summary"]["net_savings_usd"], 0.0)
+            self.assertEqual(empty_res["summary"]["local_free_tokens_pct"], 0.0)
+
+            # 3. Planned task with no .runtime telemetry file -> actual=0, delta = -plan
+            self.api(
+                "/api/task/pool/register",
+                method="POST",
+                body={
+                    "project": str(proj),
+                    "tasks": [
+                        {
+                            "id": "T-510",
+                            "title": "Planned task awaiting execution",
+                            "stage": 7,
+                            "role": "developer",
+                            "tool": "devin",
+                            "model": "gemini-4-argon-high",
+                            "effort": "medium",
+                            "planned_input_tokens": 2000,
+                            "planned_output_tokens": 4000,
+                            "planned_tokens": 6000,
+                            "planned_cost_usd": 0.015,
+                            "goal": "Await execution.",
+                            "allowed_files": [".agentsflower/tools/studio.py"],
+                            "criteria": ["C-01: Done."],
+                        }
+                    ],
+                },
+            )
+            code2, res2 = self.api("/api/analytics/costs?" + self.q({"project": str(proj)}))
+            self.assertEqual(code2, 200, res2)
+            self.assertEqual(len(res2["tasks"]), 1)
+            t510 = res2["tasks"][0]
+            self.assertFalse(t510["has_telemetry"])
+            self.assertEqual(t510["planned_tokens"], 6000)
+            self.assertAlmostEqual(t510["planned_cost_usd"], 0.015, places=6)
+            self.assertEqual(t510["actual_tokens"], 0)
+            self.assertEqual(t510["actual_cost_usd"], 0.0)
+            self.assertAlmostEqual(t510["delta_usd"], -0.015, places=6)
+            self.assertEqual(t510["execution_time_seconds"], 0.0)
+            self.assertEqual(t510["model_calls"], 0)
+
+    def test_cost_and_roi_dashboard_ui_contract(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            'data-sub="costs"',
+            "Cost &amp; ROI Dashboard",
+            'id="costRoiDashboard"',
+            'id="costTotalPlanned"',
+            'id="costTotalActual"',
+            'id="costNetSavings"',
+            'id="costLocalFreePct"',
+            "Total Planned ($)",
+            "Total Actual ($)",
+            "Net Savings ($)",
+            "Local/Free Tokens (%)",
+            'id="costStageDistribution"',
+            'id="costTaskTableBody"',
+            "Stage",
+            "Task ID",
+            "Title",
+            "Model",
+            "Plan ($)",
+            "Fact ($)",
+            "Delta (%)",
+            "Status",
+        ):
+            self.assertIn(marker, html)
+
+        for marker in (
+            "/api/analytics/costs",
+            "loadCostAnalytics",
+            "renderCostDashboard",
+            "costRoiDashboard",
+            "costStageDistribution",
+            "costTaskTableBody",
+        ):
+            self.assertIn(marker, js)
+
+        for marker in (
+            ".cost-roi-dashboard",
+            ".cost-summary-grid",
+            ".cost-stage-bar",
+            ".cost-task-table",
+        ):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()

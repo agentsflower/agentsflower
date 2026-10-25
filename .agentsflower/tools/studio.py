@@ -1680,6 +1680,585 @@ def get_task_context(target_root: Path, task_id: str) -> dict:
     }
 
 
+def _parse_iso_seconds(start_val, end_val) -> float | None:
+    if not start_val or not end_val:
+        return None
+    try:
+        s_dt = datetime.fromisoformat(str(start_val).replace("Z", "+00:00"))
+        e_dt = datetime.fromisoformat(str(end_val).replace("Z", "+00:00"))
+        return max(0.0, (e_dt - s_dt).total_seconds())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _num_field(obj: dict, keys: tuple[str, ...]) -> float | None:
+    if not isinstance(obj, dict):
+        return None
+    for k in keys:
+        val = obj.get(k)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+        if isinstance(val, str) and val.strip():
+            try:
+                return float(val.strip().lstrip("$"))
+            except ValueError:
+                continue
+    for sub_key in ("usage", "telemetry", "metrics"):
+        sub = obj.get(sub_key)
+        if isinstance(sub, dict):
+            for k in keys:
+                val = sub.get(k)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    return float(val)
+                if isinstance(val, str) and val.strip():
+                    try:
+                        return float(val.strip().lstrip("$"))
+                    except ValueError:
+                        continue
+    return None
+
+
+def _str_field(obj: dict, keys: tuple[str, ...]) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    for k in keys:
+        val = obj.get(k)
+        if isinstance(val, str) and val.strip() and val.strip().lower() != "unknown":
+            return val.strip()
+    return ""
+
+
+def _extract_task_runtime_telemetry(runtime_dir: Path, tid: str) -> dict:
+    """Ingest actual token usage, execution time, and model calls for `tid` from `.runtime/`."""
+    has_telemetry = False
+    in_tokens = 0
+    out_tokens = 0
+    total_tokens = 0
+    explicit_tokens = False
+    explicit_cost_usd: float | None = None
+    exec_seconds = 0.0
+    model_calls = 0
+    attempts_count = 0
+    actual_model = ""
+    actual_tool = ""
+
+    if not runtime_dir.is_dir():
+        return {
+            "has_telemetry": False,
+            "actual_input_tokens": 0,
+            "actual_output_tokens": 0,
+            "actual_tokens": 0,
+            "explicit_cost_usd": None,
+            "execution_time_seconds": 0.0,
+            "model_calls": 0,
+            "attempts": 0,
+            "actual_model": "",
+            "actual_tool": "",
+        }
+
+    for candidate in (runtime_dir / f"{tid}.json", runtime_dir / f"{tid}.telemetry.json"):
+        if not candidate.is_file():
+            continue
+        try:
+            raw_data = json.loads(candidate.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+
+        attempts_list: list[dict] = []
+        top_obj: dict = {}
+        if isinstance(raw_data, list):
+            attempts_list = [a for a in raw_data if isinstance(a, dict)]
+        elif isinstance(raw_data, dict):
+            top_obj = raw_data
+            if isinstance(raw_data.get("attempts"), list):
+                attempts_list = [a for a in raw_data["attempts"] if isinstance(a, dict)]
+
+        if attempts_list:
+            has_telemetry = True
+            attempts_count += len(attempts_list)
+            for att in attempts_list:
+                a_in = _num_field(att, ("actual_input_tokens", "input_tokens", "prompt_tokens", "prompt_eval_count"))
+                a_out = _num_field(att, ("actual_output_tokens", "output_tokens", "completion_tokens", "eval_count"))
+                a_tot = _num_field(att, ("actual_tokens", "total_tokens", "tokens"))
+                if a_in is not None or a_out is not None or a_tot is not None:
+                    explicit_tokens = True
+                    i_val = int(max(0.0, a_in or 0.0))
+                    o_val = int(max(0.0, a_out or 0.0))
+                    t_val = int(max(0.0, a_tot if a_tot is not None else (i_val + o_val)))
+                    if a_in is None and a_out is None and t_val > 0:
+                        total_tokens += t_val
+                    else:
+                        in_tokens += i_val
+                        out_tokens += o_val
+                        total_tokens += max(t_val, i_val + o_val)
+
+                a_cost = _num_field(att, ("actual_cost_usd", "cost_usd", "total_cost_usd", "cost"))
+                if a_cost is not None:
+                    explicit_cost_usd = (explicit_cost_usd or 0.0) + max(0.0, a_cost)
+
+                a_dur = _num_field(
+                    att,
+                    ("execution_time_seconds", "duration_seconds", "execution_time", "elapsed_seconds", "wall_seconds"),
+                )
+                if a_dur is None:
+                    a_ms = _num_field(att, ("duration_ms", "elapsed_ms"))
+                    if a_ms is not None:
+                        a_dur = a_ms / 1000.0
+                if a_dur is None:
+                    a_dur = _parse_iso_seconds(att.get("startedAt"), att.get("finishedAt"))
+                if a_dur is not None:
+                    exec_seconds += max(0.0, a_dur)
+
+                a_calls = _num_field(att, ("model_calls", "calls", "api_calls", "llm_calls", "turns", "requests"))
+                model_calls += int(max(1.0, a_calls)) if a_calls is not None else 1
+
+                m_str = _str_field(att, ("effectiveModel", "actual_model", "requestedModel", "model"))
+                if m_str:
+                    actual_model = m_str
+                t_str = _str_field(att, ("actual_tool", "tool"))
+                if t_str:
+                    actual_tool = t_str
+
+        if top_obj:
+            t_in = _num_field(top_obj, ("actual_input_tokens", "input_tokens", "prompt_tokens", "prompt_eval_count"))
+            t_out = _num_field(top_obj, ("actual_output_tokens", "output_tokens", "completion_tokens", "eval_count"))
+            t_tot = _num_field(top_obj, ("actual_tokens", "total_tokens", "tokens"))
+            t_cost = _num_field(top_obj, ("actual_cost_usd", "cost_usd", "total_cost_usd", "cost"))
+            t_dur = _num_field(
+                top_obj,
+                ("execution_time_seconds", "duration_seconds", "execution_time", "elapsed_seconds", "attemptWallSeconds"),
+            )
+            t_calls = _num_field(top_obj, ("model_calls", "calls", "api_calls", "llm_calls", "turns", "requests"))
+            if any(x is not None for x in (t_in, t_out, t_tot, t_cost, t_dur, t_calls)):
+                has_telemetry = True
+            if not explicit_tokens and (t_in is not None or t_out is not None or t_tot is not None):
+                explicit_tokens = True
+                in_tokens = int(max(0.0, t_in or 0.0))
+                out_tokens = int(max(0.0, t_out or 0.0))
+                total_tokens = int(max(float(in_tokens + out_tokens), t_tot or 0.0))
+            if explicit_cost_usd is None and t_cost is not None:
+                explicit_cost_usd = max(0.0, t_cost)
+            if exec_seconds == 0.0 and t_dur is not None:
+                exec_seconds = max(0.0, t_dur)
+            if model_calls == 0 and t_calls is not None:
+                model_calls = int(max(0.0, t_calls))
+            if not actual_model:
+                actual_model = _str_field(top_obj, ("effectiveModel", "actual_model", "requestedModel", "model"))
+            if not actual_tool:
+                actual_tool = _str_field(top_obj, ("actual_tool", "tool"))
+
+    # Fallback for completed CLI attempts without inline token fields in T-NNN.json:
+    # check JSON usage events in attempt logs or Jev route telemetry when attempts exist.
+    if has_telemetry and not explicit_tokens and attempts_count > 0:
+        for log_file in sorted(runtime_dir.glob(f"{tid}.*.log")):
+            if log_file.name.endswith((".accept.log", ".test_route.log")) or ".verify." in log_file.name:
+                continue
+            try:
+                log_text = log_file.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for ln in log_text.splitlines():
+                s = ln.strip()
+                if not (s.startswith("{") and s.endswith("}")):
+                    continue
+                try:
+                    ev = json.loads(s)
+                except Exception:
+                    continue
+                if not isinstance(ev, dict):
+                    continue
+                l_in = _num_field(ev, ("input_tokens", "prompt_tokens", "prompt_eval_count"))
+                l_out = _num_field(ev, ("output_tokens", "completion_tokens", "eval_count"))
+                l_tot = _num_field(ev, ("total_tokens", "actual_tokens"))
+                if l_in is not None or l_out is not None or l_tot is not None:
+                    explicit_tokens = True
+                    in_tokens += int(max(0.0, l_in or 0.0))
+                    out_tokens += int(max(0.0, l_out or 0.0))
+                    total_tokens += int(max(float((l_in or 0.0) + (l_out or 0.0)), l_tot or 0.0))
+
+        if not explicit_tokens:
+            route_file = runtime_dir / f"{tid}.route.json"
+            if route_file.is_file():
+                try:
+                    r_entries = json.loads(route_file.read_text(encoding="utf-8-sig"))
+                    if isinstance(r_entries, list):
+                        for entry in r_entries:
+                            if not isinstance(entry, dict):
+                                continue
+                            jev_u = (entry.get("jev") or {}).get("usage") if isinstance(entry.get("jev"), dict) else None
+                            if isinstance(jev_u, dict):
+                                in_tokens += int(max(0, jev_u.get("input_tokens") or 0))
+                                out_tokens += int(max(0, jev_u.get("output_tokens") or 0))
+                except Exception:
+                    pass
+            for log_file in sorted(runtime_dir.glob(f"{tid}.*.log")):
+                if log_file.name.endswith((".accept.log", ".test_route.log")) or ".verify." in log_file.name:
+                    continue
+                try:
+                    sz = log_file.stat().st_size
+                    if sz > 0:
+                        out_tokens += max(1, sz // 4)
+                except Exception:
+                    pass
+            total_tokens = in_tokens + out_tokens
+
+    if total_tokens == 0 and (in_tokens > 0 or out_tokens > 0):
+        total_tokens = in_tokens + out_tokens
+
+    return {
+        "has_telemetry": has_telemetry,
+        "actual_input_tokens": in_tokens,
+        "actual_output_tokens": out_tokens,
+        "actual_tokens": total_tokens,
+        "explicit_cost_usd": round(explicit_cost_usd, 6) if explicit_cost_usd is not None else None,
+        "execution_time_seconds": round(exec_seconds, 2),
+        "model_calls": model_calls,
+        "attempts": attempts_count,
+        "actual_model": actual_model,
+        "actual_tool": actual_tool,
+    }
+
+
+def get_analytics_costs(project_root: Path | str | None = None) -> dict:
+    """Aggregate Plan (.plan.json) vs Fact (.runtime/) token and USD cost telemetry across project tasks."""
+    target_root = Path(project_root).resolve() if project_root else REPO_ROOT
+    if not target_root.is_dir():
+        target_root = REPO_ROOT
+
+    flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
+    tasks_dir = flow_root / "tasks"
+    runtime_dir = tasks_dir / ".runtime"
+
+    tasks_data = get_tasks_data(str(target_root))
+    ledger_tasks = tasks_data.get("tasks", [])
+    tasks_by_id: dict[str, dict] = {t["id"].upper(): dict(t) for t in ledger_tasks if t.get("id")}
+    ordered_ids: list[str] = [t["id"].upper() for t in ledger_tasks if t.get("id")]
+
+    if tasks_dir.is_dir():
+        for pf in sorted(tasks_dir.glob("T-*.plan.json")):
+            tid = pf.name[: -len(".plan.json")].upper()
+            if re.fullmatch(r"T-\d+", tid) and tid not in tasks_by_id:
+                tasks_by_id[tid] = {"id": tid, "status": "ready"}
+                ordered_ids.append(tid)
+
+    tasks_out: list[dict] = []
+    stage_buckets: dict[int, dict] = {}
+
+    total_planned_in = 0
+    total_planned_out = 0
+    total_planned_tokens = 0
+    total_planned_usd = 0.0
+
+    total_actual_in = 0
+    total_actual_out = 0
+    total_actual_tokens = 0
+    total_actual_usd = 0.0
+
+    total_exec_seconds = 0.0
+    total_model_calls = 0
+    count_with_plan = 0
+    count_with_telemetry = 0
+
+    actual_free_tokens = 0
+    planned_free_tokens = 0
+
+    for tid in ordered_ids:
+        base = tasks_by_id[tid]
+        plan_meta: dict = {}
+        for plan_candidate in (
+            tasks_dir / f"{tid}.plan.json" if tasks_dir.is_dir() else None,
+            runtime_dir / f"{tid}.plan.json" if runtime_dir.is_dir() else None,
+        ):
+            if plan_candidate and plan_candidate.is_file():
+                try:
+                    loaded = json.loads(plan_candidate.read_text(encoding="utf-8-sig"))
+                    if isinstance(loaded, dict):
+                        plan_meta = loaded
+                        break
+                except Exception:
+                    pass
+
+        title = str(base.get("title") or plan_meta.get("title") or tid).strip()
+        raw_stage = str(base.get("stage") or plan_meta.get("stage") or "1").strip()
+        m_stg = re.search(r"\d+", raw_stage)
+        stage_num = int(m_stg.group(0)) if m_stg else 1
+        stage_str = str(stage_num)
+        stage_label = f"Stage {stage_num:02d}"
+
+        role = str(base.get("role") or plan_meta.get("role") or "developer").strip()
+        planned_tool = str(plan_meta.get("tool") or base.get("tool") or "devin").strip()
+        planned_model = str(plan_meta.get("model") or base.get("model") or "swe-2-high").strip()
+        effort = str(plan_meta.get("effort") or base.get("effort") or "high").strip()
+        status = str(base.get("status") or "ready").strip()
+
+        has_plan = bool(plan_meta) or ("planned_tokens" in base) or ("planned_cost_usd" in base)
+        if plan_meta:
+            p_in = int(plan_meta.get("planned_input_tokens") or 0)
+            p_out = int(plan_meta.get("planned_output_tokens") or 0)
+            p_tok = (
+                int(plan_meta["planned_tokens"])
+                if plan_meta.get("planned_tokens") is not None
+                else (p_in + p_out)
+            )
+            if p_in == 0 and p_out == 0 and p_tok > 0:
+                p_out = min(p_tok, estimate_output_tokens(effort))
+                p_in = max(0, p_tok - p_out)
+            if plan_meta.get("planned_cost_usd") is not None:
+                p_cost = round(float(plan_meta["planned_cost_usd"]), 6)
+            else:
+                p_pricing = lookup_model_pricing(model=planned_model, tool=planned_tool, flow_root=flow_root)
+                p_cost = round(
+                    (p_in * p_pricing["input_per_1m"] + p_out * p_pricing["output_per_1m"]) / 1_000_000,
+                    6,
+                )
+        elif "planned_tokens" in base or "planned_cost_usd" in base:
+            p_in = int(base.get("planned_input_tokens") or 0)
+            p_out = int(base.get("planned_output_tokens") or 0)
+            p_tok = int(base.get("planned_tokens") or (p_in + p_out))
+            p_cost = round(float(base.get("planned_cost_usd") or 0.0), 6)
+        elif tasks_dir.is_dir() and any(tasks_dir.glob(f"{tid}*.md")):
+            est = estimate_task_budget(
+                prompt_text=str(base.get("goal") or title),
+                blast_files=base.get("allowed_files") or [],
+                effort=effort,
+                model=planned_model,
+                tool=planned_tool,
+                root=target_root,
+                flow_root=flow_root,
+            )
+            p_in = est["planned_input_tokens"]
+            p_out = est["planned_output_tokens"]
+            p_tok = est["planned_tokens"]
+            p_cost = est["planned_cost_usd"]
+            has_plan = True
+        else:
+            p_in = 0
+            p_out = 0
+            p_tok = 0
+            p_cost = 0.0
+
+        if has_plan:
+            count_with_plan += 1
+
+        rt = _extract_task_runtime_telemetry(runtime_dir, tid)
+        has_telemetry = rt["has_telemetry"]
+        if has_telemetry:
+            count_with_telemetry += 1
+
+        actual_model = rt["actual_model"] or planned_model
+        actual_tool = rt["actual_tool"] or planned_tool
+        pricing = lookup_model_pricing(model=actual_model, tool=actual_tool, flow_root=flow_root)
+        is_free = bool(
+            pricing.get("free")
+            or actual_tool.lower() == "ollama"
+            or "ollama" in actual_model.lower()
+            or "local" in actual_model.lower()
+        )
+
+        a_in = rt["actual_input_tokens"]
+        a_out = rt["actual_output_tokens"]
+        a_tok = rt["actual_tokens"]
+
+        if rt["explicit_cost_usd"] is not None:
+            a_cost = rt["explicit_cost_usd"]
+        elif a_tok > 0:
+            if a_in > 0 or a_out > 0:
+                a_cost = round(
+                    (a_in * pricing["input_per_1m"] + a_out * pricing["output_per_1m"]) / 1_000_000,
+                    6,
+                )
+            else:
+                a_cost = round((a_tok * pricing["rate_per_1m"]) / 1_000_000, 6)
+        else:
+            a_cost = 0.0
+
+        delta_tokens = a_tok - p_tok
+        delta_usd = round(a_cost - p_cost, 6)
+        savings_usd = round(p_cost - a_cost, 6)
+        if p_cost > 0:
+            delta_pct = round(((a_cost - p_cost) / p_cost) * 100.0, 2)
+        elif a_cost == 0.0:
+            delta_pct = 0.0
+        else:
+            delta_pct = 100.0
+
+        task_row = {
+            "id": tid,
+            "task_id": tid,
+            "title": title,
+            "stage": stage_str,
+            "stage_num": stage_num,
+            "stage_label": stage_label,
+            "role": role,
+            "tool": actual_tool,
+            "model": actual_model,
+            "planned_model": planned_model,
+            "actual_model": actual_model,
+            "effort": effort,
+            "status": status,
+            "has_plan": has_plan,
+            "has_telemetry": has_telemetry,
+            "planned_input_tokens": p_in,
+            "planned_output_tokens": p_out,
+            "planned_tokens": p_tok,
+            "planned_cost_usd": p_cost,
+            "plan_usd": p_cost,
+            "actual_input_tokens": a_in,
+            "actual_output_tokens": a_out,
+            "actual_tokens": a_tok,
+            "actual_cost_usd": a_cost,
+            "fact_usd": a_cost,
+            "delta_tokens": delta_tokens,
+            "delta_usd": delta_usd,
+            "delta_pct": delta_pct,
+            "savings_usd": savings_usd,
+            "execution_time_seconds": rt["execution_time_seconds"],
+            "duration_seconds": rt["execution_time_seconds"],
+            "model_calls": rt["model_calls"],
+            "attempts": rt["attempts"],
+            "rate_per_1m": pricing["rate_per_1m"],
+            "free": is_free,
+        }
+        tasks_out.append(task_row)
+
+        total_planned_in += p_in
+        total_planned_out += p_out
+        total_planned_tokens += p_tok
+        total_planned_usd = round(total_planned_usd + p_cost, 6)
+
+        total_actual_in += a_in
+        total_actual_out += a_out
+        total_actual_tokens += a_tok
+        total_actual_usd = round(total_actual_usd + a_cost, 6)
+
+        total_exec_seconds = round(total_exec_seconds + rt["execution_time_seconds"], 2)
+        total_model_calls += rt["model_calls"]
+
+        if is_free:
+            actual_free_tokens += a_tok
+            planned_free_tokens += p_tok
+
+        sb = stage_buckets.setdefault(
+            stage_num,
+            {
+                "stage": stage_str,
+                "stage_num": stage_num,
+                "label": stage_label,
+                "task_count": 0,
+                "task_ids": [],
+                "planned_tokens": 0,
+                "actual_tokens": 0,
+                "planned_cost_usd": 0.0,
+                "actual_cost_usd": 0.0,
+                "execution_time_seconds": 0.0,
+                "model_calls": 0,
+            },
+        )
+        sb["task_count"] += 1
+        sb["task_ids"].append(tid)
+        sb["planned_tokens"] += p_tok
+        sb["actual_tokens"] += a_tok
+        sb["planned_cost_usd"] = round(sb["planned_cost_usd"] + p_cost, 6)
+        sb["actual_cost_usd"] = round(sb["actual_cost_usd"] + a_cost, 6)
+        sb["execution_time_seconds"] = round(sb["execution_time_seconds"] + rt["execution_time_seconds"], 2)
+        sb["model_calls"] += rt["model_calls"]
+
+    total_delta_usd = round(total_actual_usd - total_planned_usd, 6)
+    net_savings_usd = round(total_planned_usd - total_actual_usd, 6)
+    if total_planned_usd > 0:
+        total_delta_pct = round(((total_actual_usd - total_planned_usd) / total_planned_usd) * 100.0, 2)
+        savings_pct = round((net_savings_usd / total_planned_usd) * 100.0, 2)
+    elif total_actual_usd == 0.0:
+        total_delta_pct = 0.0
+        savings_pct = 0.0
+    else:
+        total_delta_pct = 100.0
+        savings_pct = -100.0
+
+    if total_actual_tokens > 0:
+        local_free_tokens = actual_free_tokens
+        local_free_tokens_pct = round((actual_free_tokens / total_actual_tokens) * 100.0, 1)
+    elif total_planned_tokens > 0:
+        local_free_tokens = planned_free_tokens
+        local_free_tokens_pct = round((planned_free_tokens / total_planned_tokens) * 100.0, 1)
+    else:
+        local_free_tokens = 0
+        local_free_tokens_pct = 0.0
+
+    stages_out: list[dict] = []
+    for s_num in sorted(stage_buckets.keys()):
+        sb = stage_buckets[s_num]
+        s_plan = sb["planned_cost_usd"]
+        s_act = sb["actual_cost_usd"]
+        s_delta = round(s_act - s_plan, 6)
+        s_delta_pct = (
+            round(((s_act - s_plan) / s_plan) * 100.0, 2)
+            if s_plan > 0
+            else (0.0 if s_act == 0.0 else 100.0)
+        )
+        if total_planned_usd > 0:
+            share_planned = round((s_plan / total_planned_usd) * 100.0, 1)
+        elif total_planned_tokens > 0:
+            share_planned = round((sb["planned_tokens"] / total_planned_tokens) * 100.0, 1)
+        else:
+            share_planned = 0.0
+
+        if total_actual_usd > 0:
+            share_actual = round((s_act / total_actual_usd) * 100.0, 1)
+        elif total_actual_tokens > 0:
+            share_actual = round((sb["actual_tokens"] / total_actual_tokens) * 100.0, 1)
+        else:
+            share_actual = 0.0
+
+        stages_out.append({
+            **sb,
+            "plan_usd": s_plan,
+            "fact_usd": s_act,
+            "delta_usd": s_delta,
+            "delta_pct": s_delta_pct,
+            "savings_usd": round(s_plan - s_act, 6),
+            "share_planned_pct": share_planned,
+            "share_actual_pct": share_actual,
+        })
+
+    summary = {
+        "task_count": len(tasks_out),
+        "tasks_with_plan": count_with_plan,
+        "tasks_with_telemetry": count_with_telemetry,
+        "planned_input_tokens": total_planned_in,
+        "planned_output_tokens": total_planned_out,
+        "planned_tokens": total_planned_tokens,
+        "total_planned_tokens": total_planned_tokens,
+        "actual_input_tokens": total_actual_in,
+        "actual_output_tokens": total_actual_out,
+        "actual_tokens": total_actual_tokens,
+        "total_actual_tokens": total_actual_tokens,
+        "planned_cost_usd": total_planned_usd,
+        "total_planned_usd": total_planned_usd,
+        "actual_cost_usd": total_actual_usd,
+        "total_actual_usd": total_actual_usd,
+        "delta_tokens": total_actual_tokens - total_planned_tokens,
+        "delta_usd": total_delta_usd,
+        "delta_pct": total_delta_pct,
+        "net_savings_usd": net_savings_usd,
+        "savings_pct": savings_pct,
+        "local_free_tokens": local_free_tokens,
+        "local_free_tokens_pct": local_free_tokens_pct,
+        "execution_time_seconds": total_exec_seconds,
+        "model_calls": total_model_calls,
+    }
+
+    return {
+        "ok": True,
+        "project": str(target_root),
+        "project_name": target_root.name,
+        **summary,
+        "summary": summary,
+        "stages": stages_out,
+        "tasks": tasks_out,
+    }
+
+
 # --- Live CLI capacity probe (Model Quota Hub) ---
 # Bounded subprocess/HTTP scans of the installed agent CLIs; results are cached for a
 # short TTL so repeated UI queries stay instantaneous. Probe output is returned to the
@@ -2647,6 +3226,14 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "data": get_tasks_data(target_project_str)})
             return
 
+        if path == "/api/analytics/costs":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            self.send_json(get_analytics_costs(root))
+            return
+
         if path == "/api/task/context":
             root = resolve_known_project(target_project_str)
             if root is None:
@@ -2861,6 +3448,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": proc.returncode == 0, "output": proc.stdout, "error": proc.stderr})
             except Exception as e:
                 self.send_json({"ok": False, "error": str(e)}, 500)
+            return
+
+        if path == "/api/analytics/costs":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            self.send_json(get_analytics_costs(target_root))
             return
 
         if path == "/api/graft/query":

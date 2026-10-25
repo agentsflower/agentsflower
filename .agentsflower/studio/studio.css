@@ -1478,6 +1478,235 @@ body {
   border: none;
 }
 
+/* Cost & ROI Dashboard View */
+.cost-roi-dashboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  overflow-y: auto;
+}
+.cost-roi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cost-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.cost-summary-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cost-card-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cost-card-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+.cost-card-meta {
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.cost-section-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.cost-stage-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.cost-stage-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  gap: 2px;
+  margin-bottom: 14px;
+}
+.cost-stage-segment {
+  height: 100%;
+  transition: width 0.25s ease;
+}
+.cost-stage-bar-empty {
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+  padding: 2px 8px;
+}
+.cost-stage-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cost-stage-row {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.78rem;
+}
+.cost-stage-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cost-stage-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cost-stage-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+.cost-stage-count {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+}
+.cost-stage-bars-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cost-dual-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cost-bar-plan {
+  height: 100%;
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 4px;
+}
+.cost-bar-fact {
+  height: 100%;
+  border-radius: 4px;
+}
+.cost-stage-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.cost-table-section {
+  display: flex;
+  flex-direction: column;
+}
+.cost-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.2);
+}
+.cost-task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.cost-task-table th,
+.cost-task-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cost-task-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 700;
+}
+.cost-stage-group-row td {
+  background: rgba(99, 102, 241, 0.08);
+  color: #c7d2fe;
+  font-size: 0.76rem;
+  padding: 7px 12px;
+}
+.cost-group-meta {
+  margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.cost-task-row:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+.cost-cell-title {
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cost-cell-num {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.cost-delta-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.cost-delta-pill.under,
+.cost-delta-pill.neutral {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+}
+.cost-delta-pill.over {
+  background: rgba(248, 113, 113, 0.16);
+  color: #fca5a5;
+}
+.cost-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+.cost-status-badge.status-done {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+}
+.cost-status-badge.status-in-progress,
+.cost-status-badge.status-review {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
 /* Quick Start Guide View */
 .guide-container {
   padding: 10px 0;
