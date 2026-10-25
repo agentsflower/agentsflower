@@ -51,10 +51,10 @@ Implement the structured two-section Thread Selector matching the user's mockup 
      - Similarly, skip live model network requests for custom providers that are marked `enabled=False`.
      - Persist per-project platform and model preferences strictly in `<project>/<flow>/state/project-models.json`.
 
-4. **Restore Cost and Plan Subtab (Plan vs Fact Telemetry)**:
-   - In `index.html`: restore `<button type="button" class="btn-subtab" data-sub="costs" id="btnSubtabCosts">Cost and Plan</button>` and the `#costRoiDashboard` container.
+4. **Restore Cost & ROI Dashboard Subtab (Plan vs Fact Telemetry)**:
+   - In `index.html`: restore `<button type="button" class="btn-subtab" data-sub="costs" id="btnSubtabCosts">Cost &amp; ROI Dashboard</button>` and the `#costRoiDashboard` container.
    - In `studio.js`: restore `costs` subtab handling in `updateAnalyticsFrame()` and `loadCostAnalytics(projPath)`.
-   - Ensure Cost and Plan telemetry (`/api/analytics/costs?project=...`) correctly reflects the active project's tasks, planned token budgets, and actual telemetry.
+   - Ensure Cost & ROI telemetry (`/api/analytics/costs?project=...`) correctly reflects the active project's tasks, planned token budgets, and actual telemetry.
 
 ## Read first
 
@@ -88,7 +88,7 @@ Implement the structured two-section Thread Selector matching the user's mockup 
 - [ ] C-03: Implementations section groups tasks by stage with clean `T-XXX — Title` layout and status badges.
 - [ ] C-04: Research threads and tasks are strictly isolated per project; switching projects reloads both and clears previous project state.
 - [ ] C-05: Model Quota Hub bypasses CLI and network probes for platforms and providers marked `enabled: false` in `project-models.json`.
-- [ ] C-06: Analytics toolbar includes "Cost and Plan" subtab displaying project-scoped Plan vs Fact telemetry.
+- [ ] C-06: Analytics toolbar includes "Cost & ROI Dashboard" subtab displaying project-scoped Plan vs Fact telemetry.
 - [ ] C-07: Unit test suite passes: `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"`.
 
 ## Checks
