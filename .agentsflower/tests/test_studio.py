@@ -1430,6 +1430,157 @@ class TestProviderEngineAndProjectState(StudioApiCase):
         self.assertIn(".agentflow/state/.secrets.json", text)
 
 
+class TestModelQuotaHubIntegration(StudioApiCase):
+    """T-171: the per-project activation state constrains the chat composer,
+    task inception (/api/task/synthesize) and pool registration, and the stale
+    default worker model gets a warning pill plus a fallback offer."""
+
+    def setUp(self):
+        self._attached = (studio.ATTACHED_FILE.read_text(encoding="utf-8")
+                          if studio.ATTACHED_FILE.is_file() else None)
+
+    def tearDown(self):
+        if self._attached is None:
+            studio.ATTACHED_FILE.unlink(missing_ok=True)
+        else:
+            studio.ATTACHED_FILE.write_text(self._attached, encoding="utf-8")
+
+    @staticmethod
+    def _attach(td, name):
+        proj = Path(td) / name
+        (proj / ".agentsflower" / "state").mkdir(parents=True)
+        studio.save_attached_project(str(proj))
+        return proj
+
+    @staticmethod
+    def _write_default_model(proj, model, tool):
+        docs = proj / ".agentsflower" / "docs"
+        docs.mkdir(parents=True, exist_ok=True)
+        (docs / "model-options.json").write_text(
+            json.dumps({"options": {},
+                        "default_worker_model": {"model": model, "tool": tool}},
+                       indent=2),
+            encoding="utf-8")
+
+    def test_whitelist_helpers_honor_platform_and_model_flags(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "wl_proj")
+            studio.save_project_state(proj, {
+                "platforms": {"claude": {"enabled": False}},
+                "models": {"devin": {"swe-2-high": {"enabled": False},
+                                     "gpt-5-5-high": {"enabled": True}}},
+                "providers": {}})
+            state = studio.load_project_state(proj)
+            self.assertFalse(
+                studio.project_model_allowed(state, "claude", "claude-opus-4-6-thinking"))
+            self.assertFalse(
+                studio.project_model_allowed(state, "devin", "swe-2-high"))
+            self.assertTrue(
+                studio.project_model_allowed(state, "devin", "gpt-5-5-high"))
+            # an unflagged model on an enabled platform inherits 'enabled'
+            self.assertTrue(
+                studio.project_model_allowed(state, "devin", "unflagged-model"))
+            tool, model = studio.project_model_fallback(proj, "devin", "swe-2-high")
+            self.assertEqual((tool, model), ("devin", "gpt-5-5-high"))
+
+    def test_dynamic_toggle_updates_inception_model_pool(self):
+        """Changing project settings immediately updates the models the
+        task creator/synthesizer may assign."""
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "dyn_proj")
+            self._write_default_model(proj, "qwen2.5-coder", "ollama")
+            body = {
+                "project": str(proj), "model": "swe-2-high",
+                "messages": [{"role": "user",
+                              "content": "1. Fix a minor css badge label in studio.css."}],
+            }
+            code, res = self.api("/api/task/synthesize", method="POST", body=body)
+            self.assertEqual(code, 200, res)
+            self.assertEqual(res["tasks"][0]["model"], "swe-2-high")
+            self.assertFalse(res["tasks"][0].get("model_warning"))
+
+            code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+                "project": str(proj), "platform": "devin",
+                "model": "swe-2-high", "enabled": False})
+            self.assertEqual(code, 200, res)
+            self.assertFalse(res["state"]["models"]["devin"]["swe-2-high"]["enabled"])
+
+            code, res = self.api("/api/task/synthesize", method="POST", body=body)
+            self.assertEqual(code, 200, res)
+            task = res["tasks"][0]
+            self.assertNotEqual(task["model"], "swe-2-high")
+            # the persisted project default is the nearest activated fallback
+            self.assertEqual((task["tool"], task["model"]), ("ollama", "qwen2.5-coder"))
+            self.assertIn("swe-2-high", task["model_warning"])
+            self.assertIn("qwen2.5-coder", task["model_warning"])
+
+            # Re-activating restores the requested selection.
+            code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+                "project": str(proj), "platform": "devin",
+                "model": "swe-2-high", "enabled": True})
+            self.assertTrue(res["ok"], res)
+            code, res = self.api("/api/task/synthesize", method="POST", body=body)
+            self.assertEqual(res["tasks"][0]["model"], "swe-2-high")
+            self.assertFalse(res["tasks"][0].get("model_warning"))
+
+    def test_register_pool_writes_activated_fallback_model(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "reg_proj")
+            (proj / ".agentsflower" / "tasks").mkdir(parents=True)
+            studio.save_project_state(proj, {
+                "platforms": {},
+                "models": {"devin": {"swe-2-high": {"enabled": False},
+                                     "gpt-5-5-high": {"enabled": True}}},
+                "providers": {}})
+            code, res = self.api("/api/task/pool/register", method="POST", body={
+                "project": str(proj),
+                "tasks": [{
+                    "title": "Scoped css fix",
+                    "goal": "Fix a minor css badge label.",
+                    "tool": "devin", "model": "swe-2-high", "effort": "medium",
+                    "allowed_files": [".agentsflower/studio/studio.css"],
+                    "criteria": ["C-01: fix applied"],
+                }],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res["ok"], res)
+            task = res["tasks"][0]
+            self.assertEqual(task["model"], "gpt-5-5-high")
+            self.assertTrue(task["model_warning"])
+            text = (proj / task["file"]).read_text(encoding="utf-8")
+            self.assertIn("Model: gpt-5-5-high", text)
+            self.assertNotIn("Model: swe-2-high", text)
+            plan = json.loads((proj / task["plan_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(plan["model"], "gpt-5-5-high")
+            self.assertTrue(plan["model_warning"])
+
+    def test_deactivated_platform_keeps_request_with_warning(self):
+        """A project-deactivated platform yields no activated fallback: the
+        guard reports a warning instead of silently resurrecting the model."""
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "off_proj")
+            studio.save_project_state(proj, {
+                "platforms": {"devin": {"enabled": False}},
+                "models": {}, "providers": {}})
+            tool, model, warning = studio.enforce_project_model_whitelist(
+                proj, "devin", "swe-2-high")
+            self.assertTrue(warning)
+            self.assertIn("deactivated", warning)
+            self.assertIn("no activated fallback", warning)
+
+    def test_chat_composer_filter_and_default_warning_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        # Composer model list honors per-project activation flags only.
+        self.assertIn("p.enabled === false", js)
+        self.assertIn("m.enabled !== false", js)
+        self.assertIn("deactivated for this project", js)
+        # Stale default worker model -> warning pill + nearest activated fallback.
+        for marker in ("defaultModelIssue", "nearestActivatedModel",
+                       "status-badge", "limited"):
+            self.assertIn(marker, js)
+
+
 class TestStudioChatEngine(StudioApiCase):
     """Tests for T-153: Live CLI Chat Execution Engine (POST /api/chat)."""
 

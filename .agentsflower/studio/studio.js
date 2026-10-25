@@ -1518,14 +1518,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Nearest activated fallback across probed platforms: a project-enabled platform
+  // with 'active' (authenticated) status and at least one project-enabled model.
+  function nearestActivatedModel(preferTool) {
+    const plats = ((state.capacityData && state.capacityData.platforms) || []).slice();
+    plats.sort((a, b) => (b.key === preferTool ? 1 : 0) - (a.key === preferTool ? 1 : 0));
+    for (const p of plats) {
+      if (p.enabled === false || p.status !== 'active') continue;
+      const m = (p.models || []).find(x => x.enabled !== false);
+      if (m) return { tool: p.key, model: m.id };
+    }
+    return null;
+  }
+
+  // Why the persisted project default worker model is unusable, or '' when healthy.
+  function defaultModelIssue() {
+    const d = state.defaultWorkerModel;
+    if (!d || !d.model || !state.capacityData) return '';
+    const plats = state.capacityData.platforms || [];
+    const p = plats.find(x => x.key === d.tool) ||
+              plats.find(x => (x.models || []).some(m => m.id === d.model));
+    if (!p) return `platform '${d.tool || '?'}' not detected`;
+    if (p.enabled === false) return `${p.label || p.key} deactivated for this project`;
+    const m = (p.models || []).find(x => x.id === d.model);
+    if (m && m.enabled === false) return `model '${d.model}' deactivated for this project`;
+    if (p.status !== 'active') return `${p.label || p.key}: ${p.status_label || 'unavailable'}`;
+    return '';
+  }
+
   function updateDefaultModelPill() {
     const pill = document.getElementById('defaultWorkerModelPill');
     if (!pill) return;
     const d = state.defaultWorkerModel;
-    pill.textContent = d && d.model ? `Default: ${d.model}` : 'Default: \u2014';
-    pill.title = d && d.model
-      ? `Project default worker model: ${d.model}${d.tool ? ' (' + d.tool + ')' : ''}`
-      : 'No project default worker model set';
+    const issue = defaultModelIssue();
+    const fb = issue ? nearestActivatedModel(d && d.tool) : null;
+    pill.classList.toggle('status-badge', !!issue);
+    pill.classList.toggle('limited', !!issue);
+    pill.style.cursor = fb ? 'pointer' : '';
+    pill.onclick = fb ? () => setDefaultWorkerModel(fb.model, fb.tool) : null;
+    if (!d || !d.model) {
+      pill.textContent = 'Default: \u2014';
+      pill.title = 'No project default worker model set';
+      return;
+    }
+    if (issue) {
+      pill.textContent = fb
+        ? `Default: ${d.model} \u26A0 \u2192 ${fb.model}`
+        : `Default: ${d.model} \u26A0`;
+      pill.title = `${issue}. ${fb
+        ? `Nearest activated fallback: ${fb.model} (${fb.tool}) - click to adopt it.`
+        : 'No activated fallback model found for this project.'}`;
+      return;
+    }
+    pill.textContent = `Default: ${d.model}`;
+    pill.title = `Project default worker model: ${d.model}${d.tool ? ' (' + d.tool + ')' : ''}`;
   }
 
   async function setDefaultWorkerModel(modelId, tool) {
@@ -1562,15 +1608,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Map a probed platform record to the chat model dropdown entries for that platform.
-  // Models the project disabled are excluded from active usage.
+  // Only models activated for the project qualify: a deactivated platform or a
+  // probed platform reporting no usable models yields an empty list - the static
+  // CHAT_MODELS list applies only before that platform has been probed.
   function platformModelList(p) {
     if (p && p.enabled === false) return [];
-    if (!p || !(p.models || []).length) return CHAT_MODELS.slice();
-    return p.models.filter(m => m.enabled !== false).map(m => ({
-      id: m.id,
-      label: `${p.label} ${m.id}`,
-      note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label || '')
-    }));
+    if (p && (p.models || []).length) {
+      return p.models.filter(m => m.enabled !== false).map(m => ({
+        id: m.id,
+        label: `${p.label} ${m.id}`,
+        note: m.free ? 'free / local' : (m.pricing || m.context || p.status_label || '')
+      }));
+    }
+    if (p) return [];
+    return CHAT_MODELS.slice();
   }
 
   function applyCapacityModels(data) {
@@ -1589,11 +1640,10 @@ document.addEventListener('DOMContentLoaded', () => {
     state.chatModels = platformModelList(state.platformData[state.chatPlatform]);
     if (savedModel && state.chatModels.some(m => m.id === savedModel)) {
       state.chatModel = savedModel;
-    } else if (d && d.model) {
+    } else if (d && d.model && state.chatModels.some(m => m.id === d.model)) {
       state.chatModel = d.model;
-      ensureChatModelListed(d.model, d.tool);
     } else if (!state.chatModels.some(m => m.id === state.chatModel)) {
-      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : CHAT_MODELS[0].id;
+      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : '';
     }
     updateChatPlatformPill();
     renderPlatformDropdown();
@@ -1627,7 +1677,11 @@ document.addEventListener('DOMContentLoaded', () => {
       opt.type = 'button';
       opt.className = `model-option${pl.key === state.chatPlatform ? ' active' : ''}`;
       opt.setAttribute('role', 'menuitem');
-      opt.innerHTML = `<span>${escapeHTML(pl.label)}</span><span class="model-id">${escapeHTML(platformStatusOf(pl.key) || 'not probed yet')}</span>`;
+      const pd = state.platformData[pl.key];
+      const sub = pd && pd.enabled === false
+        ? 'deactivated for this project'
+        : (platformStatusOf(pl.key) || 'not probed yet');
+      opt.innerHTML = `<span>${escapeHTML(pl.label)}</span><span class="model-id">${escapeHTML(sub)}</span>`;
       opt.addEventListener('click', (ev) => {
         ev.stopPropagation();
         selectChatPlatform(pl.key);
@@ -1655,7 +1709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const p = state.platformData[key];
     state.chatModels = platformModelList(p);
     if (!state.chatModels.some(m => m.id === state.chatModel)) {
-      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : CHAT_MODELS[0].id;
+      state.chatModel = state.chatModels[0] ? state.chatModels[0].id : '';
       try { sessionStorage.setItem('af_chat_model', state.chatModel); } catch (err) { /* storage unavailable */ }
     }
     updatePlatformStatusPill();
@@ -3009,12 +3063,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Chat model selector ---
   function chatModelList() {
-    return state.chatModels && state.chatModels.length ? state.chatModels : CHAT_MODELS;
+    if (state.chatModels && state.chatModels.length) return state.chatModels;
+    // Once the platform was probed, an empty list means nothing is activated
+    // for this project - never resurrect the static CHAT_MODELS list.
+    return state.platformData[state.chatPlatform] ? [] : CHAT_MODELS;
   }
 
   function currentChatModel() {
     const list = chatModelList();
-    return list.find(m => m.id === state.chatModel) || list[0];
+    return list.find(m => m.id === state.chatModel) || list[0] ||
+      { id: '', label: 'No active model', note: '' };
   }
 
   function updateChatModelPill() {
@@ -3028,13 +3086,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chatModelDropdown) return;
     chatModelDropdown.innerHTML = '';
     const p = state.platformData[state.chatPlatform];
-    if (p && !(p.models || []).length) {
+    const models = chatModelList();
+    if (p && !models.length) {
       const info = document.createElement('div');
       info.className = 'model-option model-empty';
-      info.textContent = `${p.status_label || 'Unavailable'}: ${p.note || 'no models reported'} — pick another platform`;
+      info.textContent = p.enabled === false
+        ? `${p.label || p.key} deactivated for this project — reactivate it in the Model Quota Hub`
+        : `${p.status_label || 'Unavailable'}: ${p.note || 'no models reported'} — pick another platform`;
       chatModelDropdown.appendChild(info);
     }
-    chatModelList().forEach(m => {
+    models.forEach(m => {
       const opt = document.createElement('button');
       opt.type = 'button';
       opt.className = `model-option${m.id === state.chatModel ? ' active' : ''}`;
