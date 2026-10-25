@@ -944,6 +944,7 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             else assess["model"]
         )
         task_tool = req_tool or ("ollama" if "ollama" in task_model.lower() or "local" in task_model.lower() else "devin")
+        task_tool, task_model, model_warn = enforce_project_model_whitelist(root, task_tool, task_model)
         task_effort = str(body.get("effort") or assess["effort"]).strip()
         skills = map_task_skills(root, item, item_files)
         role = "developer"
@@ -969,6 +970,7 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             "complexity": assess["complexity"],
             "tier": assess["tier"],
             "model": task_model,
+            "model_warning": model_warn,
             "skills": skills,
             "goal": item,
             "allowed": item_files,
@@ -1045,6 +1047,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         stage = str(int(m_stg.group(0))) if m_stg else (raw_stage or str(default_stage))
         tool = str(raw.get("tool") or "devin").strip()
         model = str(raw.get("model") or "swe-2-high").strip()
+        tool, model, model_warn = enforce_project_model_whitelist(target_root, tool, model)
         effort = str(raw.get("effort") or "high").strip()
         complexity_val = raw.get("complexity") or ("high" if effort in ("high", "xhigh", "max", "ultra") else "standard")
         raw_dep = raw.get("depends") or raw.get("depends_on") or "none"
@@ -1184,6 +1187,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             "role": role,
             "tool": tool,
             "model": model,
+            "model_warning": model_warn,
             "effort": effort,
             "complexity": complexity_val,
             "planned_input_tokens": planned_input_tokens,
@@ -1230,6 +1234,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             "role": role,
             "tool": tool,
             "model": model,
+            "model_warning": model_warn,
             "effort": effort,
             "skills": skills_list,
             "planned_input_tokens": planned_input_tokens,
@@ -2938,6 +2943,66 @@ def toggle_project_model(project_root: Path, body: dict) -> tuple[int, dict]:
     target["enabled"] = (not target.get("enabled", True)) if "enabled" not in body else bool(body["enabled"])
     save_project_state(project_root, state)
     return 200, {"ok": True, "state": project_state_view(project_root)}
+
+
+def project_model_allowed(state: dict, tool: str, model: str) -> bool:
+    """A (platform, model) pair is activated for the project unless a stored flag
+    disables it; a disabled platform disables all of its models (same semantics
+    as _apply_project_state)."""
+    state = state or {}
+    plat = (state.get("platforms") or {}).get(str(tool or "")) or {}
+    if plat.get("enabled") is False:
+        return False
+    flag = ((state.get("models") or {}).get(str(tool or "")) or {}).get(str(model or ""))
+    return not (isinstance(flag, dict) and flag.get("enabled") is False)
+
+
+def project_model_fallback(project_root: Path, tool: str = "", model: str = "") -> tuple[str, str]:
+    """Nearest activated (tool, model) for a project: the persisted default worker
+    model first, then explicitly enabled flags (same platform preferred), then
+    provider-catalog models, then the devin floor; ("", "") when nothing qualifies."""
+    project_root = Path(project_root)
+    state = load_project_state(project_root)
+    flow_root = get_project_flow_root(project_root) or (project_root / ".agentsflower")
+    default = get_default_worker_model(flow_root) or {}
+    d_tool, d_model = str(default.get("tool") or "devin"), str(default.get("model") or "")
+    if d_model and project_model_allowed(state, d_tool, d_model):
+        return d_tool, d_model
+    models = state.get("models") or {}
+    ordered = ([tool] if tool else []) + [k for k in models if k != tool]
+    for pkey in ordered:
+        if ((state.get("platforms") or {}).get(pkey) or {}).get("enabled") is False:
+            continue
+        for mid, flag in (models.get(pkey) or {}).items():
+            if isinstance(flag, dict) and flag.get("enabled") is True \
+                    and project_model_allowed(state, pkey, mid):
+                return pkey, mid
+    for pid, conf in (state.get("providers") or {}).items():
+        if ((state.get("platforms") or {}).get(pid) or {}).get("enabled") is False:
+            continue
+        for m in conf.get("models") or []:
+            mid = str(m.get("id") or "")
+            if mid and project_model_allowed(state, pid, mid):
+                return pid, mid
+    if project_model_allowed(state, "devin", "swe-2-high"):
+        return "devin", "swe-2-high"
+    return "", ""
+
+
+def enforce_project_model_whitelist(project_root: Path, tool: str, model: str) -> tuple[str, str, str]:
+    """Inception/registration guard: the primary model must be activated for the
+    project. Returns (tool, model, warning); a deactivated pick is substituted
+    with the nearest activated fallback, or kept with a warning when none exists."""
+    state = load_project_state(Path(project_root))
+    if project_model_allowed(state, tool, model):
+        return tool, model, ""
+    fb_tool, fb_model = project_model_fallback(Path(project_root), tool, model)
+    if not fb_model:
+        return tool, model, (f"model '{model}' on '{tool}' is deactivated for this "
+                             "project and no activated fallback is configured")
+    return fb_tool, fb_model, (f"model '{model}' on '{tool}' is deactivated for this "
+                               f"project; substituted nearest activated fallback "
+                               f"'{fb_model}' ({fb_tool})")
 
 
 # --- Live CLI Chat Execution Engine (/api/chat) ---
