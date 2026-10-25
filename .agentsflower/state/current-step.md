@@ -1,6 +1,8 @@
 # Current Step
 
-2026-10-24 (Stage 7 closed, AgentsFlower 2.17.0 on main@db7e22f):
+2026-10-25 (Stage 7 batch T-149..T-172 complete on main@750ff3a; `gate.py stage 7` PASS at 51 tasks; ledger fully clean - new scope waits for the human):
+
+Earlier entry (2026-10-24, Stage 7 closed, AgentsFlower 2.17.0 on main@db7e22f):
 
 ## 1. Project Milestone & Version
 - **Current Version:** `AgentsFlower 2.17.0` (remote authority `origin`: `https://github.com/agentsflower/agentsflower`).

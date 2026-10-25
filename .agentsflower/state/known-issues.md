@@ -167,3 +167,5 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   scope verify could not accept. Remedy: carrier successor T-148 declares the
   full `git diff` file set. Authoring rule stands: `Allowed files` must cover
   every file the contract's own goals require touching.
+- 2026-10-25 - Silent ledger row drop: T-166's row vanished from `.agentsflower/state/tasks.md` between ~00:14Z and ~06:20Z while other rows updated fine (file ends T-165 -> T-167). Suspected stale-snapshot `ledger.save`/`_write_atomic` rewrite from a concurrent writer (worker-side register_task_pool/move_task_stage paths touch tasks.md). Row restored by hand. Watch for recurrence.
+- 2026-10-25 - Tester Result gate failures repeat: evidence lines with `evidence:` followed by prose/bare basenames, or `.runtime/<task>.evidence/` files without the `T-NNN.` filename prefix, fail verify as out-of-scope path claims (T-154, T-156 this session; earlier T-141/T-147/T-075/T-080). Mitigation in place: pending tester Task Files carry an explicit evidence-format hint line; fixes so far were a re-attempt (T-154) and surgical renames/rewording with verdicts unchanged (T-156).

@@ -515,3 +515,15 @@ downstream chain to a clean ledger:
 
 Ended: ledger fully clean, tick.json no needs/waits. Rejected worktrees and
 branches of T-139 and T-144 left for human-agreed cleanup.
+
+2026-10-25 background orchestrator (devin-background), ~00:14-08:40Z: ran the full T-149..T-172 batch to a clean ledger (24 tasks, all done, `gate.py stage 7` PASS at 51 tasks).
+
+- Completed the serial chain T-149->T-166: UI strict cleanup, dynamic platform/model selector, live /api/chat engine, hierarchical thread switcher, multi-research threads + folders + forking, stage-aware pool synthesis + skills mapping, task-level chat + DAG stage-move guard, Jev token/budget estimator, telemetry Cost & ROI dashboard. Then the Model Quota Hub branch T-167->T-172: backend provider engine (OpenRouter, masked secrets, per-project toggles), hub UI reconstruction, end-to-end project model filtering.
+- Mechanical gaps fixed in the batch Task Files: missing Setup/Port/Rebuild together/Checks/Result sections added (template-conformant), tester `Verifies: T-xxx @ <SHA>` filled per accepted Change SHA, T-166's ledger row restored after a silent drop from tasks.md (cause unknown - a stale-snapshot rewrite is suspected; worth watching).
+- T-154 attempt 1: verdict pass but Result evidence lines failed the gate (bare tokens/selectors as path claims) - re-attempt with `Resume: .runtime/T-154.evidence` rewrote the Result gate-clean, verify PASS. T-156 same class: fixed surgically (renamed evidence files to T-156.* prefix, prose moved ahead of `evidence:` markers; verdicts/evidence unchanged, T-075/T-080/T-100 precedent). Prevention: added an evidence-format hint line to all remaining tester Task Files.
+- T-165 attempt 1 hit the 2400s watchdog timeout after implementing everything uncommitted; attempt 2 on the preserved draft finished `completed` in ~7 min.
+- T-169 attempt 1 was a dead tool exit (exit 0, ~90s, no Result, clean worktree); attempt 2 completed normally.
+- Routing: T-155 and T-163 rolled stable Jev low-confidence (~0.46-0.48) on the effort-tier sub-question only (option confidence 0.97/0.99 for devin). Applied the recorded human standing policy (2026-10-21: evaluate catalog on low confidence; devin swe-2-high is the mandated floor) via `Routing exception:` header lines - logged as human-exception admissions. T-167/T-169/T-171 already carried the human's own exception lines.
+- Merges: d72d033 (T-149), 2b8e9f3 (T-151), 46e11c7 (T-153), 772f321 (T-155), 38495f2 (T-157), 9d208969 (T-161), a5889f2 (T-163), 30bd454 (T-165), d610b8a (T-167), 83e28f2 (T-169), a95f84e (T-171).
+
+Ended: ledger fully clean, tick.json no needs/waits, stage 7 gate PASS. What waits: nothing mechanical - new scope needs the human.

@@ -1,6 +1,32 @@
 # Session Handoff
 
-As of: 2026-10-24 ~18:35Z, main@db7e22f (T-134 merge).
+As of: 2026-10-25 ~08:40Z, main@750ff3a (T-171 merge; Stage 7 gate PASS at 51 tasks).
+
+Background session devin-background: ran the entire approved batch
+T-149..T-172 to a clean ledger - 11 developer merges (d72d033, 2b8e9f3,
+46e11c7, 772f321, 38495f2, 9d20896, a5889f2, 30bd454, d610b8a, 83e28f2,
+a95f84e) each verified `pass` by its tester task, ending at T-172. Studio now
+has: cleaned topnav/composer + embedded #hdr suppression, live platform+model
+selector on real CLI probing, real /api/chat CLI engine, hierarchical thread
+switcher, multi-research threads/folders/forking, stage-aware pool synthesis
+with skills mapping, task-level chat + DAG stage-move guard, Jev token/budget
+estimation, Cost & ROI dashboard, and the Model Quota Hub (provider engine,
+masked secrets, per-project toggles, UI, end-to-end filtering).
+
+Session notes worth keeping: T-166's ledger row was silently dropped from
+tasks.md mid-session (restored; cause unknown - see known-issues); tester
+Result evidence-format gate failures recurred until an explicit hint line was
+added to the pending tester Task Files; T-155/T-163 Jev low-confidence rolls
+were admitted via the recorded 2026-10-21 human standing policy (Routing
+exception lines, human-exception logged); T-165 needed a draft-resume
+re-attempt after the 2400s wall clock; T-169 attempt 1 was a dead tool exit.
+
+What waits: nothing mechanical - tick clean, ledger clean. New scope (Stage 8
+remainder or a new stage) needs the human. project-plan.md was not touched
+(changes to the plan are a human call); Stage 7 remains 'closed' there.
+
+Read: session-log.md tail (full run record), known-issues.md tail (tasks.md
+row drop + evidence-format class), ledger.
 
 Background session devin (devin-background): resolved the tick need from
 T-134 - wrote and launched tester T-135 (`Verifies: T-134 @ f5355b5`, devin

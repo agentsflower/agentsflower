@@ -68,4 +68,22 @@ Connect the Model Quota Hub project activation state across the entire Studio ex
 
 ## Result
 
-<!-- Worker writes outcome below -->
+Outcome: completed
+Change: a95f84e on t-171-model-quota-hub-integration
+Files:
+- .agentsflower/tools/studio.py - added project_model_allowed / project_model_fallback / enforce_project_model_whitelist guards; applied in synthesize_tasks_from_chat and register_task_pool (substituted model lands in the generated contract header, plan.json and ledger payload, with model_warning recorded on the task dict)
+- .agentsflower/studio/studio.js - composer dropdown now lists only project-activated models (probed platform with no activated models yields an empty list plus a "deactivated for this project" info row instead of the static CHAT_MODELS list); platform dropdown marks deactivated platforms; stale default worker model gets a status-badge limited warning pill offering the nearest activated fallback via defaultModelIssue/nearestActivatedModel (click adopts it)
+- .agentsflower/tests/test_studio.py - new TestModelQuotaHubIntegration class: flag semantics, dynamic toggle -> synthesize substitution -> re-activation restore, pool registration fallback written to contract/plan, no-fallback warning path, composer/warning-pill JS markers
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (102 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (606 passed / 0 failed, 4 skipped)
+Criteria:
+- C-01: pass - platformModelList/chatModelList in .agentsflower/studio/studio.js filter to m.enabled !== false on enabled platforms only; empty activated set no longer falls back to CHAT_MODELS once the platform is probed
+- C-02: pass - toggleCapacityItem -> applyProjectStateToCapacity -> applyCapacityModels re-renders the dropdown; test_dynamic_toggle_updates_inception_model_pool in .agentsflower/tests/test_studio.py proves the creator side flips immediately
+- C-03: pass - enforce_project_model_whitelist in .agentsflower/tools/studio.py guards /api/task/synthesize and /api/task/pool/register; test_register_pool_writes_activated_fallback_model verifies contract header Model: gets the activated fallback
+- C-04: pass - full suite green: 606 tests OK (4 skipped)
+Found, not fixed:
+- /api/chat execution (sendChatMessage) does not re-validate the selected model server-side against the whitelist; a stale pick could still reach the CLI. Out of scope: criteria cover the dropdown contents, not chat dispatch.
+- Synthesized task cards show the substituted model but not the model_warning text in the pool UI; the warning is in the API payload and plan.json only.
+Proposed memory updates:
+- none
