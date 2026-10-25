@@ -37,6 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
     platformData: {},
     capacityData: null,
     defaultWorkerModel: null,
+    costAnalytics: null,
+    costStageFilter: 'all',
   };
 
   const CHAT_PLATFORMS = [
@@ -132,6 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Analytics Elements
   const analyticsFrame = document.getElementById('analyticsFrame');
+  const analyticsFrameWrapper = document.getElementById('analyticsFrameWrapper');
+  const costRoiDashboard = document.getElementById('costRoiDashboard');
+  const costStageFilterEl = document.getElementById('costStageFilter');
   const btnRebuildDashboard = document.getElementById('btnRebuildDashboard');
   const btnOpenExternalDashboard = document.getElementById('btnOpenExternalDashboard');
   const subTabButtons = document.querySelectorAll('.btn-subtab');
@@ -203,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await loadStatus();
     await loadTasks();
     await loadCapacity();
+    await loadCostAnalytics();
     paintDashThemeToggle();
     updateAnalyticsFrame();
   }
@@ -420,6 +426,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    if (costStageFilterEl) {
+      costStageFilterEl.addEventListener('change', () => {
+        state.costStageFilter = costStageFilterEl.value || 'all';
+        if (state.costAnalytics) renderCostDashboard(state.costAnalytics);
+      });
+    }
+
     // Rebuild Analytics
     if (btnRebuildDashboard) {
       btnRebuildDashboard.addEventListener('click', async () => {
@@ -430,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: state.currentProject })
         });
+        await loadCostAnalytics(state.currentProject);
         btnRebuildDashboard.disabled = false;
         btnRebuildDashboard.innerHTML = `
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -437,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         if (res && res.ok) {
           updateAnalyticsFrame(true);
-        } else {
+        } else if (state.analyticsSubTab !== 'costs') {
           alert('Analytics rebuild error: ' + (res ? res.error : 'Unknown error'));
         }
       });
@@ -501,6 +515,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Analytics Sub-tab Frame Updater ---
   function updateAnalyticsFrame(forceReload = false) {
+    if (state.analyticsSubTab === 'costs') {
+      if (analyticsFrameWrapper) analyticsFrameWrapper.style.display = 'none';
+      if (costRoiDashboard) costRoiDashboard.style.display = 'flex';
+      loadCostAnalytics(state.currentProject);
+      return;
+    }
+    if (costRoiDashboard) costRoiDashboard.style.display = 'none';
+    if (analyticsFrameWrapper) analyticsFrameWrapper.style.display = '';
     if (!analyticsFrame) return;
     const pathMap = {
       index: '/dashboard/out/index.html',
@@ -516,6 +538,186 @@ document.addEventListener('DOMContentLoaded', () => {
     analyticsFrame.src = `${targetUrl}${baseQs}${baseQs ? '&' : '?'}embedded=1`;
     if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = `${targetUrl}${baseQs}`;
     setAnalyticsBuilt('');
+  }
+
+  // --- Cost & ROI Dashboard (Plan vs Fact Telemetry) ---
+  async function loadCostAnalytics(projPath = '') {
+    const target = projPath || state.currentProject;
+    const query = target ? `?project=${encodeURIComponent(target)}` : '';
+    const res = await fetchJSON(`/api/analytics/costs${query}`);
+    if (res && res.ok) {
+      state.costAnalytics = res;
+      renderCostDashboard(res);
+    }
+  }
+
+  function formatSignedUsd(val) {
+    const n = Number(val) || 0;
+    if (Math.abs(n) < 0.000001) return '$0.00';
+    const absStr = Math.abs(n) < 0.01 ? ('$' + Math.abs(n).toFixed(4)) : ('$' + Math.abs(n).toFixed(2));
+    return (n > 0 ? '+' : '-') + absStr;
+  }
+
+  function formatDeltaPct(pct) {
+    const n = Number(pct) || 0;
+    if (Math.abs(n) < 0.01) return '0.0%';
+    return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+  }
+
+  function renderCostDashboard(data) {
+    const summary = (data && data.summary) || data || {};
+    const stages = (data && data.stages) || [];
+    const tasks = (data && data.tasks) || [];
+
+    const elPlanned = document.getElementById('costTotalPlanned');
+    const elActual = document.getElementById('costTotalActual');
+    const elSavings = document.getElementById('costNetSavings');
+    const elFreePct = document.getElementById('costLocalFreePct');
+
+    const elPlannedMeta = document.getElementById('costPlannedTokensMeta');
+    const elActualMeta = document.getElementById('costActualTokensMeta');
+    const elSavingsMeta = document.getElementById('costSavingsMeta');
+    const elFreeMeta = document.getElementById('costLocalFreeMeta');
+
+    const totalPlanUsd = Number(summary.total_planned_usd ?? summary.planned_cost_usd) || 0;
+    const totalActualUsd = Number(summary.total_actual_usd ?? summary.actual_cost_usd) || 0;
+    const netSavingsUsd = Number(summary.net_savings_usd ?? (totalPlanUsd - totalActualUsd)) || 0;
+    const deltaPct = Number(summary.delta_pct) || 0;
+    const freePct = Number(summary.local_free_tokens_pct) || 0;
+
+    if (elPlanned) elPlanned.textContent = formatUsdCost(totalPlanUsd);
+    if (elActual) elActual.textContent = formatUsdCost(totalActualUsd);
+    if (elSavings) {
+      elSavings.textContent = (netSavingsUsd < 0 ? '-' : '') + formatUsdCost(Math.abs(netSavingsUsd));
+      elSavings.className = 'cost-card-value ' + (netSavingsUsd >= 0 ? 'text-emerald' : 'text-amber');
+    }
+    if (elFreePct) elFreePct.textContent = freePct.toFixed(1) + '%';
+
+    if (elPlannedMeta) {
+      elPlannedMeta.textContent = `${formatTokenCount(summary.planned_tokens || 0)} across ${summary.task_count || tasks.length} tasks`;
+    }
+    if (elActualMeta) {
+      elActualMeta.textContent = `${formatTokenCount(summary.actual_tokens || 0)} · ${summary.model_calls || 0} calls · ${Math.round(summary.execution_time_seconds || 0)}s`;
+    }
+    if (elSavingsMeta) {
+      elSavingsMeta.textContent = `Delta: ${formatSignedUsd(summary.delta_usd || 0)} (${formatDeltaPct(deltaPct)})`;
+    }
+    if (elFreeMeta) {
+      elFreeMeta.textContent = `${formatTokenCount(summary.local_free_tokens || 0)} zero-cost ($0)`;
+    }
+
+    if (costStageFilterEl) {
+      const prevFilter = state.costStageFilter || 'all';
+      costStageFilterEl.innerHTML = '<option value="all">All Stages (' + tasks.length + ')</option>' +
+        stages.map(s =>
+          `<option value="${escapeHTML(String(s.stage))}"${String(s.stage) === String(prevFilter) ? ' selected' : ''}>${escapeHTML(s.label || ('Stage ' + s.stage))} (${s.task_count || 0})</option>`
+        ).join('');
+    }
+
+    const stageBarEl = document.getElementById('costStageBar');
+    const stageDistEl = document.getElementById('costStageDistribution');
+    const stageColors = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6', '#f97316'];
+
+    if (stageBarEl) {
+      if (!stages.length) {
+        stageBarEl.innerHTML = '<div class="cost-stage-bar-empty">No stage cost data available</div>';
+      } else {
+        stageBarEl.innerHTML = stages.map((s, idx) => {
+          const share = Math.max(4, Number(s.share_actual_pct || s.share_planned_pct) || (100 / stages.length));
+          const color = stageColors[idx % stageColors.length];
+          const label = s.label || ('Stage ' + s.stage);
+          return `<div class="cost-stage-segment" style="width:${share}%; background:${color};" title="${escapeHTML(label)}: Plan ${escapeHTML(formatUsdCost(s.planned_cost_usd))} / Fact ${escapeHTML(formatUsdCost(s.actual_cost_usd))}"></div>`;
+        }).join('');
+      }
+    }
+
+    if (stageDistEl) {
+      if (!stages.length) {
+        stageDistEl.innerHTML = '<div class="empty-state">No stages registered in this workspace.</div>';
+      } else {
+        const maxStageCost = Math.max(
+          0.0001,
+          ...stages.map(s => Math.max(Number(s.planned_cost_usd) || 0, Number(s.actual_cost_usd) || 0))
+        );
+        stageDistEl.innerHTML = stages.map((s, idx) => {
+          const color = stageColors[idx % stageColors.length];
+          const planW = Math.min(100, Math.round(((Number(s.planned_cost_usd) || 0) / maxStageCost) * 100));
+          const actW = Math.min(100, Math.round(((Number(s.actual_cost_usd) || 0) / maxStageCost) * 100));
+          const dPct = Number(s.delta_pct) || 0;
+          const dClass = dPct <= 0 ? 'under' : 'over';
+          return `<div class="cost-stage-row" data-stage="${escapeHTML(String(s.stage))}">
+            <div class="cost-stage-info">
+              <span class="cost-stage-dot" style="background:${color}"></span>
+              <span class="cost-stage-name">${escapeHTML(s.label || ('Stage ' + s.stage))}</span>
+              <span class="cost-stage-count">${s.task_count || 0} tasks</span>
+            </div>
+            <div class="cost-stage-bars-wrap">
+              <div class="cost-dual-bar">
+                <div class="cost-bar-plan" style="width:${planW}%" title="Planned: ${escapeHTML(formatUsdCost(s.planned_cost_usd))}"></div>
+              </div>
+              <div class="cost-dual-bar">
+                <div class="cost-bar-fact" style="width:${actW}%; background:${color}" title="Actual: ${escapeHTML(formatUsdCost(s.actual_cost_usd))}"></div>
+              </div>
+            </div>
+            <div class="cost-stage-metrics">
+              <span>Plan: <strong>${escapeHTML(formatUsdCost(s.planned_cost_usd))}</strong></span>
+              <span>Fact: <strong>${escapeHTML(formatUsdCost(s.actual_cost_usd))}</strong></span>
+              <span class="cost-delta-pill ${dClass}">${escapeHTML(formatDeltaPct(dPct))}</span>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    const tbody = document.getElementById('costTaskTableBody');
+    if (tbody) {
+      const filteredTasks = (state.costStageFilter && state.costStageFilter !== 'all')
+        ? tasks.filter(t => String(t.stage) === String(state.costStageFilter))
+        : tasks;
+      if (!filteredTasks.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No tasks found for the selected filter.</td></tr>';
+      } else {
+        const grouped = new Map();
+        filteredTasks.forEach(t => {
+          const stg = String(t.stage || '1');
+          if (!grouped.has(stg)) grouped.set(stg, []);
+          grouped.get(stg).push(t);
+        });
+        const sortedStageKeys = [...grouped.keys()].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
+        const rowsHtml = [];
+        sortedStageKeys.forEach(stg => {
+          const groupTasks = grouped.get(stg);
+          const stgLabel = (groupTasks[0] && groupTasks[0].stage_label) || stageLabel(stg);
+          const grpPlan = groupTasks.reduce((acc, x) => acc + (Number(x.planned_cost_usd) || 0), 0);
+          const grpFact = groupTasks.reduce((acc, x) => acc + (Number(x.actual_cost_usd) || 0), 0);
+          rowsHtml.push(
+            `<tr class="cost-stage-group-row" data-stage-group="${escapeHTML(stg)}">
+              <td colspan="8">
+                <strong>${escapeHTML(stgLabel)}</strong>
+                <span class="cost-group-meta">${groupTasks.length} task${groupTasks.length === 1 ? '' : 's'} · Plan ${escapeHTML(formatUsdCost(grpPlan))} · Fact ${escapeHTML(formatUsdCost(grpFact))}</span>
+              </td>
+            </tr>`
+          );
+          groupTasks.forEach(t => {
+            const dPct = Number(t.delta_pct) || 0;
+            const dClass = dPct < 0 ? 'under' : (dPct > 0 ? 'over' : 'neutral');
+            rowsHtml.push(
+              `<tr class="cost-task-row" data-task-id="${escapeHTML(t.id)}" data-stage="${escapeHTML(String(t.stage))}">
+                <td><span class="task-stage-badge">${escapeHTML(t.stage_label || ('Stage ' + t.stage))}</span></td>
+                <td><span class="task-tid">${escapeHTML(t.id)}</span></td>
+                <td class="cost-cell-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</td>
+                <td><span class="model-tier-pill">${escapeHTML(t.model || 'swe-2-high')}</span></td>
+                <td class="cost-cell-num" data-plan-usd="${escapeHTML(String(t.planned_cost_usd || 0))}">${escapeHTML(formatUsdCost(t.planned_cost_usd))}</td>
+                <td class="cost-cell-num" data-fact-usd="${escapeHTML(String(t.actual_cost_usd || 0))}">${escapeHTML(formatUsdCost(t.actual_cost_usd))}</td>
+                <td class="cost-cell-num"><span class="cost-delta-pill ${dClass}">${escapeHTML(formatDeltaPct(dPct))}</span></td>
+                <td><span class="cost-status-badge status-${escapeHTML(String(t.status || 'ready').replace(/\s+/g, '-').toLowerCase())}">${escapeHTML(t.status || 'ready')}</span></td>
+              </tr>`
+            );
+          });
+        });
+        tbody.innerHTML = rowsHtml.join('');
+      }
+    }
   }
 
   // --- Embedded dashboard bridge: build stamp + theme toggle ---
@@ -1330,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProjectAccordion();
     updateProjectChrome();
     resetExplorerPane();
-    await Promise.all([loadStatus(path), loadTasks(path), loadCapacity()]);
+    await Promise.all([loadStatus(path), loadTasks(path), loadCapacity(), loadCostAnalytics(path)]);
     updateAnalyticsFrame();
   }
 
