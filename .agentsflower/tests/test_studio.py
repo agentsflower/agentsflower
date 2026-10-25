@@ -2074,5 +2074,256 @@ class TestTaskChatAndStageCollisionGuard(StudioApiCase):
             self.assertEqual(stages_map["T-014"], "3")
 
 
+class TestJevTokenBudgetEstimator(StudioApiCase):
+    """Tests for T-163: Jev Token & Budget Estimator for Task Pool Synthesis (Plan Model)."""
+
+    def _make_plan_project(self, td: str) -> tuple[Path, Path]:
+        proj = Path(td) / "plan_model_proj"
+        flow = proj / ".agentsflower"
+        (flow / "state").mkdir(parents=True)
+        (flow / "tasks").mkdir(parents=True)
+        (flow / "docs").mkdir(parents=True)
+        studio.save_attached_project(str(proj))
+        self.addCleanup(lambda: self._detach_project(proj))
+        return proj, flow
+
+    def _detach_project(self, proj: Path):
+        try:
+            if studio.ATTACHED_FILE.is_file():
+                attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                studio.ATTACHED_FILE.write_text(
+                    json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+        except Exception:
+            pass
+
+    def test_output_token_tiers_and_input_token_blast_radius_scaling(self):
+        import plan_route
+
+        self.assertEqual(plan_route.estimate_output_tokens("low"), 1000)
+        self.assertEqual(plan_route.estimate_output_tokens("medium"), 4000)
+        self.assertEqual(plan_route.estimate_output_tokens("high"), 12000)
+        self.assertEqual(plan_route.estimate_output_tokens("max"), 24000)
+
+        small_in = plan_route.estimate_input_tokens(
+            "Short prompt",
+            blast_files=[".agentsflower/VERSION"],
+            root=studio.REPO_ROOT,
+        )
+        large_in = plan_route.estimate_input_tokens(
+            "Long architectural prompt " * 80,
+            blast_files=[".agentsflower/tools/studio.py", ".agentsflower/tools/plan_route.py"],
+            root=studio.REPO_ROOT,
+        )
+        self.assertGreater(small_in, 0)
+        self.assertGreater(large_in, small_in)
+
+        est = studio.estimate_task_budget(
+            prompt_text="Implement Jev token estimator",
+            blast_files=[".agentsflower/tools/studio.py"],
+            effort="high",
+            model="gemini-4-argon-high",
+            tool="devin",
+            root=studio.REPO_ROOT,
+        )
+        self.assertEqual(est["planned_output_tokens"], 12000)
+        self.assertGreater(est["planned_input_tokens"], 0)
+        self.assertEqual(
+            est["planned_tokens"],
+            est["planned_input_tokens"] + est["planned_output_tokens"],
+        )
+
+    def test_model_pricing_rate_lookup_and_cost_calculation(self):
+        import plan_route
+
+        # Devin swe-2 free
+        swe = plan_route.estimate_task_budget(
+            prompt_text="Routine floor task",
+            blast_files=[".agentsflower/VERSION"],
+            effort="medium",
+            model="swe-2-high",
+            tool="devin",
+            root=studio.REPO_ROOT,
+        )
+        self.assertEqual(swe["planned_cost_usd"], 0.0)
+        self.assertTrue(swe["free"])
+
+        # Local Ollama $0
+        ollama = plan_route.estimate_task_budget(
+            prompt_text="Offline local task",
+            blast_files=[".agentsflower/VERSION"],
+            effort="low",
+            model="qwen2.5-coder",
+            tool="ollama",
+            root=studio.REPO_ROOT,
+        )
+        self.assertEqual(ollama["planned_cost_usd"], 0.0)
+        self.assertTrue(ollama["free"])
+
+        # Claude Opus $15/M
+        opus_rate = plan_route.lookup_model_pricing("claude-opus-5.5", tool="claude")
+        self.assertEqual(opus_rate["rate_per_1m"], 15.0)
+        opus = plan_route.estimate_task_budget(
+            prompt_text="Complex cross-cutting refactor",
+            blast_files=[".agentsflower/tools/studio.py"],
+            effort="max",
+            model="claude-opus-5.5",
+            tool="claude",
+            root=studio.REPO_ROOT,
+        )
+        expected_opus_cost = round(opus["planned_tokens"] * 15.0 / 1_000_000, 6)
+        self.assertEqual(opus["planned_output_tokens"], 24000)
+        self.assertAlmostEqual(opus["planned_cost_usd"], expected_opus_cost, places=6)
+        self.assertGreater(opus["planned_cost_usd"], 0.0)
+
+        # Custom config pricing override from model-options.json structure
+        custom_cfg = {
+            "options": {
+                "custom-pro": {
+                    "tool": "devin",
+                    "model": "custom-pro-v1",
+                    "pricing": {"input_per_1m": 4.0, "output_per_1m": 20.0},
+                }
+            }
+        }
+        custom_est = plan_route.estimate_task_budget(
+            prompt_text="Custom model task",
+            blast_files=[],
+            effort="low",
+            model="custom-pro-v1",
+            tool="devin",
+            config=custom_cfg,
+        )
+        expected_custom = round(
+            (custom_est["planned_input_tokens"] * 4.0 + custom_est["planned_output_tokens"] * 20.0) / 1_000_000,
+            6,
+        )
+        self.assertAlmostEqual(custom_est["planned_cost_usd"], expected_custom, places=6)
+
+    def test_synthesize_populates_planned_tokens_and_cost_usd(self):
+        code, res = self.api(
+            "/api/task/synthesize",
+            method="POST",
+            body={
+                "project": str(studio.REPO_ROOT),
+                "thread": "research",
+                "model": "gemini-4-argon-high",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "1. Architect complex multi-file AST knowledge graph synthesis across studio.py, plan_route.py, and graft.py. "
+                            "2. Update minor CSS badge label in studio.css."
+                        ),
+                    }
+                ],
+            },
+        )
+        self.assertEqual(code, 200, res)
+        self.assertTrue(res.get("ok"), res)
+        tasks = res.get("tasks", [])
+        self.assertGreaterEqual(len(tasks), 2)
+
+        for t in tasks:
+            self.assertIn("planned_input_tokens", t)
+            self.assertIn("planned_output_tokens", t)
+            self.assertIn("planned_tokens", t)
+            self.assertIn("planned_cost_usd", t)
+            self.assertGreater(t["planned_input_tokens"], 0)
+            self.assertIn(t["planned_output_tokens"], (1000, 4000, 12000, 24000))
+            self.assertEqual(
+                t["planned_tokens"],
+                t["planned_input_tokens"] + t["planned_output_tokens"],
+            )
+            if t["model"] == "swe-2-high":
+                self.assertEqual(t["planned_cost_usd"], 0.0)
+            else:
+                self.assertGreater(t["planned_cost_usd"], 0.0)
+
+        self.assertEqual(res.get("planned_tokens"), sum(t["planned_tokens"] for t in tasks))
+        self.assertAlmostEqual(
+            res.get("planned_cost_usd", 0.0),
+            round(sum(t["planned_cost_usd"] for t in tasks), 6),
+            places=6,
+        )
+
+    def test_batch_register_writes_plan_json_and_task_headers(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_plan_project(td)
+            pool = [
+                {
+                    "id": "T-401",
+                    "title": "Architect token estimator in plan_route.py",
+                    "stage": 7,
+                    "role": "developer",
+                    "tool": "devin",
+                    "model": "gemini-4-argon-high",
+                    "effort": "high",
+                    "goal": "Implement token and cost estimation in plan_route.py and studio.py.",
+                    "allowed_files": [".agentsflower/tools/plan_route.py", ".agentsflower/tools/studio.py"],
+                    "criteria": ["C-01: Token and cost estimation implemented."],
+                },
+                {
+                    "id": "T-402",
+                    "title": "Add unit tests for token estimator",
+                    "stage": 7,
+                    "depends": "T-401",
+                    "role": "developer",
+                    "tool": "devin",
+                    "model": "swe-2-high",
+                    "effort": "medium",
+                    "goal": "Verify token estimation in test_studio.py.",
+                    "allowed_files": [".agentsflower/tests/test_studio.py"],
+                    "criteria": ["C-01: Unit tests pass."],
+                },
+            ]
+            code, res = self.api(
+                "/api/task/pool/register",
+                method="POST",
+                body={"project": str(proj), "tasks": pool},
+            )
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+
+            plan_401_path = flow / "tasks" / "T-401.plan.json"
+            plan_402_path = flow / "tasks" / "T-402.plan.json"
+            self.assertTrue(plan_401_path.is_file(), "T-401.plan.json must be created")
+            self.assertTrue(plan_402_path.is_file(), "T-402.plan.json must be created")
+
+            p401 = json.loads(plan_401_path.read_text(encoding="utf-8"))
+            p402 = json.loads(plan_402_path.read_text(encoding="utf-8"))
+            self.assertEqual(p401["task_id"], "T-401")
+            self.assertEqual(p401["planned_output_tokens"], 12000)
+            self.assertEqual(p401["planned_tokens"], p401["planned_input_tokens"] + p401["planned_output_tokens"])
+            self.assertGreater(p401["planned_cost_usd"], 0.0)
+
+            self.assertEqual(p402["task_id"], "T-402")
+            self.assertEqual(p402["planned_output_tokens"], 4000)
+            self.assertEqual(p402["planned_cost_usd"], 0.0)
+
+            t401_md = next((flow / "tasks").glob("T-401-*.md")).read_text(encoding="utf-8")
+            self.assertIn("Planned tokens:", t401_md)
+            self.assertIn("Planned cost USD:", t401_md)
+
+    def test_task_pool_card_ui_renders_token_and_cost_badges(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            "planned_tokens",
+            "planned_cost_usd",
+            "token-badge",
+            "cost-badge",
+            "formatTokenCount",
+            "formatUsdCost",
+        ):
+            self.assertIn(marker, js)
+        for marker in (".token-badge", ".cost-badge", ".pool-budget-summary"):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2088,12 +2088,34 @@ document.addEventListener('DOMContentLoaded', () => {
     return bubble;
   }
 
+  function formatTokenCount(tokens) {
+    const n = Number(tokens) || 0;
+    if (n >= 1000) {
+      return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K tokens';
+    }
+    return n + ' tokens';
+  }
+
+  function formatUsdCost(cost) {
+    const c = Number(cost) || 0;
+    if (c <= 0) return '$0.00';
+    if (c < 0.01) return '$' + c.toFixed(4);
+    return '$' + c.toFixed(2);
+  }
+
   function createTaskPoolCardElement(poolData, holder) {
     const card = document.createElement('div');
     card.className = 'task-pool-card';
     const tasks = poolData.tasks || poolData.pool || [];
     const blastFiles = (poolData.blast_radius && poolData.blast_radius.affected_files) || [];
     const registered = Boolean(holder && holder.registered);
+
+    const totalTokens = poolData.planned_tokens != null
+      ? Number(poolData.planned_tokens)
+      : tasks.reduce((acc, t) => acc + (Number(t.planned_tokens) || 0), 0);
+    const totalCostUsd = poolData.planned_cost_usd != null
+      ? Number(poolData.planned_cost_usd)
+      : tasks.reduce((acc, t) => acc + (Number(t.planned_cost_usd) || 0), 0);
 
     const header = document.createElement('div');
     header.className = 'pool-card-header';
@@ -2105,11 +2127,23 @@ document.addEventListener('DOMContentLoaded', () => {
     blastEl.textContent = 'AST Blast Radius (' + blastFiles.length + ' files): ' + (blastFiles.join(', ') || 'scoped to workspace');
     card.appendChild(blastEl);
 
+    const budgetEl = document.createElement('div');
+    budgetEl.className = 'pool-budget-summary';
+    budgetEl.innerHTML =
+      '<span>Jev Plan Budget:</span>' +
+      '<span class="token-badge">' + escapeHTML(formatTokenCount(totalTokens)) + '</span>' +
+      '<span class="cost-badge budget-badge">' + escapeHTML(formatUsdCost(totalCostUsd)) + '</span>';
+    card.appendChild(budgetEl);
+
     tasks.forEach(t => {
       const itemEl = document.createElement('div');
       itemEl.className = 'pool-task-item';
       const isEsc = (t.model || '').includes('argon') || t.tier === 'escalation';
       const stgText = t.stage_label || stageLabel(t.stage || '1');
+      const taskTokens = t.planned_tokens != null
+        ? Number(t.planned_tokens)
+        : ((Number(t.planned_input_tokens) || 0) + (Number(t.planned_output_tokens) || 0));
+      const taskCost = t.planned_cost_usd != null ? Number(t.planned_cost_usd) : 0;
       const skills = Array.isArray(t.skills)
         ? t.skills
         : (typeof t.skills === 'string' && t.skills && t.skills !== 'none'
@@ -2126,6 +2160,8 @@ document.addEventListener('DOMContentLoaded', () => {
           '<span class="task-stage-badge">' + escapeHTML(stgText) + '</span>' +
           '<span class="effort-badge">Effort: ' + escapeHTML(t.effort || 'high') + '</span>' +
           '<span class="model-tier-pill' + (isEsc ? ' escalation' : '') + '">' + escapeHTML(t.model || 'swe-2-high') + '</span>' +
+          '<span class="token-badge" data-planned-tokens="' + escapeHTML(String(taskTokens)) + '" title="Input: ' + escapeHTML(String(t.planned_input_tokens || 0)) + ' / Output: ' + escapeHTML(String(t.planned_output_tokens || 0)) + '">' + escapeHTML(formatTokenCount(taskTokens)) + '</span>' +
+          '<span class="cost-badge budget-badge" data-planned-cost="' + escapeHTML(String(taskCost)) + '">' + escapeHTML(formatUsdCost(taskCost)) + '</span>' +
           skillBadges +
         '</div>' +
         '<div class="task-card-title">' + escapeHTML(t.title) + '</div>' +

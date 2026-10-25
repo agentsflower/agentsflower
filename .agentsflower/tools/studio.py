@@ -39,6 +39,15 @@ import ledger  # noqa: E402
 import gate  # noqa: E402
 import machine_capacity  # noqa: E402
 import local_adapter  # noqa: E402
+import plan_route  # noqa: E402
+from plan_route import (  # noqa: E402
+    EFFORT_OUTPUT_TOKENS,
+    MODEL_PRICING_USD_PER_1M,
+    estimate_input_tokens,
+    estimate_output_tokens,
+    estimate_task_budget,
+    lookup_model_pricing,
+)
 try:
     import graft  # noqa: E402
 except ImportError:
@@ -346,7 +355,7 @@ def get_tasks_data(project_path: str = None) -> dict:
                                     "done": chk.lower() == "x",
                                 })
                             allowed = [l.strip().lstrip("- `").rstrip("`") for l in re.findall(r"-\s*`([^`]+)`", t_content)]
-                            for field in ("Branch", "Worktree", "Model", "Skills"):
+                            for field in ("Branch", "Worktree", "Model", "Skills", "Planned tokens", "Planned cost USD"):
                                 fm = re.search(rf"^{field}:\s*(.+?)\s*$", t_content, re.M)
                                 if fm:
                                     header[field.lower()] = fm.group(1)
@@ -359,7 +368,29 @@ def get_tasks_data(project_path: str = None) -> dict:
                         if s.strip() and s.strip().lower() != "none"
                     ] if raw_sk else []
 
-                    tasks_list.append({
+                    plan_meta: dict = {}
+                    plan_json_path = tasks_dir / f"{tid}.plan.json" if tasks_dir.is_dir() else None
+                    if plan_json_path and plan_json_path.is_file():
+                        try:
+                            loaded_plan = json.loads(plan_json_path.read_text(encoding="utf-8-sig"))
+                            if isinstance(loaded_plan, dict):
+                                plan_meta = loaded_plan
+                        except Exception:
+                            pass
+
+                    planned_tokens = plan_meta.get("planned_tokens")
+                    if planned_tokens is None and header.get("planned tokens"):
+                        m_tok = re.search(r"\d+", header["planned tokens"])
+                        if m_tok:
+                            planned_tokens = int(m_tok.group(0))
+
+                    planned_cost_usd = plan_meta.get("planned_cost_usd")
+                    if planned_cost_usd is None and header.get("planned cost usd"):
+                        m_cost = re.search(r"[0-9]+(?:\.[0-9]+)?", header["planned cost usd"])
+                        if m_cost:
+                            planned_cost_usd = float(m_cost.group(0))
+
+                    task_entry = {
                         "id": tid,
                         "title": row_dict.get("Title", ""),
                         "stage": row_dict.get("Stage", ""),
@@ -378,7 +409,16 @@ def get_tasks_data(project_path: str = None) -> dict:
                         "criteria": criteria,
                         "criteria_count": len(criteria),
                         "allowed_files": allowed[:5],
-                    })
+                    }
+                    if planned_tokens is not None:
+                        task_entry["planned_tokens"] = int(planned_tokens)
+                    if "planned_input_tokens" in plan_meta:
+                        task_entry["planned_input_tokens"] = int(plan_meta["planned_input_tokens"])
+                    if "planned_output_tokens" in plan_meta:
+                        task_entry["planned_output_tokens"] = int(plan_meta["planned_output_tokens"])
+                    if planned_cost_usd is not None:
+                        task_entry["planned_cost_usd"] = float(planned_cost_usd)
+                    tasks_list.append(task_entry)
         except Exception as e:
             return {
                 "error": str(e),
@@ -895,29 +935,58 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
             title = title[:75].rsplit(" ", 1)[0] + "..."
 
         assess = _assess_task_complexity(item, item_files)
+        req_model = str(body.get("model") or "").strip()
+        req_tool = str(body.get("tool") or "").strip()
+        task_model = (
+            req_model
+            if req_model and req_model not in ("swe-2-high", "gemini-4-argon-high")
+            else assess["model"]
+        )
+        task_tool = req_tool or ("ollama" if "ollama" in task_model.lower() or "local" in task_model.lower() else "devin")
+        task_effort = str(body.get("effort") or assess["effort"]).strip()
         skills = map_task_skills(root, item, item_files)
         role = "developer"
         criteria = [
             f"C-01: {title} implemented within allowed files ({', '.join(item_files[:3])}).",
             f"C-02: Verification suite passes cleanly: python -m unittest discover -s {flow_root.name}/tests.",
         ]
+        budget = estimate_task_budget(
+            prompt_text=item,
+            blast_files=item_files,
+            effort=task_effort,
+            complexity=assess["complexity"],
+            model=task_model,
+            tool=task_tool,
+            root=root,
+            flow_root=flow_root,
+        )
         draft_tasks.append({
             "title": title,
             "role": role,
-            "tool": "devin",
-            "effort": assess["effort"],
+            "tool": task_tool,
+            "effort": task_effort,
             "complexity": assess["complexity"],
             "tier": assess["tier"],
-            "model": assess["model"],
+            "model": task_model,
             "skills": skills,
             "goal": item,
             "allowed": item_files,
             "allowed_files": item_files,
             "blast_radius": item_files,
             "criteria": criteria,
+            "planned_input_tokens": budget["planned_input_tokens"],
+            "planned_output_tokens": budget["planned_output_tokens"],
+            "planned_tokens": budget["planned_tokens"],
+            "planned_cost_usd": budget["planned_cost_usd"],
+            "rate_per_1m": budget["rate_per_1m"],
+            "free": budget["free"],
         })
 
     tasks, stages_summary = _assign_stage_topology(draft_tasks, next_num=next_num, base_stage=base_stage)
+    total_input_tokens = sum(int(t.get("planned_input_tokens", 0)) for t in tasks)
+    total_output_tokens = sum(int(t.get("planned_output_tokens", 0)) for t in tasks)
+    total_planned_tokens = sum(int(t.get("planned_tokens", 0)) for t in tasks)
+    total_planned_cost = round(sum(float(t.get("planned_cost_usd", 0.0)) for t in tasks), 6)
 
     result = {
         "ok": True,
@@ -927,6 +996,10 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
         "symbols": blast["symbols"],
         "blast_radius": blast,
         "stages": stages_summary,
+        "planned_input_tokens": total_input_tokens,
+        "planned_output_tokens": total_output_tokens,
+        "planned_tokens": total_planned_tokens,
+        "planned_cost_usd": total_planned_cost,
         "tasks": tasks,
         "pool": tasks,
     }
@@ -934,6 +1007,7 @@ def synthesize_tasks_from_chat(root: Path, body: dict) -> dict:
         reg = register_task_pool(root, tasks, default_stage=str(base_stage))
         result["registered"] = reg.get("registered", [])
         result["files"] = reg.get("files", [])
+        result["plan_files"] = reg.get("plan_files", [])
     return result
 
 
@@ -946,6 +1020,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
     next_num = _next_task_number(flow_root)
     registered_ids: list[str] = []
     created_files: list[str] = []
+    created_plan_files: list[str] = []
     normalized_tasks: list[dict] = []
 
     lines, cols, rows, head, end = ledger.load(ledger_file)
@@ -970,6 +1045,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         tool = str(raw.get("tool") or "devin").strip()
         model = str(raw.get("model") or "swe-2-high").strip()
         effort = str(raw.get("effort") or "high").strip()
+        complexity_val = raw.get("complexity") or ("high" if effort in ("high", "xhigh", "max", "ultra") else "standard")
         raw_dep = raw.get("depends") or raw.get("depends_on") or "none"
         if isinstance(raw_dep, list):
             depends = ", ".join(str(d).strip() for d in raw_dep if str(d).strip()) or "none"
@@ -990,6 +1066,34 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         skills_str = ", ".join(skills_list) if skills_list else "none"
         raw_criteria = raw.get("criteria") or []
 
+        budget = estimate_task_budget(
+            prompt_text=goal,
+            blast_files=allowed,
+            effort=effort,
+            complexity=complexity_val,
+            model=model,
+            tool=tool,
+            root=target_root,
+            flow_root=flow_root,
+        )
+        planned_input_tokens = int(raw["planned_input_tokens"]) if raw.get("planned_input_tokens") is not None else budget["planned_input_tokens"]
+        planned_output_tokens = int(raw["planned_output_tokens"]) if raw.get("planned_output_tokens") is not None else budget["planned_output_tokens"]
+        if raw.get("planned_tokens") is not None:
+            planned_tokens = int(raw["planned_tokens"])
+            if raw.get("planned_input_tokens") is None:
+                planned_input_tokens = max(0, planned_tokens - planned_output_tokens)
+        else:
+            planned_tokens = planned_input_tokens + planned_output_tokens
+
+        pricing_info = lookup_model_pricing(model=model, tool=tool, flow_root=flow_root)
+        if raw.get("planned_cost_usd") is not None:
+            planned_cost_usd = round(float(raw["planned_cost_usd"]), 6)
+        else:
+            planned_cost_usd = round(
+                (planned_input_tokens * pricing_info["input_per_1m"] + planned_output_tokens * pricing_info["output_per_1m"]) / 1_000_000,
+                6,
+            )
+
         norm_criteria: list[str] = []
         for c_idx, c in enumerate(raw_criteria, 1):
             c_str = str(c.get("text") if isinstance(c, dict) else c).strip()
@@ -1004,6 +1108,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48].strip("-")
         filename = f"{tid}-{slug}.md" if slug else f"{tid}.md"
         file_path = tasks_dir / filename
+        plan_path = tasks_dir / f"{tid}.plan.json"
 
         allowed_bullets = nl.join(f"- {bt}{f}{bt}" for f in allowed) if allowed else "- none"
         criteria_bullets = nl.join(f"- [ ] {c}" for c in norm_criteria)
@@ -1019,6 +1124,8 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             f"Stage: {stage}",
             f"Depends on: {depends}",
             f"Skills: {skills_str}",
+            f"Planned tokens: {planned_tokens} (in: {planned_input_tokens}, out: {planned_output_tokens})",
+            f"Planned cost USD: ${planned_cost_usd:.4f}",
             f"Branch: {tid.lower()}-{slug or 'task'}",
             f"Worktree: {wt_path}",
             "Independent check: tester",
@@ -1068,6 +1175,29 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         ]
         file_path.write_text(nl.join(task_lines), encoding="utf-8")
 
+        plan_record = {
+            "task_id": tid,
+            "id": tid,
+            "title": title,
+            "stage": int(stage) if str(stage).isdigit() else stage,
+            "role": role,
+            "tool": tool,
+            "model": model,
+            "effort": effort,
+            "complexity": complexity_val,
+            "planned_input_tokens": planned_input_tokens,
+            "planned_output_tokens": planned_output_tokens,
+            "planned_tokens": planned_tokens,
+            "planned_cost_usd": planned_cost_usd,
+            "rate_per_1m": pricing_info["rate_per_1m"],
+            "input_per_1m": pricing_info["input_per_1m"],
+            "output_per_1m": pricing_info["output_per_1m"],
+            "free": pricing_info["free"],
+            "blast_radius": list(allowed),
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        plan_path.write_text(json.dumps(plan_record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
         row = [""] * len(cols)
         row[cols.index("ID")] = tid
         row[cols.index("Title")] = title
@@ -1088,8 +1218,10 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             rows.append(row)
 
         rel_path = file_path.relative_to(target_root).as_posix() if file_path.is_relative_to(target_root) else str(file_path)
+        rel_plan_path = plan_path.relative_to(target_root).as_posix() if plan_path.is_relative_to(target_root) else str(plan_path)
         registered_ids.append(tid)
         created_files.append(rel_path)
+        created_plan_files.append(rel_plan_path)
         normalized_tasks.append({
             "id": tid,
             "title": title,
@@ -1099,7 +1231,12 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
             "model": model,
             "effort": effort,
             "skills": skills_list,
+            "planned_input_tokens": planned_input_tokens,
+            "planned_output_tokens": planned_output_tokens,
+            "planned_tokens": planned_tokens,
+            "planned_cost_usd": planned_cost_usd,
             "file": rel_path,
+            "plan_file": rel_plan_path,
         })
 
     if registered_ids:
@@ -1109,6 +1246,7 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
         "ok": bool(registered_ids),
         "registered": registered_ids,
         "files": created_files,
+        "plan_files": created_plan_files,
         "tasks": normalized_tasks,
         "task_id": registered_ids[0] if registered_ids else "",
         "file": created_files[0] if created_files else "",
