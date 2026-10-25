@@ -536,3 +536,12 @@ Ended: ledger fully clean, tick.json no needs/waits, stage 7 gate PASS. What wai
 - Recorded tester-proposed known-issues: test_scenarios PermissionError flake (second observation) + pre-existing <=600px sidebar clipping limitation (candidate future task, human's call).
 
 Ended: ledger fully clean, tick.json no needs/waits, main@6a059a4.
+
+2026-10-25 background orchestrator (devin-background), ~19:45-20:20Z: closed the open tick need - T-175/T-176.
+
+- tick.json named one need: T-175 developer completed, "write its tester task". T-176 existed but was never linked: its header lacked `Verifies:` so `testers_of` could not bind it. Added `Verifies: T-175 @ e3ab0ecb3002e45abdaee909580147c73052654e`, set it `ready`, launched via run-task.ps1.
+- T-176 exited `completed`, `Verdict: pass` on V-01..V-08 (test_studio 112/112, full suite 616/0+4skip; one transient WinError 5 fixture flake already in known-issues). gate verify flagged one evidence-scope formality: V-08's `evidence:` list cited `.agentsflower/state/known-issues.md` (outside the checked task's scope). Dropped that token from the evidence claim - the reference stays in prose; verdict and contract unchanged - then accepted T-176.
+- T-175 verify failed twice on formality: attempt 1 status `error` + "Task File changed above ## Result" - both from the human's mid-attempt contract extension (goal 4 / C-06), which the worker had implemented and the tester verified at the same SHA. No re-baseline exists and `--recheck` re-compares the stale baseline, so Recovery launched attempt 2 (fresh baseline = current contract): worker confirmed the artifact complete, reran checks (112/112), left the Result unchanged, exited `completed`. Accepted T-175, merged at 0b2cad3, worktree/branch cleaned.
+- Note for future orchestrators: a tester Task File drafted before the checked SHA exists needs its `Verifies:` filled by the orchestrator; tick's `decide()` does not model the pre-merge tester exception (`Depends on` the checked task is satisfied by review status) - launch the ready tester directly through the launcher.
+
+Ended: ledger fully clean, tick.json no needs/waits, main@0b2cad3.

@@ -159,5 +159,5 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-166 | Verify Telemetry Fact Tracking and Studio Cost & ROI Dashboard | 7 | tester | devin | done | T-165 | 30bd454f3ba1418a92067fb2b94ec87ce0f7770d | Tester for T-165; verifies cost dashboard rendering, aggregations, and math (ledger row restored after silent drop) | 2026-10-25 06:39 |
 | T-173 | Model Quota Hub UI Polish and Cockpit Cleanup | 7 | developer | devin | done | T-172 | 3f28f31f80ad29509e7d6e5a16a614c706e53095 | Outcome completed @ 3f28f31; awaiting tester T-174 verdict | 2026-10-25 09:51 |
 | T-174 | Verify Model Quota Hub UI Polish and Cockpit Cleanup | 7 | tester | devin | done | T-173 | 3f28f31f80ad29509e7d6e5a16a614c706e53095 |  | 2026-10-25 09:51 |
-| T-175 | Chat Thread Selector Folders and Project Isolation | 7 | developer | devin | ready | T-174 |  |  | 2026-10-25 19:23 |
-| T-176 | Verify Chat Thread Selector and Project Isolation | 7 | tester | devin | blocked | T-175 |  |  | 2026-10-25 19:23 |
+| T-175 | Chat Thread Selector Folders and Project Isolation | 7 | developer | devin | done | T-174 | e3ab0ecb3002e45abdaee909580147c73052654e |  | 2026-10-25 20:19 |
+| T-176 | Verify Chat Thread Selector and Project Isolation | 7 | tester | devin | done | T-175 | e3ab0ecb3002e45abdaee909580147c73052654e | Tester for T-175 @ e3ab0ec; Verifies added, launched by background orchestrator | 2026-10-25 20:06 |

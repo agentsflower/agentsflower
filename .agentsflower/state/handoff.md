@@ -1,6 +1,28 @@
 # Session Handoff
 
-As of: 2026-10-25 ~09:55Z, main@6a059a4 (T-173 merge; ledger fully clean).
+As of: 2026-10-25 ~20:20Z, main@0b2cad3 (T-175 merge; ledger fully clean).
+
+Background session devin-background, ~19:45-20:20Z: resolved the tick need
+(T-175 developer completed, "write its tester task"). T-176 already existed
+but lacked `Verifies:` - added `Verifies: T-175 @ e3ab0ec…`, set it `ready`,
+launched it directly via run-task.ps1 (tick's decide() does not model the
+pre-merge tester exception). T-176 `Verdict: pass` on all 8 criteria
+(112 + 616 tests). Fixed one evidence-scope formality in its Result
+(out-of-scope known-issues.md token under `evidence:`; verdict unchanged),
+then accepted T-176. T-175's attempt 1 was `error` - end check caught the
+human's deliberate mid-attempt contract extension (goal 4/C-06, which the
+worker had implemented and the tester verified). No re-baseline exists, so
+Recovery launched attempt 2: worker confirmed the artifact complete and
+unchanged, exited clean; T-175 accepted and merged at 0b2cad3, worktree and
+branch cleaned.
+
+What waits: nothing mechanical - tick clean, ledger clean. For the human:
+`.agentsflower/state/project-models.json` (all platforms `enabled:false`,
+written by Studio use) breaks 5 test_studio capacity tests when present in
+the main folder - now gitignored as local state; the underlying test
+isolation gap is in known-issues.md as a candidate task. Earlier notes:
+the <=600px sidebar clipping limitation from T-174 still stands; conductor
+autostart unchanged.
 
 Background session devin-background, ~09:10-09:55Z: resolved the tick need
 (T-173 launch refused at preflight, "## Checks empty") - the fix was already

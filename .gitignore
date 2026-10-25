@@ -2,6 +2,8 @@
 # local FPF spec copy, not part of the template
 FPF-Spec/
 .agentsflower/state/attached_projects.json
+# per-machine Studio platform/provider toggles - local state, breaks the suite if committed with platforms off
+.agentsflower/state/project-models.json
 
 # agentsflower:begin
 .agentsflower/tasks/.runtime/

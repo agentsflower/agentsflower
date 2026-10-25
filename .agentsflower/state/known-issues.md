@@ -181,3 +181,10 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   minimum, so capacity cards are clipped with no horizontal scroll.
   Card-internal layout stays collision-free; candidate for a future
   responsive-layout task.
+- 2026-10-25 - test_studio suite couples to ambient repo state: `.agentsflower/state/project-models.json`
+  (written by Studio platform toggles) is read by `probe_capacity` during tests run in the main folder.
+  With platforms marked `enabled: false` locally, 5 capacity/probe tests fail
+  (test_probe_marks_missing_platforms, test_probe_scans_platforms_and_serves_cache,
+  test_probe_single_platform_codex_catalog_fallback, test_probe_single_platform_serves_own_cache,
+  test_codex_models_come_from_live_cli); clean checkouts pass. File now gitignored as local state
+  (same class as attached_projects.json). Candidate fix: isolate the project-state read in tests.

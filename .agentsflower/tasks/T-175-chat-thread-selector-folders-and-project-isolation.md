@@ -97,4 +97,28 @@ Implement the structured two-section Thread Selector matching the user's mockup 
 
 ## Result
 
-<!-- Worker writes outcome below -->
+Outcome: completed
+Change: e3ab0ec on t-175-chat-thread-selector-folders-and-project-isolation
+Files:
+- .agentsflower/studio/index.html - restored `data-sub="costs"` subtab button `#btnSubtabCosts` and the `#costRoiDashboard` panel (summary cards, stage bar, stage filter, Plan vs Fact task table)
+- .agentsflower/studio/studio.js - two-section thread selector: `buildThreadSection`/`buildFolderGroup`/`buildStageGroup`/`buildCollapsibleHeader`/`buildCollapsibleBody`/`toggleThreadCollapse`/`groupTasksByStage`/`threadSearchText`/`addResearchFolder`, `fillThreadList` renders `🔍 Researches` (pinned General Chat, folder groups, unfiled) and `⚙️ Implementations` (stage groups, `T-XXX — Title` + status badge), top search filters names/folders/ids/titles/stage labels, ArrowUp/Down/Enter/Escape + ArrowLeft/Right collapse; `switchProject` resets `state.threads`/`state.researchMeta`/`state.researchFolders` and explicitly awaits `loadResearchThreads(path)` + `loadCostAnalytics(path)`; `?project=` on `/api/research/create` and `/api/research/update`; restored `loadCostAnalytics`/`renderCostDashboard`/`formatSignedUsd`/`formatDeltaPct`, `costs` branch in `updateAnalyticsFrame`, `costStageFilter` listener
+- .agentsflower/studio/studio.css - glassmorphism dropdown (`backdrop-filter`, custom scrollbar), `.thread-section*`/`.researches-header`/`.implementations-header` accents (blue / emerald), `.thread-folder-*`, `.thread-stage-*`, `.thread-sec-btn`, collapsed grid transitions; restored `.cost-roi-*`/`.cost-stage-*`/`.cost-task-table`/`.cost-delta-pill`/`.cost-status-badge` styles
+- .agentsflower/tools/studio.py - `probe_capacity` loads project state before spawning probes and skips threads/CLI/network calls for `platforms[name].enabled is False` (bulk and `?platform=` paths, `_platform(...note="deactivated for this project - probe skipped")` + `enabled=False`); `_probe_provider(..., live_probe=)` and `_provider_probe` skip the live `/models` request for `enabled=False` providers
+- .agentsflower/tests/test_studio.py - new `test_probe_skips_deactivated_platform_and_provider`, `test_probe_single_platform_respects_deactivation`, `test_research_threads_scoped_per_project`; `TestFlatThreadSwitcher` reworked to `TestStructuredThreadSwitcher` (the T-173 flat-list/removal markers contradicted this task's contract); `test_cost_and_roi_dashboard_subtab_in_analytics_view` replaces the removed-subtab test; `test_project_toggle_persists_and_scopes_to_project` asserts deactivated platforms carry no probed models
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (112 passed / 0 failed)
+Criteria:
+- C-01: pass - `.thread-section-top.researches-header` ("🔍 Researches" + count badge + `+ New`/`📁 + Folder` actions) and `.implementations-header` ("⚙️ Implementations" + count badge), glassmorphism dropdown with custom scrollbar - evidence: .agentsflower/studio/studio.js, .agentsflower/studio/studio.css
+- C-02: pass - folder meta groups threads under collapsible `📁 <name> (<count>)` headers (`buildFolderGroup`); `📁 + Folder` prompts and creates a session folder category (`addResearchFolder` -> `state.researchFolders`, merged into the inspector folder select for assignment); dblclick inline rename retained - evidence: .agentsflower/studio/studio.js
+- C-03: pass - `groupTasksByStage` + `buildStageGroup` render collapsible `Stage 01`-style groups; items show `T-XXX —` + `.thread-item-title` + `.thread-item-status` badge - evidence: .agentsflower/studio/studio.js
+- C-04: pass - `switchProject` resets `state.threads`/`state.researchMeta`/`state.researchFolders` and explicitly awaits `loadResearchThreads(path)`; research API calls carry `?project=`; server resolves strictly under `<project>/<flow>/state/research/` - evidence: .agentsflower/tests/test_studio.py (`test_research_threads_scoped_per_project`)
+- C-05: pass - `probe_capacity` spawns no thread/CLI/network call for `enabled: false` platforms or providers, returning `_platform(..., note="deactivated for this project - probe skipped")` with `enabled=False` - evidence: .agentsflower/tools/studio.py, .agentsflower/tests/test_studio.py (two new probe-bypass tests)
+- C-06: pass - `#btnSubtabCosts` (`data-sub="costs"`) + `#costRoiDashboard` restored; `updateAnalyticsFrame` costs branch shows the panel and `loadCostAnalytics` fetches `/api/analytics/costs?project=` (init, switchProject, rebuild) - evidence: .agentsflower/studio/index.html, .agentsflower/studio/studio.js
+- C-07: pass - 112 tests, 0 failures
+Found, not fixed:
+- The frontend never calls GET `/api/research/thread` (it loads `/api/research/list`); the endpoint already honors `?project=` server-side, so no client call site existed to parameterize.
+- `📁 + Folder` folders are session-scoped (`state.researchFolders`): a folder persists on disk only once a thread is assigned to it, because folders live on thread records (no folder registry in the data model).
+- `loadTasks` still invokes `loadResearchThreads` internally for its other callers (init, refresh, move-stage), so `switchProject` now issues a duplicate idempotent GET `/api/research/list` per the contract's explicit-call requirement.
+- The task contract was extended mid-attempt (goal 4 / C-06 added at 22:27); covered by this change.
+Proposed memory updates:
+- none
