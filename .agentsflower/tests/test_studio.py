@@ -1108,10 +1108,15 @@ class TestCapacityHub(StudioApiCase):
             "status-badge",
             "setDefaultWorkerModel",
             "local_free",
+            "capacity-card-header",
+            "capacity-card-status-row",
+            "platform-enable-toggle",
         ):
             self.assertIn(marker, js)
 
-        for marker in (".status-badge", ".local-model-item", ".btn-set-default"):
+        for marker in (".status-badge", ".local-model-item", ".btn-set-default",
+                       ".capacity-card-header", ".capacity-card-status-row",
+                       "minmax(320px"):
             self.assertIn(marker, css)
 
     def test_chat_platform_selector_ui_markers(self):
@@ -1844,8 +1849,8 @@ class TestStudioChatEngine(StudioApiCase):
             self.assertIn(marker, css)
 
 
-class TestHierarchicalThreadSwitcher(StudioApiCase):
-    """Tests for T-155: hierarchical thread switcher (Researches + Implementations)."""
+class TestFlatThreadSwitcher(StudioApiCase):
+    """T-173: flat, searchable thread switcher (single list, no nested accordions)."""
 
     def shell_assets(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
@@ -1869,37 +1874,44 @@ class TestHierarchicalThreadSwitcher(StudioApiCase):
         self.assertNotIn('id="inspectorTaskSelect"', html)
         self.assertNotIn('class="chat-task-select"', html)
 
-    def test_dropdown_builds_two_collapsible_sections(self):
+    def test_dropdown_builds_flat_searchable_list(self):
         _, js, _ = self.shell_assets()
         for marker in (
-            "'researches'",
-            "'implementations'",
-            "🔍 Researches",
-            "Implementations",
-            "thread-section",
-            "thread-section-header",
-            "thread-section-body",
-            "thread-count",
+            "thread-search",
+            "threadSearchInput",
+            "thread-list",
+            "fillThreadList",
+            "data-search",
+            "state.threadFilter",
+            "Research & Inception",
+            "(General Chat)",
             "thread-add",
-            "threadCollapsed",
-            "toggleThreadCollapse",
-            "aria-expanded",
         ):
             self.assertIn(marker, js)
+        for removed in (
+            "thread-section",
+            "data-collapse-key",
+            "toggleThreadCollapse",
+            "threadCollapsed",
+            "buildCollapsibleHeader",
+            "buildThreadSection",
+        ):
+            self.assertNotIn(removed, js)
 
-    def test_implementations_grouped_under_stage_subheaders(self):
+    def test_task_items_show_id_title_stage_and_status(self):
         _, js, _ = self.shell_assets()
         for marker in (
-            "groupTasksByStage",
+            "thread-item-id",
+            "thread-item-title",
+            "thread-item-stage",
+            "thread-item-status",
             "stageLabel",
-            "'Stage '",
-            "padStart(2",
-            "thread-stage-group",
-            "thread-stage-header",
-            "thread-stage-body",
-            "data-stage",
+            "threadStatusClass",
+            "data-thread",
         ):
             self.assertIn(marker, js)
+        for removed in ("groupTasksByStage", "thread-stage-group", "thread-stage-header"):
+            self.assertNotIn(removed, js)
 
     def test_thread_items_selection_and_click_handlers(self):
         _, js, _ = self.shell_assets()
@@ -1921,32 +1933,36 @@ class TestHierarchicalThreadSwitcher(StudioApiCase):
             "keydown",
             "ArrowDown",
             "ArrowUp",
-            "ArrowLeft",
-            "ArrowRight",
             "Enter",
             "Escape",
             "threadFocusables",
         ):
             self.assertIn(marker, js)
 
-    def test_css_dark_theme_accent_and_accordion_styles(self):
+    def test_css_dark_theme_flat_list_styles(self):
         _, _, css = self.shell_assets()
         for marker in (
             ".thread-selector-wrap",
             ".thread-pill",
             ".thread-dropdown",
-            ".thread-section-header",
-            ".thread-stage-group",
-            ".thread-stage-header",
+            ".thread-search",
+            ".thread-list",
             ".thread-item",
             ".thread-item.active",
+            ".thread-item-stage",
+            ".thread-item-status",
             "#134e9e",
             "#060a12",
             "transition",
-            "grid-template-rows",
         ):
             self.assertIn(marker, css)
-        self.assertNotIn(".chat-task-select", css)
+        for removed in (
+            ".chat-task-select",
+            ".thread-section",
+            ".thread-stage",
+            ".thread-folder",
+        ):
+            self.assertNotIn(removed, css)
 
 
 class TestResearchThreads(StudioApiCase):
@@ -2177,9 +2193,6 @@ class TestResearchThreads(StudioApiCase):
             "/api/research/update",
             "/api/research/list",
             "Task Research - ",
-            "buildFolderGroup",
-            "thread-folder-header",
-            "thread-folder-group",
             "thread-rename-input",
             "startRenameThread",
             "extractRefsFromText",
@@ -2190,8 +2203,6 @@ class TestResearchThreads(StudioApiCase):
         ):
             self.assertIn(marker, js)
         for marker in (
-            ".thread-folder-header",
-            ".thread-folder-group",
             ".thread-rename-input",
             ".ref-chip",
             ".research-ctl-select",
@@ -2225,15 +2236,17 @@ class TestTaskChatAndStageCollisionGuard(StudioApiCase):
     def test_implementations_manual_creation_disabled_in_ui_and_api(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
             js = resp.read().decode("utf-8")
+        # The "+" affordance in the flat switcher only creates research threads;
+        # implementation tasks can only come from synthesis, never manual add.
         for marker in (
-            "buildThreadSection('implementations', 'Implementations', state.tasks.length, false",
-            "sectionKey !== 'implementations'",
-            "data-manual-create",
+            "thread-add",
+            "addResearchThread",
             "/api/task/move-stage",
             "moveTaskStage",
             "taskWorktreeStatus",
         ):
             self.assertIn(marker, js)
+        self.assertNotIn("data-manual-create", js)
 
         code, res = self.api("/api/task/create", method="POST", body={
             "project": str(studio.REPO_ROOT),
@@ -3020,7 +3033,8 @@ class TestTelemetryFactAndCostDashboard(StudioApiCase):
             self.assertEqual(t510["execution_time_seconds"], 0.0)
             self.assertEqual(t510["model_calls"], 0)
 
-    def test_cost_and_roi_dashboard_ui_contract(self):
+    def test_cost_and_roi_dashboard_removed_from_analytics_view(self):
+        """T-173: the unsolicited Cost & ROI subtab is gone; analytics keeps 3 subtabs."""
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
             html = resp.read().decode("utf-8")
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
@@ -3029,47 +3043,110 @@ class TestTelemetryFactAndCostDashboard(StudioApiCase):
             css = resp.read().decode("utf-8")
 
         for marker in (
+            'data-sub="index"',
+            'data-sub="graph"',
+            'data-sub="roadmap"',
+        ):
+            self.assertIn(marker, html)
+
+        for removed in (
             'data-sub="costs"',
+            'id="btnSubtabCosts"',
             "Cost &amp; ROI Dashboard",
             'id="costRoiDashboard"',
             'id="costTotalPlanned"',
             'id="costTotalActual"',
             'id="costNetSavings"',
             'id="costLocalFreePct"',
-            "Total Planned ($)",
-            "Total Actual ($)",
-            "Net Savings ($)",
-            "Local/Free Tokens (%)",
             'id="costStageDistribution"',
             'id="costTaskTableBody"',
-            "Stage",
-            "Task ID",
-            "Title",
-            "Model",
-            "Plan ($)",
-            "Fact ($)",
-            "Delta (%)",
-            "Status",
         ):
-            self.assertIn(marker, html)
+            self.assertNotIn(removed, html)
 
-        for marker in (
-            "/api/analytics/costs",
+        for removed in (
             "loadCostAnalytics",
             "renderCostDashboard",
             "costRoiDashboard",
             "costStageDistribution",
             "costTaskTableBody",
+            "costAnalytics",
         ):
-            self.assertIn(marker, js)
+            self.assertNotIn(removed, js)
 
-        for marker in (
+        for removed in (
             ".cost-roi-dashboard",
             ".cost-summary-grid",
             ".cost-stage-bar",
             ".cost-task-table",
         ):
-            self.assertIn(marker, css)
+            self.assertNotIn(removed, css)
+
+
+class TestProjectNamingAndDashboardPlaceholder(StudioApiCase):
+    """T-173: generic directory names get parent disambiguation, parent folders
+    resolve to child flow roots, and unbuilt dashboards serve an HTML placeholder."""
+
+    def setUp(self):
+        self._attached = (studio.ATTACHED_FILE.read_text(encoding="utf-8")
+                          if studio.ATTACHED_FILE.is_file() else None)
+
+    def tearDown(self):
+        if self._attached is None:
+            studio.ATTACHED_FILE.unlink(missing_ok=True)
+        else:
+            studio.ATTACHED_FILE.write_text(self._attached, encoding="utf-8")
+
+    def test_display_name_disambiguates_generic_dirs(self):
+        for generic in ("code", "site", "v1", "v2"):
+            self.assertEqual(
+                studio.project_display_name(Path("AntiBrowser") / generic),
+                f"AntiBrowser / {generic}",
+            )
+        self.assertEqual(
+            studio.project_display_name(Path("workspace") / "MyProj"), "MyProj")
+
+    def test_flow_root_resolves_code_and_src_children(self):
+        with tempfile.TemporaryDirectory() as td:
+            parent = Path(td) / "AntiBrowser"
+            child = parent / "code" / ".agentsflower"
+            child.mkdir(parents=True)
+            self.assertEqual(studio.get_project_flow_root(parent), child)
+            self.assertTrue(studio.get_project_info(parent)["has_framework"])
+        with tempfile.TemporaryDirectory() as td:
+            parent = Path(td) / "SiteHost"
+            child = parent / "src" / ".agentflow"
+            child.mkdir(parents=True)
+            self.assertEqual(studio.get_project_flow_root(parent), child)
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(studio.get_project_flow_root(Path(td)))
+
+    def test_project_list_disambiguates_generic_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "AntiBrowser" / "code"
+            (proj / ".agentsflower" / "state").mkdir(parents=True)
+            studio.save_attached_project(str(proj))
+            code_, res = self.api("/api/projects")
+            self.assertEqual(code_, 200, res)
+            entry = next(p for p in res["projects"]
+                         if Path(p["path"]).resolve() == proj.resolve())
+            self.assertEqual(entry["name"], "AntiBrowser / code")
+            self.assertTrue(entry["has_framework"])
+
+    def test_dashboard_placeholder_for_unbuilt_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "unbuilt_proj"
+            (proj / ".agentsflower" / "state").mkdir(parents=True)
+            studio.save_attached_project(str(proj))
+            url = (f"http://127.0.0.1:{self.port}/dashboard/out/index.html?"
+                   + self.q({"project": str(proj)}))
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(url)
+            self.assertEqual(cm.exception.code, 404)
+            self.assertIn("text/html", cm.exception.headers.get("Content-Type", ""))
+            body = cm.exception.read().decode("utf-8")
+            self.assertIn("<html", body.lower())
+            self.assertIn("Dashboard not yet generated", body)
+            self.assertIn("Rebuild Analytics", body)
 
 
 if __name__ == "__main__":

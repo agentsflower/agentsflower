@@ -28,7 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
     inspectorTaskId: 'research',
     threads: { research: [] },
     researchMeta: {},
-    threadCollapsed: new Set(),
     pendingInstall: null,
     openTabs: [],
     chatModel: 'swe-2-high',
@@ -37,8 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     platformData: {},
     capacityData: null,
     defaultWorkerModel: null,
-    costAnalytics: null,
-    costStageFilter: 'all',
+    threadFilter: '',
   };
 
   const CHAT_PLATFORMS = [
@@ -135,8 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Analytics Elements
   const analyticsFrame = document.getElementById('analyticsFrame');
   const analyticsFrameWrapper = document.getElementById('analyticsFrameWrapper');
-  const costRoiDashboard = document.getElementById('costRoiDashboard');
-  const costStageFilterEl = document.getElementById('costStageFilter');
   const btnRebuildDashboard = document.getElementById('btnRebuildDashboard');
   const btnOpenExternalDashboard = document.getElementById('btnOpenExternalDashboard');
   const subTabButtons = document.querySelectorAll('.btn-subtab');
@@ -220,7 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
     await loadStatus();
     await loadTasks();
     await loadCapacity();
-    await loadCostAnalytics();
     paintDashThemeToggle();
     updateAnalyticsFrame();
   }
@@ -438,13 +433,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    if (costStageFilterEl) {
-      costStageFilterEl.addEventListener('change', () => {
-        state.costStageFilter = costStageFilterEl.value || 'all';
-        if (state.costAnalytics) renderCostDashboard(state.costAnalytics);
-      });
-    }
-
     // Rebuild Analytics
     if (btnRebuildDashboard) {
       btnRebuildDashboard.addEventListener('click', async () => {
@@ -455,7 +443,6 @@ document.addEventListener('DOMContentLoaded', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: state.currentProject })
         });
-        await loadCostAnalytics(state.currentProject);
         btnRebuildDashboard.disabled = false;
         btnRebuildDashboard.innerHTML = `
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -463,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         if (res && res.ok) {
           updateAnalyticsFrame(true);
-        } else if (state.analyticsSubTab !== 'costs') {
+        } else {
           alert('Analytics rebuild error: ' + (res ? res.error : 'Unknown error'));
         }
       });
@@ -592,13 +579,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Analytics Sub-tab Frame Updater ---
   function updateAnalyticsFrame(forceReload = false) {
-    if (state.analyticsSubTab === 'costs') {
-      if (analyticsFrameWrapper) analyticsFrameWrapper.style.display = 'none';
-      if (costRoiDashboard) costRoiDashboard.style.display = 'flex';
-      loadCostAnalytics(state.currentProject);
-      return;
-    }
-    if (costRoiDashboard) costRoiDashboard.style.display = 'none';
     if (analyticsFrameWrapper) analyticsFrameWrapper.style.display = '';
     if (!analyticsFrame) return;
     const pathMap = {
@@ -615,186 +595,6 @@ document.addEventListener('DOMContentLoaded', () => {
     analyticsFrame.src = `${targetUrl}${baseQs}${baseQs ? '&' : '?'}embedded=1`;
     if (btnOpenExternalDashboard) btnOpenExternalDashboard.href = `${targetUrl}${baseQs}`;
     setAnalyticsBuilt('');
-  }
-
-  // --- Cost & ROI Dashboard (Plan vs Fact Telemetry) ---
-  async function loadCostAnalytics(projPath = '') {
-    const target = projPath || state.currentProject;
-    const query = target ? `?project=${encodeURIComponent(target)}` : '';
-    const res = await fetchJSON(`/api/analytics/costs${query}`);
-    if (res && res.ok) {
-      state.costAnalytics = res;
-      renderCostDashboard(res);
-    }
-  }
-
-  function formatSignedUsd(val) {
-    const n = Number(val) || 0;
-    if (Math.abs(n) < 0.000001) return '$0.00';
-    const absStr = Math.abs(n) < 0.01 ? ('$' + Math.abs(n).toFixed(4)) : ('$' + Math.abs(n).toFixed(2));
-    return (n > 0 ? '+' : '-') + absStr;
-  }
-
-  function formatDeltaPct(pct) {
-    const n = Number(pct) || 0;
-    if (Math.abs(n) < 0.01) return '0.0%';
-    return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
-  }
-
-  function renderCostDashboard(data) {
-    const summary = (data && data.summary) || data || {};
-    const stages = (data && data.stages) || [];
-    const tasks = (data && data.tasks) || [];
-
-    const elPlanned = document.getElementById('costTotalPlanned');
-    const elActual = document.getElementById('costTotalActual');
-    const elSavings = document.getElementById('costNetSavings');
-    const elFreePct = document.getElementById('costLocalFreePct');
-
-    const elPlannedMeta = document.getElementById('costPlannedTokensMeta');
-    const elActualMeta = document.getElementById('costActualTokensMeta');
-    const elSavingsMeta = document.getElementById('costSavingsMeta');
-    const elFreeMeta = document.getElementById('costLocalFreeMeta');
-
-    const totalPlanUsd = Number(summary.total_planned_usd ?? summary.planned_cost_usd) || 0;
-    const totalActualUsd = Number(summary.total_actual_usd ?? summary.actual_cost_usd) || 0;
-    const netSavingsUsd = Number(summary.net_savings_usd ?? (totalPlanUsd - totalActualUsd)) || 0;
-    const deltaPct = Number(summary.delta_pct) || 0;
-    const freePct = Number(summary.local_free_tokens_pct) || 0;
-
-    if (elPlanned) elPlanned.textContent = formatUsdCost(totalPlanUsd);
-    if (elActual) elActual.textContent = formatUsdCost(totalActualUsd);
-    if (elSavings) {
-      elSavings.textContent = (netSavingsUsd < 0 ? '-' : '') + formatUsdCost(Math.abs(netSavingsUsd));
-      elSavings.className = 'cost-card-value ' + (netSavingsUsd >= 0 ? 'text-emerald' : 'text-amber');
-    }
-    if (elFreePct) elFreePct.textContent = freePct.toFixed(1) + '%';
-
-    if (elPlannedMeta) {
-      elPlannedMeta.textContent = `${formatTokenCount(summary.planned_tokens || 0)} across ${summary.task_count || tasks.length} tasks`;
-    }
-    if (elActualMeta) {
-      elActualMeta.textContent = `${formatTokenCount(summary.actual_tokens || 0)} · ${summary.model_calls || 0} calls · ${Math.round(summary.execution_time_seconds || 0)}s`;
-    }
-    if (elSavingsMeta) {
-      elSavingsMeta.textContent = `Delta: ${formatSignedUsd(summary.delta_usd || 0)} (${formatDeltaPct(deltaPct)})`;
-    }
-    if (elFreeMeta) {
-      elFreeMeta.textContent = `${formatTokenCount(summary.local_free_tokens || 0)} zero-cost ($0)`;
-    }
-
-    if (costStageFilterEl) {
-      const prevFilter = state.costStageFilter || 'all';
-      costStageFilterEl.innerHTML = '<option value="all">All Stages (' + tasks.length + ')</option>' +
-        stages.map(s =>
-          `<option value="${escapeHTML(String(s.stage))}"${String(s.stage) === String(prevFilter) ? ' selected' : ''}>${escapeHTML(s.label || ('Stage ' + s.stage))} (${s.task_count || 0})</option>`
-        ).join('');
-    }
-
-    const stageBarEl = document.getElementById('costStageBar');
-    const stageDistEl = document.getElementById('costStageDistribution');
-    const stageColors = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6', '#f97316'];
-
-    if (stageBarEl) {
-      if (!stages.length) {
-        stageBarEl.innerHTML = '<div class="cost-stage-bar-empty">No stage cost data available</div>';
-      } else {
-        stageBarEl.innerHTML = stages.map((s, idx) => {
-          const share = Math.max(4, Number(s.share_actual_pct || s.share_planned_pct) || (100 / stages.length));
-          const color = stageColors[idx % stageColors.length];
-          const label = s.label || ('Stage ' + s.stage);
-          return `<div class="cost-stage-segment" style="width:${share}%; background:${color};" title="${escapeHTML(label)}: Plan ${escapeHTML(formatUsdCost(s.planned_cost_usd))} / Fact ${escapeHTML(formatUsdCost(s.actual_cost_usd))}"></div>`;
-        }).join('');
-      }
-    }
-
-    if (stageDistEl) {
-      if (!stages.length) {
-        stageDistEl.innerHTML = '<div class="empty-state">No stages registered in this workspace.</div>';
-      } else {
-        const maxStageCost = Math.max(
-          0.0001,
-          ...stages.map(s => Math.max(Number(s.planned_cost_usd) || 0, Number(s.actual_cost_usd) || 0))
-        );
-        stageDistEl.innerHTML = stages.map((s, idx) => {
-          const color = stageColors[idx % stageColors.length];
-          const planW = Math.min(100, Math.round(((Number(s.planned_cost_usd) || 0) / maxStageCost) * 100));
-          const actW = Math.min(100, Math.round(((Number(s.actual_cost_usd) || 0) / maxStageCost) * 100));
-          const dPct = Number(s.delta_pct) || 0;
-          const dClass = dPct <= 0 ? 'under' : 'over';
-          return `<div class="cost-stage-row" data-stage="${escapeHTML(String(s.stage))}">
-            <div class="cost-stage-info">
-              <span class="cost-stage-dot" style="background:${color}"></span>
-              <span class="cost-stage-name">${escapeHTML(s.label || ('Stage ' + s.stage))}</span>
-              <span class="cost-stage-count">${s.task_count || 0} tasks</span>
-            </div>
-            <div class="cost-stage-bars-wrap">
-              <div class="cost-dual-bar">
-                <div class="cost-bar-plan" style="width:${planW}%" title="Planned: ${escapeHTML(formatUsdCost(s.planned_cost_usd))}"></div>
-              </div>
-              <div class="cost-dual-bar">
-                <div class="cost-bar-fact" style="width:${actW}%; background:${color}" title="Actual: ${escapeHTML(formatUsdCost(s.actual_cost_usd))}"></div>
-              </div>
-            </div>
-            <div class="cost-stage-metrics">
-              <span>Plan: <strong>${escapeHTML(formatUsdCost(s.planned_cost_usd))}</strong></span>
-              <span>Fact: <strong>${escapeHTML(formatUsdCost(s.actual_cost_usd))}</strong></span>
-              <span class="cost-delta-pill ${dClass}">${escapeHTML(formatDeltaPct(dPct))}</span>
-            </div>
-          </div>`;
-        }).join('');
-      }
-    }
-
-    const tbody = document.getElementById('costTaskTableBody');
-    if (tbody) {
-      const filteredTasks = (state.costStageFilter && state.costStageFilter !== 'all')
-        ? tasks.filter(t => String(t.stage) === String(state.costStageFilter))
-        : tasks;
-      if (!filteredTasks.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No tasks found for the selected filter.</td></tr>';
-      } else {
-        const grouped = new Map();
-        filteredTasks.forEach(t => {
-          const stg = String(t.stage || '1');
-          if (!grouped.has(stg)) grouped.set(stg, []);
-          grouped.get(stg).push(t);
-        });
-        const sortedStageKeys = [...grouped.keys()].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
-        const rowsHtml = [];
-        sortedStageKeys.forEach(stg => {
-          const groupTasks = grouped.get(stg);
-          const stgLabel = (groupTasks[0] && groupTasks[0].stage_label) || stageLabel(stg);
-          const grpPlan = groupTasks.reduce((acc, x) => acc + (Number(x.planned_cost_usd) || 0), 0);
-          const grpFact = groupTasks.reduce((acc, x) => acc + (Number(x.actual_cost_usd) || 0), 0);
-          rowsHtml.push(
-            `<tr class="cost-stage-group-row" data-stage-group="${escapeHTML(stg)}">
-              <td colspan="8">
-                <strong>${escapeHTML(stgLabel)}</strong>
-                <span class="cost-group-meta">${groupTasks.length} task${groupTasks.length === 1 ? '' : 's'} · Plan ${escapeHTML(formatUsdCost(grpPlan))} · Fact ${escapeHTML(formatUsdCost(grpFact))}</span>
-              </td>
-            </tr>`
-          );
-          groupTasks.forEach(t => {
-            const dPct = Number(t.delta_pct) || 0;
-            const dClass = dPct < 0 ? 'under' : (dPct > 0 ? 'over' : 'neutral');
-            rowsHtml.push(
-              `<tr class="cost-task-row" data-task-id="${escapeHTML(t.id)}" data-stage="${escapeHTML(String(t.stage))}">
-                <td><span class="task-stage-badge">${escapeHTML(t.stage_label || ('Stage ' + t.stage))}</span></td>
-                <td><span class="task-tid">${escapeHTML(t.id)}</span></td>
-                <td class="cost-cell-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</td>
-                <td><span class="model-tier-pill">${escapeHTML(t.model || 'swe-2-high')}</span></td>
-                <td class="cost-cell-num" data-plan-usd="${escapeHTML(String(t.planned_cost_usd || 0))}">${escapeHTML(formatUsdCost(t.planned_cost_usd))}</td>
-                <td class="cost-cell-num" data-fact-usd="${escapeHTML(String(t.actual_cost_usd || 0))}">${escapeHTML(formatUsdCost(t.actual_cost_usd))}</td>
-                <td class="cost-cell-num"><span class="cost-delta-pill ${dClass}">${escapeHTML(formatDeltaPct(dPct))}</span></td>
-                <td><span class="cost-status-badge status-${escapeHTML(String(t.status || 'ready').replace(/\s+/g, '-').toLowerCase())}">${escapeHTML(t.status || 'ready')}</span></td>
-              </tr>`
-            );
-          });
-        });
-        tbody.innerHTML = rowsHtml.join('');
-      }
-    }
   }
 
   // --- Embedded dashboard bridge: build stamp + theme toggle ---
@@ -1390,15 +1190,17 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>`;
       }).join('');
       card.innerHTML = `
-        <div class="capacity-card-top">
+        <div class="capacity-card-header">
           <span class="capacity-tool-title">${escapeHTML(p.label)}${p.version ? `<span class="platform-version">${escapeHTML(p.version)}</span>` : ''}</span>
           <span class="capacity-card-top-right">
-            <span class="status-badge ${escapeHTML(p.status)}">${escapeHTML(p.status_label || p.status)}</span>
             <span class="toggle-state-label${pEnabled ? ' on' : ''}">${pEnabled ? 'Active' : 'Inactive'}</span>
             ${afSwitch('', pEnabled,
               pEnabled ? 'Active for this project - click to deactivate' : 'Inactive for this project - click to activate',
               ` class="platform-enable-toggle" data-platform="${escapeHTML(p.key)}"`)}
           </span>
+        </div>
+        <div class="capacity-card-status-row">
+          <span class="status-badge ${escapeHTML(p.status)}">${escapeHTML(p.status_label || p.status)}</span>
         </div>
         ${p.note ? `<div class="platform-note">${escapeHTML(p.note)}</div>` : ''}
         ${p.provider ? `<div class="provider-meta">
@@ -1770,8 +1572,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProjectAccordion();
     updateProjectChrome();
     resetExplorerPane();
-    await Promise.all([loadStatus(path), loadTasks(path), loadCapacity(), loadCostAnalytics(path)]);
-    updateAnalyticsFrame();
+    await Promise.all([loadStatus(path), loadTasks(path), loadCapacity()]);
+    updateAnalyticsFrame(true);
   }
 
   function updateProjectChrome() {
@@ -2194,47 +1996,13 @@ document.addEventListener('DOMContentLoaded', () => {
     return t ? t.id + ' — ' + t.title : String(id);
   }
 
-  function groupTasksByStage(tasks) {
-    const groups = {};
-    tasks.forEach(t => {
-      const key = String(t.stage || '0');
-      (groups[key] = groups[key] || []).push(t);
-    });
-    return Object.keys(groups)
-      .sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0) || a.localeCompare(b))
-      .map(k => ({ stage: k, tasks: groups[k] }));
-  }
-
   function stageLabel(stageKey) {
     const n = parseInt(stageKey, 10);
     return 'Stage ' + (isNaN(n) ? stageKey : String(n).padStart(2, '0'));
   }
 
-  function threadCaretSvg() {
-    return '<svg class="thread-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
-  }
-
-  function buildCollapsibleHeader(cls, collapseKey, title, count) {
-    const collapsed = state.threadCollapsed.has(collapseKey);
-    const header = document.createElement('button');
-    header.type = 'button';
-    header.className = cls;
-    header.setAttribute('data-collapse-key', collapseKey);
-    header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    header.innerHTML = threadCaretSvg() +
-      '<span class="thread-title">' + escapeHTML(title) + '</span>' +
-      '<span class="thread-count">' + count + '</span>';
-    header.addEventListener('click', () => toggleThreadCollapse(collapseKey));
-    return header;
-  }
-
-  function buildCollapsibleBody(cls) {
-    const body = document.createElement('div');
-    body.className = cls;
-    const inner = document.createElement('div');
-    inner.className = 'thread-body-inner';
-    body.appendChild(inner);
-    return { body, inner };
+  function threadStatusClass(status) {
+    return 'status-' + String(status || 'ready').trim().toLowerCase().replace(/\s+/g, '-');
   }
 
   function buildThreadItem(id) {
@@ -2243,7 +2011,23 @@ document.addEventListener('DOMContentLoaded', () => {
     item.className = 'thread-item' + ((state.inspectorTaskId || 'research') === id ? ' active' : '');
     item.setAttribute('data-thread', id);
     item.setAttribute('role', 'menuitem');
-    item.textContent = threadLabel(id);
+    const t = state.tasks.find(x => x.id === id);
+    if (t) {
+      const stageTxt = t.stage_label || stageLabel(t.stage || '0');
+      item.setAttribute('data-search', (t.id + ' ' + (t.title || '')).toLowerCase());
+      item.innerHTML =
+        '<span class="thread-item-id">' + escapeHTML(t.id) + '</span>' +
+        '<span class="thread-item-title" title="' + escapeHTML(t.title || t.id) + '">' + escapeHTML(t.title || t.id) + '</span>' +
+        '<span class="thread-item-stage">' + escapeHTML(stageTxt) + '</span>' +
+        '<span class="thread-item-status ' + threadStatusClass(t.status) + '">' + escapeHTML(t.status || 'ready') + '</span>';
+    } else {
+      const meta = researchMeta(id);
+      const base = (meta && meta.name) ||
+        (id === 'research' ? 'Research & Inception' : 'Research #' + id.slice('research-'.length));
+      const label = '🔍 ' + base + (id === 'research' ? ' (General Chat)' : '');
+      item.setAttribute('data-search', label.toLowerCase());
+      item.innerHTML = '<span class="thread-item-title">' + escapeHTML(label) + '</span>';
+    }
     item.addEventListener('click', () => selectThread(id));
     if (isResearchThread(id)) {
       item.title = 'Double-click to rename';
@@ -2283,97 +2067,67 @@ document.addEventListener('DOMContentLoaded', () => {
     input.select();
   }
 
-  function buildStageGroup(stageKey, tasks) {
-    const collapseKey = 'stage:' + stageKey;
-    const grp = document.createElement('div');
-    grp.className = 'thread-stage-group' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
-    grp.setAttribute('data-stage', stageKey);
-    grp.appendChild(buildCollapsibleHeader('thread-stage-header', collapseKey, stageLabel(stageKey), tasks.length));
-    const { body, inner } = buildCollapsibleBody('thread-stage-body');
-    tasks.forEach(t => inner.appendChild(buildThreadItem(t.id)));
-    grp.appendChild(body);
-    return grp;
-  }
-
-  function buildFolderGroup(folderName, ids) {
-    const collapseKey = 'folder:' + folderName;
-    const grp = document.createElement('div');
-    grp.className = 'thread-folder-group' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
-    grp.setAttribute('data-folder', folderName);
-    grp.appendChild(buildCollapsibleHeader('thread-folder-header', collapseKey, '📁 ' + folderName, ids.length));
-    const { body, inner } = buildCollapsibleBody('thread-folder-body');
-    ids.forEach(id => inner.appendChild(buildThreadItem(id)));
-    grp.appendChild(body);
-    return grp;
-  }
-
-  function buildThreadSection(sectionKey, title, count, withAdd, fill) {
-    const collapseKey = 'sec:' + sectionKey;
-    const allowAdd = Boolean(withAdd) && sectionKey !== 'implementations';
-    const sec = document.createElement('div');
-    sec.className = 'thread-section' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
-    sec.setAttribute('data-section', sectionKey);
-    sec.setAttribute('data-manual-create', allowAdd ? 'enabled' : 'disabled');
-    const top = document.createElement('div');
-    top.className = 'thread-section-top';
-    top.appendChild(buildCollapsibleHeader('thread-section-header', collapseKey, title, count));
-    if (allowAdd) {
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'thread-add';
-      addBtn.title = 'New research thread';
-      addBtn.setAttribute('aria-label', 'New research thread');
-      addBtn.textContent = '+';
-      addBtn.addEventListener('click', (ev) => { ev.stopPropagation(); addResearchThread(); });
-      top.appendChild(addBtn);
+  function fillThreadList(list) {
+    if (!list) return;
+    list.innerHTML = '';
+    const q = (state.threadFilter || '').trim().toLowerCase();
+    const ids = researchThreadIds().concat(state.tasks.map(t => t.id));
+    let shown = 0;
+    ids.forEach(id => {
+      const item = buildThreadItem(id);
+      if (q && !(item.getAttribute('data-search') || '').includes(q)) return;
+      list.appendChild(item);
+      shown += 1;
+    });
+    if (!shown) {
+      const empty = document.createElement('div');
+      empty.className = 'thread-empty';
+      empty.textContent = q ? 'No threads match this filter' : 'No tasks in this workspace';
+      list.appendChild(empty);
     }
-    sec.appendChild(top);
-    const { body, inner } = buildCollapsibleBody('thread-section-body');
-    fill(inner);
-    sec.appendChild(body);
-    return sec;
   }
 
   function renderThreadDropdown() {
     if (!threadDropdown) return;
     threadDropdown.innerHTML = '';
-    const researchIds = researchThreadIds();
-    threadDropdown.appendChild(buildThreadSection('researches', '🔍 Researches', researchIds.length, true, (inner) => {
-      const unfiled = researchIds.filter(id => !researchFolderName(id));
-      const folderNames = [...new Set(researchIds.map(researchFolderName).filter(Boolean))].sort();
-      unfiled.forEach(id => inner.appendChild(buildThreadItem(id)));
-      folderNames.forEach(fname => {
-        inner.appendChild(buildFolderGroup(fname, researchIds.filter(id => researchFolderName(id) === fname)));
-      });
-    }));
-    const groups = groupTasksByStage(state.tasks);
-    threadDropdown.appendChild(buildThreadSection('implementations', 'Implementations', state.tasks.length, false, (inner) => {
-      groups.forEach(g => inner.appendChild(buildStageGroup(g.stage, g.tasks)));
-      if (!groups.length) {
-        const empty = document.createElement('div');
-        empty.className = 'thread-empty';
-        empty.textContent = 'No tasks in this workspace';
-        inner.appendChild(empty);
-      }
-    }));
-  }
-
-  function toggleThreadCollapse(collapseKey) {
-    if (state.threadCollapsed.has(collapseKey)) {
-      state.threadCollapsed.delete(collapseKey);
-    } else {
-      state.threadCollapsed.add(collapseKey);
-    }
-    renderThreadDropdown();
-    const btn = threadDropdown.querySelector('[data-collapse-key="' + collapseKey + '"]');
-    if (btn) btn.focus();
+    const searchRow = document.createElement('div');
+    searchRow.className = 'thread-search-row';
+    const search = document.createElement('input');
+    search.type = 'text';
+    search.className = 'thread-search';
+    search.id = 'threadSearchInput';
+    search.placeholder = 'Filter by task ID or title…';
+    search.setAttribute('aria-label', 'Filter tasks and threads');
+    search.value = state.threadFilter || '';
+    const list = document.createElement('div');
+    list.className = 'thread-list';
+    search.addEventListener('input', () => {
+      state.threadFilter = search.value;
+      fillThreadList(list);
+    });
+    search.addEventListener('click', (ev) => ev.stopPropagation());
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'thread-add';
+    addBtn.title = 'New research thread';
+    addBtn.setAttribute('aria-label', 'New research thread');
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', (ev) => { ev.stopPropagation(); addResearchThread(); });
+    searchRow.appendChild(search);
+    searchRow.appendChild(addBtn);
+    threadDropdown.appendChild(searchRow);
+    threadDropdown.appendChild(list);
+    fillThreadList(list);
   }
 
   function openThreadDropdown() {
     if (!threadSelector) return;
+    state.threadFilter = '';
     renderThreadDropdown();
     threadSelector.classList.add('open');
     if (threadPill) threadPill.setAttribute('aria-expanded', 'true');
+    const search = threadDropdown && threadDropdown.querySelector('.thread-search');
+    if (search) search.focus();
   }
 
   function closeThreadDropdown() {
@@ -2437,14 +2191,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function threadFocusables() {
     if (!threadDropdown) return [];
-    return Array.from(threadDropdown.querySelectorAll(
-      '.thread-item, .thread-add, .thread-section-header, .thread-stage-header, .thread-folder-header'
-    )).filter(el => !el.closest('.collapsed'));
+    return Array.from(threadDropdown.querySelectorAll('.thread-item, .thread-add'))
+      .filter(el => el.style.display !== 'none');
   }
 
   function onThreadKeydown(e) {
     const items = threadFocusables();
-    if (!items.length) return;
+    if (!items.length) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeThreadDropdown();
+        if (threadPill) threadPill.focus();
+      }
+      return;
+    }
     const idx = items.indexOf(document.activeElement);
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -2460,14 +2220,6 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       closeThreadDropdown();
       if (threadPill) threadPill.focus();
-    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      const el = items[idx];
-      if (!el || !el.getAttribute('data-collapse-key')) return;
-      const collapsed = state.threadCollapsed.has(el.getAttribute('data-collapse-key'));
-      if ((e.key === 'ArrowRight' && collapsed) || (e.key === 'ArrowLeft' && !collapsed)) {
-        e.preventDefault();
-        toggleThreadCollapse(el.getAttribute('data-collapse-key'));
-      }
     }
   }
 
@@ -2484,8 +2236,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         openThreadDropdown();
-        const items = threadFocusables();
-        if (items.length) items[0].focus();
       } else if (e.key === 'Escape') {
         closeThreadDropdown();
       }

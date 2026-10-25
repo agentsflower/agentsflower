@@ -86,18 +86,35 @@ def save_attached_project(folder_path: str):
         ATTACHED_FILE.write_text(json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+# Immediate children probed when a project lives one level below its parent
+# folder (e.g. AntiBrowser/code/.agentsflower).
+FLOW_ROOT_CHILD_DIRS = ("code", "src")
+
+# Folder names too generic to tell projects apart in the cockpit project list.
+GENERIC_PROJECT_DIR_NAMES = {"code", "site", "v1", "v2"}
+
+
 def get_project_flow_root(project_root: Path) -> Path | None:
-    if (project_root / ".agentsflower").is_dir():
-        return project_root / ".agentsflower"
-    if (project_root / ".agentflow").is_dir():
-        return project_root / ".agentflow"
+    candidates = [project_root] + [project_root / child for child in FLOW_ROOT_CHILD_DIRS]
+    for base in candidates:
+        for dir_name in (".agentsflower", ".agentflow"):
+            flow_root = base / dir_name
+            if flow_root.is_dir():
+                return flow_root
     return None
+
+
+def project_display_name(path_obj: Path) -> str:
+    name = path_obj.name
+    if name.lower() in GENERIC_PROJECT_DIR_NAMES:
+        return f"{path_obj.parent.name} / {name}"
+    return name
 
 
 def get_project_info(path_obj: Path, is_current: bool = False) -> dict:
     flow_root = get_project_flow_root(path_obj)
-    has_flower = (path_obj / ".agentsflower").is_dir()
-    has_flow = (path_obj / ".agentflow").is_dir()
+    has_flower = bool(flow_root and flow_root.name == ".agentsflower")
+    has_flow = bool(flow_root and flow_root.name == ".agentflow")
     version = get_version(flow_root) if flow_root else "none"
     task_count = 0
 
@@ -112,12 +129,12 @@ def get_project_info(path_obj: Path, is_current: bool = False) -> dict:
                 pass
 
     return {
-        "name": path_obj.name,
+        "name": project_display_name(path_obj),
         "path": str(path_obj),
         "is_current": is_current,
         "has_flower": has_flower,
         "has_flow": has_flow,
-        "has_framework": bool(has_flower or has_flow),
+        "has_framework": bool(flow_root),
         "version": version,
         "task_count": task_count,
         "is_git": (path_obj / ".git").is_dir(),
@@ -149,9 +166,7 @@ def find_projects() -> list[dict]:
             for item in parent.iterdir():
                 try:
                     if item.is_dir() and str(item.resolve()) not in seen_paths:
-                        has_flower = (item / ".agentsflower").is_dir()
-                        has_flow = (item / ".agentflow").is_dir()
-                        if has_flower or has_flow:
+                        if get_project_flow_root(item):
                             projects.append(get_project_info(item, is_current=False))
                             seen_paths.add(str(item.resolve()))
                 except (PermissionError, OSError):
@@ -3714,11 +3729,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 if file_path and file_path.is_file():
                     self._serve_file(file_path)
                     return
-                if target_project_str:
-                    self.send_response(404)
-                    self.end_headers()
-                    self.wfile.write(b"Dashboard file not found for this project")
-                    return
+                self._serve_dashboard_placeholder()
+                return
 
         # Studio Static assets
         req_file = path.lstrip("/")
@@ -3744,6 +3756,29 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(content)
+
+    def _serve_dashboard_placeholder(self):
+        body = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>Dashboard not generated</title>"
+            "<style>body{margin:0;display:flex;align-items:center;justify-content:center;"
+            "min-height:100vh;background:#0d1220;color:#c8d3f5;font-family:system-ui,sans-serif;}"
+            ".box{max-width:420px;text-align:center;padding:32px;border:1px solid #2a3556;"
+            "border-radius:12px;}h2{margin:0 0 10px;font-size:18px;}"
+            "p{margin:6px 0;font-size:13px;color:#8f9bb8;}"
+            "code{background:#1a2340;padding:2px 6px;border-radius:6px;font-size:12px;}</style>"
+            "</head><body><div class='box'>"
+            "<h2>Dashboard not yet generated</h2>"
+            "<p>This project has no built AgentsFlower dashboard output.</p>"
+            "<p>Click <b>Rebuild Analytics</b> in the Studio Analytics view, or run "
+            "<code>python .agentsflower/dashboard/build.py</code> in the project.</p>"
+            "</div></body></html>"
+        ).encode("utf-8")
+        self.send_response(404)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)

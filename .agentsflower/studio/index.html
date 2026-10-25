@@ -477,7 +477,6 @@
                 <button type="button" class="btn-subtab" data-sub="index">Tasks & Overview</button>
                 <button type="button" class="btn-subtab active" data-sub="graph">Gantt & Dependency Graph</button>
                 <button type="button" class="btn-subtab" data-sub="roadmap">Roadmap & Milestones</button>
-                <button type="button" class="btn-subtab" data-sub="costs" id="btnSubtabCosts">Cost &amp; ROI Dashboard</button>
               </div>
               <div class="analytics-actions">
                 <span class="analytics-built" id="analyticsBuiltStamp" title="Dashboard build timestamp">Built —</span>
@@ -496,70 +495,6 @@
             </div>
             <div class="analytics-frame-wrapper glass-card" id="analyticsFrameWrapper">
               <iframe id="analyticsFrame" src="about:blank" title="Classic Analytics and Roadmap"></iframe>
-            </div>
-            <div class="cost-roi-dashboard glass-card" id="costRoiDashboard" style="display: none;">
-              <div class="cost-roi-header">
-                <div>
-                  <h3>Cost &amp; ROI Dashboard — Plan vs Fact Telemetry</h3>
-                  <p class="subtitle">Comparison of planned Jev token budgets (.plan.json) against actual worker execution telemetry (.runtime/).</p>
-                </div>
-                <div class="cost-roi-filters">
-                  <select id="costStageFilter" class="research-ctl-select" aria-label="Filter cost table by stage">
-                    <option value="all">All Stages</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="cost-summary-grid" id="costSummaryGrid">
-                <div class="cost-summary-card">
-                  <div class="cost-card-label">Total Planned ($)</div>
-                  <div class="cost-card-value" id="costTotalPlanned">$0.00</div>
-                  <div class="cost-card-meta" id="costPlannedTokensMeta">0 planned tokens</div>
-                </div>
-                <div class="cost-summary-card">
-                  <div class="cost-card-label">Total Actual ($)</div>
-                  <div class="cost-card-value" id="costTotalActual">$0.00</div>
-                  <div class="cost-card-meta" id="costActualTokensMeta">0 actual tokens · 0 calls</div>
-                </div>
-                <div class="cost-summary-card">
-                  <div class="cost-card-label">Net Savings ($)</div>
-                  <div class="cost-card-value text-emerald" id="costNetSavings">$0.00</div>
-                  <div class="cost-card-meta" id="costSavingsMeta">0.0% variance vs plan</div>
-                </div>
-                <div class="cost-summary-card">
-                  <div class="cost-card-label">Local/Free Tokens (%)</div>
-                  <div class="cost-card-value text-sky" id="costLocalFreePct">0.0%</div>
-                  <div class="cost-card-meta" id="costLocalFreeMeta">0 zero-cost tokens</div>
-                </div>
-              </div>
-
-              <div class="cost-stage-section">
-                <div class="cost-section-title">Per-Stage Cost Distribution</div>
-                <div class="cost-stage-bar" id="costStageBar"></div>
-                <div class="cost-stage-distribution" id="costStageDistribution"></div>
-              </div>
-
-              <div class="cost-table-section">
-                <div class="cost-section-title">Detailed Task Table (Plan vs Fact)</div>
-                <div class="cost-table-wrapper">
-                  <table class="cost-task-table" id="costTaskTable">
-                    <thead>
-                      <tr>
-                        <th>Stage</th>
-                        <th>Task ID</th>
-                        <th>Title</th>
-                        <th>Model</th>
-                        <th>Plan ($)</th>
-                        <th>Fact ($)</th>
-                        <th>Delta (%)</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody id="costTaskTableBody">
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </div>
           </div>
         </section>
