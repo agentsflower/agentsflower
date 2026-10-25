@@ -163,3 +163,5 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-176 | Verify Chat Thread Selector and Project Isolation | 7 | tester | devin | done | T-175 | e3ab0ecb3002e45abdaee909580147c73052654e | Tester for T-175 @ e3ab0ec; Verifies added, launched by background orchestrator | 2026-10-25 20:06 |
 | T-177 | Persistent Thread Dropdown on Selection | 7 | developer | devin | done | T-176 | d1102618b2b052509da71c2a289369317e21c952 |  | 2026-10-25 22:39 |
 | T-178 | Verify Persistent Thread Dropdown Behavior | 7 | tester | devin | done | T-177 | d1102618b2b052509da71c2a289369317e21c952 | Tester for T-177 @ d110261; Verifies added, launched by background orchestrator | 2026-10-25 22:39 |
+| T-179 | Fix Thread Dropdown Premature Collapse on Collapsible Headers & Task Items | 7 | developer | devin | ready | T-178 |  | Prevents dropdown from collapsing when toggling Researches/Implementations/Stages or selecting tasks | 2026-10-26 02:50 |
+| T-180 | Verify Thread Dropdown Stays Open on Header Toggles & Task Selection | 7 | tester | devin | blocked | T-179 |  | Tester for T-179 | 2026-10-26 02:50 |
