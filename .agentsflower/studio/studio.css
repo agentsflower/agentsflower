@@ -2229,6 +2229,24 @@ body.pane-resizing iframe {
   font-weight: 400;
   color: var(--text-subtle);
 }
+/* Chat platform selector: accent pill + status pill + empty-state dropdown row */
+.platform-pill {
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #a5b4fc;
+}
+.platform-status-pill {
+  margin-left: 2px;
+  cursor: default;
+}
+.model-option.model-empty {
+  cursor: default;
+  color: var(--text-subtle);
+  font-weight: 400;
+  font-size: 0.72rem;
+}
+.model-option.model-empty:hover {
+  background: transparent;
+}
 .chat-send {
   width: 28px;
   height: 28px;

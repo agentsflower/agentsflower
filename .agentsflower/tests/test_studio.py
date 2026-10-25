@@ -662,19 +662,30 @@ class TestCapacityHub(StudioApiCase):
 
     def setUp(self):
         self._cache = dict(studio._capacity_probe_cache)
+        self._pcache = dict(studio._platform_probe_cache)
         studio._capacity_probe_cache.update(at=0.0, data=None)
+        studio._platform_probe_cache.clear()
 
     def tearDown(self):
         studio._capacity_probe_cache.update(self._cache)
+        studio._platform_probe_cache.clear()
+        studio._platform_probe_cache.update(self._pcache)
 
     @staticmethod
     def _fake_which(name):
-        return f"/fake/bin/{name}.exe" if name in ("devin", "claude", "agy") else None
+        return f"/fake/bin/{name}.exe" if name in ("devin", "claude", "codex", "agy") else None
 
     @staticmethod
     def _fake_run(argv, timeout=None):
         exe = Path(str(argv[0])).name.lower()
         args = list(argv[1:])
+        if exe.startswith("codex"):
+            if args == ["--version"]:
+                return 0, "codex-cli 1.2.3"
+            if args == ["login", "status"]:
+                return 0, "Logged in using ChatGPT"
+            if args == ["models"]:
+                return None, ""  # no catalog command: falls back to configured catalog
         if exe.startswith("devin"):
             if args == ["auth", "status"]:
                 return 0, "Logged in (via Devin).\nUser: tester"
@@ -721,7 +732,14 @@ class TestCapacityHub(StudioApiCase):
             self.assertTrue(res.get("ok"), res)
             self.assertFalse(res.get("cached", True))
             platforms = {p["key"]: p for p in res["platforms"]}
-            self.assertEqual(set(platforms), {"devin", "claude", "agy", "ollama"})
+            self.assertEqual(set(platforms), {"devin", "claude", "codex", "agy", "ollama"})
+
+            codex = platforms["codex"]
+            self.assertEqual(codex["status"], "active")
+            self.assertTrue(codex["authenticated"])
+            self.assertEqual(codex["version"], "codex-cli 1.2.3")
+            # No CLI catalog command: models come from the configured model-options catalog.
+            self.assertEqual({m["id"] for m in codex["models"]}, {"gpt-6.1-sol", "gpt-6-astra"})
 
             devin = platforms["devin"]
             self.assertEqual(devin["status"], "active")
@@ -769,6 +787,68 @@ class TestCapacityHub(StudioApiCase):
                 self.assertEqual(p["status"], "missing", p)
                 self.assertEqual(p["status_label"], "Not Installed")
             self.assertEqual(res["local_free"]["installed"], [])
+
+    def test_probe_single_platform_returns_only_that_platform(self):
+        pw, pr, po = self._probe_patches()
+        with pw, pr as run_mock, po as ollama_mock:
+            code, res = self.api("/api/capacity/probe?" + self.q({"platform": "agy"}))
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertFalse(res.get("cached", True))
+            self.assertEqual([p["key"] for p in res["platforms"]], ["agy"])
+            self.assertEqual(res["platform"]["key"], "agy")
+            self.assertEqual(res["platform"]["status"], "active")
+            self.assertIn("claude-opus-4-6-thinking",
+                          {m["id"] for m in res["platform"]["models"]})
+            for c in run_mock.call_args_list:
+                argv = c.args[0] if c.args else c[0][0]
+                self.assertIn("agy", Path(str(argv[0])).name.lower())
+            ollama_mock.assert_not_called()
+
+    def test_probe_single_platform_codex_catalog_fallback(self):
+        pw, pr, po = self._probe_patches()
+        with pw, pr, po:
+            code, res = self.api("/api/capacity/probe?" + self.q({"platform": "codex"}))
+            self.assertEqual(code, 200, res)
+            p = res["platform"]
+            self.assertEqual(p["key"], "codex")
+            self.assertTrue(p["authenticated"])
+            self.assertEqual({m["id"] for m in p["models"]}, {"gpt-6.1-sol", "gpt-6-astra"})
+
+    def test_probe_single_platform_missing_marks_status(self):
+        from unittest.mock import patch
+        with patch.object(studio.shutil, "which", return_value=None):
+            code, res = self.api("/api/capacity/probe?" + self.q({"platform": "devin"}))
+            self.assertEqual(code, 200, res)
+            p = res["platform"]
+            self.assertEqual(p["status"], "missing")
+            self.assertEqual(p["status_label"], "Not Installed")
+            self.assertEqual(p["models"], [])
+
+    def test_probe_single_platform_serves_own_cache(self):
+        pw, pr, po = self._probe_patches()
+        with pw, pr as run_mock, po as ollama_mock:
+            code, res = self.api("/api/capacity/probe?" + self.q({"platform": "ollama"}))
+            self.assertEqual(code, 200, res)
+            self.assertEqual(res["platform"]["key"], "ollama")
+            self.assertEqual([m["id"] for m in res["platform"]["models"]],
+                             ["qwen2.5-coder:7b"])
+            calls, ocalls = run_mock.call_count, ollama_mock.call_count
+            code2, res2 = self.api("/api/capacity/probe?" + self.q({"platform": "ollama"}))
+            self.assertEqual(code2, 200)
+            self.assertTrue(res2.get("cached"))
+            self.assertEqual(run_mock.call_count, calls)
+            self.assertEqual(ollama_mock.call_count, ocalls)
+            # A different platform key still probes live.
+            code3, res3 = self.api("/api/capacity/probe?" + self.q({"platform": "agy"}))
+            self.assertEqual(code3, 200)
+            self.assertFalse(res3.get("cached", True))
+            self.assertGreater(run_mock.call_count, calls)
+
+    def test_probe_single_platform_rejects_unknown_key(self):
+        code, res = self.api("/api/capacity/probe?" + self.q({"platform": "bogus"}))
+        self.assertEqual(code, 400)
+        self.assertFalse(res.get("ok", True))
 
     def test_probe_rejects_unregistered_project(self):
         with tempfile.TemporaryDirectory() as td:
@@ -857,6 +937,39 @@ class TestCapacityHub(StudioApiCase):
             self.assertIn(marker, js)
 
         for marker in (".status-badge", ".local-model-item", ".btn-set-default"):
+            self.assertIn(marker, css)
+
+    def test_chat_platform_selector_ui_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            'id="chatPlatformSelector"',
+            'id="chatPlatformPill"',
+            'id="chatPlatformDropdown"',
+            'id="chatPlatformStatus"',
+            'id="chatModelSelector"',
+            'id="chatModelPill"',
+            'id="chatModelDropdown"',
+        ):
+            self.assertIn(marker, html)
+
+        for marker in (
+            "CHAT_PLATFORMS",
+            "probeChatPlatform",
+            "selectChatPlatform",
+            "platform=",
+            "af_chat_platform",
+            "af_chat_model",
+            "platform-status-pill",
+        ):
+            self.assertIn(marker, js)
+
+        for marker in (".platform-pill", ".platform-status-pill", ".model-empty"):
             self.assertIn(marker, css)
 
 
