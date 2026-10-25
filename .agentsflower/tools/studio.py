@@ -2576,22 +2576,24 @@ def _provider_probe(pid: str, force: bool, project_root: Path, scope: str = ""):
     """Probe one configured third-party provider (?platform=<provider id>); own TTL cache entry."""
     cache_key = f"{scope}|provider:{pid}"
     now = time.time()
-    with _capacity_probe_lock:
-        ent = _platform_probe_cache.get(cache_key)
-        if not force and ent and now - ent["at"] < CAPACITY_PROBE_TTL:
-            return copy.deepcopy(ent["data"]), True
     state = load_project_state(project_root) if project_root else {"providers": {}}
     conf = (state.get("providers") or {}).get(pid)
     if not conf:
         return _platform(pid, pid, False, False, note="provider not configured"), False
+    live_probe = ((state.get("platforms") or {}).get(pid) or {}).get("enabled") is not False
+    with _capacity_probe_lock:
+        ent = _platform_probe_cache.get(cache_key)
+        if live_probe and not force and ent and now - ent["at"] < CAPACITY_PROBE_TTL:
+            return copy.deepcopy(ent["data"]), True
     secrets = load_project_secrets(project_root)
     api_key = (secrets.get("providers") or {}).get(pid, {}).get("api_key", "")
-    p, live = _probe_provider(pid, dict(conf), api_key)
+    p, live = _probe_provider(pid, dict(conf), api_key, live_probe=live_probe)
     if live is not None and live != conf.get("models"):
         state["providers"][pid]["models"] = live
         save_project_state(project_root, state)
-    with _capacity_probe_lock:
-        _platform_probe_cache[cache_key] = {"at": time.time(), "data": copy.deepcopy(p)}
+    if live_probe:
+        with _capacity_probe_lock:
+            _platform_probe_cache[cache_key] = {"at": time.time(), "data": copy.deepcopy(p)}
     return p, False
 
 
@@ -2607,7 +2609,13 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
         state = (load_project_state(project_root) if project_root
                  else {"platforms": {}, "models": {}, "providers": {}})
         if platform in _PLATFORM_PROBES:
-            p, cached = _single_platform_probe(platform, force, flow_root or FLOW_ROOT, scope)
+            if ((state.get("platforms") or {}).get(platform) or {}).get("enabled") is False:
+                p = _platform(platform, platform, True, False,
+                              note="deactivated for this project - probe skipped")
+                p["enabled"] = False
+                cached = False
+            else:
+                p, cached = _single_platform_probe(platform, force, flow_root or FLOW_ROOT, scope)
         else:
             p, cached = _provider_probe(platform, force, project_root, scope)
         _apply_project_state([p], state)
@@ -2633,11 +2641,14 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
             _apply_project_state(data.get("platforms") or [], state)
             return data
 
+    plat_flags = state.get("platforms") or {}
+    deactivated = {n for n in _PLATFORM_PROBES
+                   if (plat_flags.get(n) or {}).get("enabled") is False}
     results: dict = {}
     probes = tuple(_PLATFORM_PROBES.items())
     threads = [
         threading.Thread(target=lambda n=n, f=f: results.__setitem__(n, f(flow_root or FLOW_ROOT)), daemon=True)
-        for n, f in probes
+        for n, f in probes if n not in deactivated
     ]
     for t in threads:
         t.start()
@@ -2646,8 +2657,13 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
 
     platforms = []
     for name, _fn in probes:
-        p = results.get(name) or _platform(
-            name, name, True, False, note="probe timed out or crashed")
+        if name in deactivated:
+            p = _platform(name, name, True, False,
+                          note="deactivated for this project - probe skipped")
+            p["enabled"] = False
+        else:
+            p = results.get(name) or _platform(
+                name, name, True, False, note="probe timed out or crashed")
         platforms.append(_apply_quota_hold(p))
 
     if project_root:
@@ -2655,7 +2671,8 @@ def probe_capacity(force: bool = False, platform: str = "", flow_root: Path = No
         dirty = False
         for pid, conf in list(state.get("providers", {}).items()):
             api_key = (secrets.get("providers") or {}).get(pid, {}).get("api_key", "")
-            p, live = _probe_provider(pid, dict(conf), api_key)
+            live_probe = (plat_flags.get(pid) or {}).get("enabled") is not False
+            p, live = _probe_provider(pid, dict(conf), api_key, live_probe=live_probe)
             if live is not None and live != conf.get("models"):
                 state["providers"][pid]["models"] = live
                 dirty = True
@@ -2874,16 +2891,22 @@ def _provider_id(name: str) -> str:
     return slug or "provider"
 
 
-def _probe_provider(pid: str, conf: dict, api_key: str) -> tuple[dict, list | None]:
-    """Build the platform entry for a configured provider; returns (entry, live models|None)."""
-    live, err = ([], "no stored credential") if not api_key else fetch_provider_models(
-        conf.get("base_url") or OPENROUTER_BASE_URL, api_key)
-    if live is None:
-        models = conf.get("models") or []
-        note = f"live model refresh failed ({err})" if api_key else "no stored credential"
+def _probe_provider(pid: str, conf: dict, api_key: str,
+                    live_probe: bool = True) -> tuple[dict, list | None]:
+    """Build the platform entry for a configured provider; returns (entry, live models|None).
+    `live_probe=False` skips the /models request (project-deactivated provider)."""
+    if live_probe:
+        live, err = ([], "no stored credential") if not api_key else fetch_provider_models(
+            conf.get("base_url") or OPENROUTER_BASE_URL, api_key)
+        if live is None:
+            models = conf.get("models") or []
+            note = f"live model refresh failed ({err})" if api_key else "no stored credential"
+        else:
+            models = live
+            note = ""
     else:
-        models = live
-        note = ""
+        live, models, note = (None, conf.get("models") or [],
+                              "deactivated for this project - probe skipped")
     p = _platform(pid, conf.get("name") or pid, True, bool(api_key),
                   models=models, note=note or conf.get("base_url", ""))
     p["provider"] = True

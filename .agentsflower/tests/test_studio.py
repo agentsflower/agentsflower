@@ -1344,17 +1344,77 @@ class TestProviderEngineAndProjectState(StudioApiCase):
                 self.assertEqual(code, 200, res)
                 devin = next(p for p in res["platforms"] if p["key"] == "devin")
                 self.assertFalse(devin["enabled"])
-                swe = next(m for m in devin["models"] if m["id"] == "swe-2-high")
-                self.assertFalse(swe["enabled"])
-                # a model without an explicit flag inherits the disabled platform
-                other = next(m for m in devin["models"] if m["id"] != "swe-2-high")
-                self.assertFalse(other["enabled"])
+                # T-175: a deactivated platform is not probed - no CLI runs, no models
+                self.assertEqual(devin["models"], [])
+                self.assertIn("deactivated for this project", devin["note"])
 
                 code, res_b = self.api("/api/capacity/probe?" + self.q({"project": str(proj_b)}))
                 self.assertEqual(code, 200, res_b)
                 devin_b = next(p for p in res_b["platforms"] if p["key"] == "devin")
                 self.assertTrue(devin_b["enabled"])
                 self.assertTrue(all(m["enabled"] for m in devin_b["models"]))
+
+    def test_probe_skips_deactivated_platform_and_provider(self):
+        """T-175: enabled:false platforms/providers are never probed - no CLI
+        subprocess, no provider network call; the entry reports deactivated."""
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "skip_proj")
+            studio.save_project_state(proj, {
+                "platforms": {"devin": {"enabled": False},
+                              "openrouter": {"enabled": False}},
+                "models": {},
+                "providers": {"openrouter": {
+                    "id": "openrouter", "name": "OpenRouter",
+                    "kind": "openrouter", "base_url": studio.OPENROUTER_BASE_URL,
+                    "models": [{"id": "cached/m1"}]}},
+            })
+            from unittest.mock import patch
+            with patch.object(studio.shutil, "which",
+                              side_effect=TestCapacityHub._fake_which), \
+                    patch.object(studio, "_probe_run",
+                                 side_effect=TestCapacityHub._fake_run) as run_mock, \
+                    patch.object(studio, "_fetch_ollama_json",
+                                 side_effect=TestCapacityHub._fake_ollama), \
+                    patch.object(studio, "_provider_request") as req_mock:
+                code, res = self.api(
+                    "/api/capacity/probe?" + self.q({"project": str(proj)}))
+            self.assertEqual(code, 200, res)
+            platforms = {p["key"]: p for p in res["platforms"]}
+            devin = platforms["devin"]
+            self.assertFalse(devin["enabled"])
+            self.assertIn("deactivated for this project", devin["note"])
+            prov = platforms["openrouter"]
+            self.assertTrue(prov["provider"])
+            self.assertFalse(prov["enabled"])
+            self.assertIn("deactivated for this project", prov["note"])
+            self.assertEqual([m["id"] for m in prov["models"]], ["cached/m1"])
+            # enabled platforms still probed live
+            self.assertEqual(platforms["codex"]["status"], "active")
+            for c in run_mock.call_args_list:
+                argv = c.args[0] if c.args else c[0][0]
+                self.assertNotIn("devin", Path(str(argv[0])).name.lower())
+            req_mock.assert_not_called()
+
+    def test_probe_single_platform_respects_deactivation(self):
+        """T-175: ?platform=<key> on a deactivated platform runs no CLI probe."""
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "skip_one")
+            studio.save_project_state(proj, {
+                "platforms": {"agy": {"enabled": False}},
+                "models": {}, "providers": {}})
+            from unittest.mock import patch
+            with patch.object(studio.shutil, "which",
+                              side_effect=TestCapacityHub._fake_which), \
+                    patch.object(studio, "_probe_run",
+                                 side_effect=TestCapacityHub._fake_run) as run_mock:
+                code, res = self.api("/api/capacity/probe?" + self.q(
+                    {"project": str(proj), "platform": "agy"}))
+            self.assertEqual(code, 200, res)
+            p = res["platform"]
+            self.assertEqual(p["key"], "agy")
+            self.assertFalse(p["enabled"])
+            self.assertIn("deactivated for this project", p["note"])
+            run_mock.assert_not_called()
 
     def test_probe_includes_provider_with_live_models(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1849,8 +1909,9 @@ class TestStudioChatEngine(StudioApiCase):
             self.assertIn(marker, css)
 
 
-class TestFlatThreadSwitcher(StudioApiCase):
-    """T-173: flat, searchable thread switcher (single list, no nested accordions)."""
+class TestStructuredThreadSwitcher(StudioApiCase):
+    """T-175: two-section thread switcher - Researches (folders) above
+    stage-grouped Implementations, under one instant search bar."""
 
     def shell_assets(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
@@ -1874,7 +1935,7 @@ class TestFlatThreadSwitcher(StudioApiCase):
         self.assertNotIn('id="inspectorTaskSelect"', html)
         self.assertNotIn('class="chat-task-select"', html)
 
-    def test_dropdown_builds_flat_searchable_list(self):
+    def test_dropdown_builds_two_sections_with_search(self):
         _, js, _ = self.shell_assets()
         for marker in (
             "thread-search",
@@ -1885,33 +1946,69 @@ class TestFlatThreadSwitcher(StudioApiCase):
             "state.threadFilter",
             "Research & Inception",
             "(General Chat)",
-            "thread-add",
-        ):
-            self.assertIn(marker, js)
-        for removed in (
-            "thread-section",
+            "thread-section-header",
+            "researches-header",
+            "implementations-header",
+            "🔍 Researches",
+            "⚙️ Implementations",
+            "buildThreadSection",
             "data-collapse-key",
             "toggleThreadCollapse",
             "threadCollapsed",
             "buildCollapsibleHeader",
-            "buildThreadSection",
+            "threadSearchText",
         ):
-            self.assertNotIn(removed, js)
+            self.assertIn(marker, js)
+        self.assertNotIn("chat-task-select", js)
 
-    def test_task_items_show_id_title_stage_and_status(self):
+    def test_research_section_supports_folders(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "📁 + Folder",
+            "addResearchFolder",
+            "researchFolders",
+            "buildFolderGroup",
+            "thread-folder-group",
+            "thread-folder-header",
+            "researchFolderName",
+        ):
+            self.assertIn(marker, js)
+
+    def test_implementations_group_tasks_by_stage(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "groupTasksByStage",
+            "buildStageGroup",
+            "thread-stage-group",
+            "thread-stage-header",
+            "stageLabel",
+        ):
+            self.assertIn(marker, js)
+
+    def test_task_items_show_id_title_and_status(self):
         _, js, _ = self.shell_assets()
         for marker in (
             "thread-item-id",
             "thread-item-title",
-            "thread-item-stage",
             "thread-item-status",
-            "stageLabel",
             "threadStatusClass",
             "data-thread",
+            "' — '",
         ):
             self.assertIn(marker, js)
-        for removed in ("groupTasksByStage", "thread-stage-group", "thread-stage-header"):
-            self.assertNotIn(removed, js)
+
+    def test_project_switch_resets_research_state(self):
+        """C-04: switching projects clears research state and reloads it scoped."""
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "state.threads = { research: [] }",
+            "state.researchMeta = {}",
+            "loadResearchThreads(path)",
+            "/api/research/update?project=",
+            "/api/research/create?project=",
+            "/api/research/list",
+        ):
+            self.assertIn(marker, js)
 
     def test_thread_items_selection_and_click_handlers(self):
         _, js, _ = self.shell_assets()
@@ -1939,7 +2036,7 @@ class TestFlatThreadSwitcher(StudioApiCase):
         ):
             self.assertIn(marker, js)
 
-    def test_css_dark_theme_flat_list_styles(self):
+    def test_css_two_section_styles(self):
         _, _, css = self.shell_assets()
         for marker in (
             ".thread-selector-wrap",
@@ -1949,20 +2046,23 @@ class TestFlatThreadSwitcher(StudioApiCase):
             ".thread-list",
             ".thread-item",
             ".thread-item.active",
-            ".thread-item-stage",
             ".thread-item-status",
+            ".thread-section",
+            ".thread-section-header",
+            ".researches-header",
+            ".implementations-header",
+            ".thread-stage-group",
+            ".thread-stage-header",
+            ".thread-folder-group",
+            ".thread-folder-header",
+            ".thread-count",
+            ".collapsed",
+            "backdrop-filter",
             "#134e9e",
-            "#060a12",
             "transition",
         ):
             self.assertIn(marker, css)
-        for removed in (
-            ".chat-task-select",
-            ".thread-section",
-            ".thread-stage",
-            ".thread-folder",
-        ):
-            self.assertNotIn(removed, css)
+        self.assertNotIn(".chat-task-select", css)
 
 
 class TestResearchThreads(StudioApiCase):
@@ -2182,6 +2282,45 @@ class TestResearchThreads(StudioApiCase):
         self.assertEqual(t["parent"], "research-001")
         self.assertIn("research-001", t["refs"])
         self.assertEqual(t["folder"], "Architecture")
+
+    def test_research_threads_scoped_per_project(self):
+        """T-175: research records resolve strictly under each target project's
+        own state/research/ store; project B never sees project A threads."""
+        attached = (studio.ATTACHED_FILE.read_text(encoding="utf-8")
+                    if studio.ATTACHED_FILE.is_file() else None)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                proj_a = Path(td) / "proj_a"
+                proj_b = Path(td) / "proj_b"
+                for p in (proj_a, proj_b):
+                    (p / ".agentsflower" / "state").mkdir(parents=True)
+                    studio.save_attached_project(str(p))
+                code, res = self.api("/api/research/create", method="POST",
+                                     body={"project": str(proj_a)})
+                self.assertEqual(code, 200, res)
+                self.assertEqual(res["thread"]["id"], "research-001")
+                store_a = proj_a / ".agentsflower" / "state" / "research"
+                store_b = proj_b / ".agentsflower" / "state" / "research"
+                self.assertTrue((store_a / "research-001.json").is_file())
+                self.assertFalse((store_b / "research-001.json").exists())
+                code, res = self.api(
+                    "/api/research/list?" + self.q({"project": str(proj_a)}))
+                self.assertEqual([t["id"] for t in res["threads"]], ["research-001"])
+                code, res = self.api(
+                    "/api/research/list?" + self.q({"project": str(proj_b)}))
+                self.assertEqual(res["threads"], [])
+                code, res = self.api("/api/research/update", method="POST", body={
+                    "project": str(proj_b), "id": "research-001", "name": "B-only"})
+                self.assertEqual(code, 200, res)
+                self.assertTrue((store_b / "research-001.json").is_file())
+                rec_a = json.loads((store_a / "research-001.json")
+                                   .read_text(encoding="utf-8"))
+                self.assertNotEqual(rec_a["name"], "B-only")
+        finally:
+            if attached is None:
+                studio.ATTACHED_FILE.unlink(missing_ok=True)
+            else:
+                studio.ATTACHED_FILE.write_text(attached, encoding="utf-8")
 
     def test_multi_research_ui_markers(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
@@ -3033,8 +3172,8 @@ class TestTelemetryFactAndCostDashboard(StudioApiCase):
             self.assertEqual(t510["execution_time_seconds"], 0.0)
             self.assertEqual(t510["model_calls"], 0)
 
-    def test_cost_and_roi_dashboard_removed_from_analytics_view(self):
-        """T-173: the unsolicited Cost & ROI subtab is gone; analytics keeps 3 subtabs."""
+    def test_cost_and_roi_dashboard_subtab_in_analytics_view(self):
+        """T-175: the Cost & ROI subtab is restored as a fourth analytics tab."""
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
             html = resp.read().decode("utf-8")
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
@@ -3046,10 +3185,6 @@ class TestTelemetryFactAndCostDashboard(StudioApiCase):
             'data-sub="index"',
             'data-sub="graph"',
             'data-sub="roadmap"',
-        ):
-            self.assertIn(marker, html)
-
-        for removed in (
             'data-sub="costs"',
             'id="btnSubtabCosts"',
             "Cost &amp; ROI Dashboard",
@@ -3061,25 +3196,27 @@ class TestTelemetryFactAndCostDashboard(StudioApiCase):
             'id="costStageDistribution"',
             'id="costTaskTableBody"',
         ):
-            self.assertNotIn(removed, html)
+            self.assertIn(marker, html)
 
-        for removed in (
+        for marker in (
             "loadCostAnalytics",
             "renderCostDashboard",
             "costRoiDashboard",
             "costStageDistribution",
             "costTaskTableBody",
             "costAnalytics",
+            "/api/analytics/costs",
+            "state.analyticsSubTab === 'costs'",
         ):
-            self.assertNotIn(removed, js)
+            self.assertIn(marker, js)
 
-        for removed in (
+        for marker in (
             ".cost-roi-dashboard",
             ".cost-summary-grid",
             ".cost-stage-bar",
             ".cost-task-table",
         ):
-            self.assertNotIn(removed, css)
+            self.assertIn(marker, css)
 
 
 class TestProjectNamingAndDashboardPlaceholder(StudioApiCase):
