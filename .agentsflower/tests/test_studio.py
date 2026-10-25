@@ -2116,6 +2116,36 @@ class TestPersistentThreadDropdown(StudioApiCase):
         self.assertIn("closeThreadDropdown", keys)
 
 
+class TestThreadDropdownInsideClicks(StudioApiCase):
+    """T-179: clicks inside #threadDropdown never reach the document
+    outside-click handler, so toggling collapsible headers (whose re-render
+    detaches the clicked node mid-bubble) and picking task items cannot close
+    the dropdown; it closes only on outside click, Escape or the threadPill."""
+
+    def shell_js(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            return resp.read().decode("utf-8")
+
+    def fn_body(self, js, name):
+        start = js.index(f"function {name}(")
+        return js[start:js.index("\n  }", start)]
+
+    def test_inside_clicks_stop_before_document_handler(self):
+        setup = self.fn_body(self.shell_js(), "setupThreadSelector")
+        self.assertIn("threadDropdown.addEventListener('click'", setup)
+        self.assertIn("stopPropagation", setup)
+
+    def test_toggle_collapse_does_not_close_dropdown(self):
+        body = self.fn_body(self.shell_js(), "toggleThreadCollapse")
+        self.assertNotIn("closeThreadDropdown", body)
+        self.assertIn("fillThreadList", body)
+
+    def test_studio_js_cache_busting_version(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        self.assertIn("studio.js?v=6", html)
+
+
 class TestResearchThreads(StudioApiCase):
     """Tests for T-157: multi-research threads, folders, persistence, context forking."""
 
