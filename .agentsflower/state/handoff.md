@@ -188,3 +188,18 @@ verdict; acceptance of both is mechanical and falls to the next tick.
 What waits: T-178 attempt 1 running (verifies persistent thread dropdown).
 For the human: as before - T-139/T-144 worktree cleanup, T-140 metadata.source
 spelling nit, Stage 8 remainder needs plan approval.
+
+Background session devin-background, 2026-10-25 ~23:51Z: the tick need
+"T-179 Task File: Role 'None'" was stale - the scaffolded file already had
+`Role: developer` (committed in ac34d94; the ` M` flags were stat-only, tree
+clean after refresh). By the time tick acted, the conductor's launcher had
+already taken launch.lock and started T-179 attempt 1 on devin (pid 54412,
+23:51:41Z, deadline 00:31:41Z, model probe ok); my `run --even-if-live`
+correctly refused on the in-flight launch. tick.json refreshed: T-179 is a
+`wait`, needs empty.
+
+What waits: T-179 attempt 1 running (fix thread dropdown premature
+collapse). On its completion the next Orchestrator decides the Result;
+Independent check is `tester` - T-180 (blocked, Depends on T-179) is the
+prepared tester. For the human: unchanged - T-139/T-144 worktree cleanup,
+T-140 metadata.source spelling nit, Stage 8 remainder needs plan approval.
