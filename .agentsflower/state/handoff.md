@@ -176,3 +176,15 @@ rejected worktrees/branches T-139 and T-144 (artifacts already on main via
 successors); (b) contract nit - T-140 metadata.source org spelling
 `google/chrome-extensions-samples` vs canonical `GoogleChrome` (links are
 correct; ride any next contract); (c) Stage 8 remainder needs plan approval.
+
+Background session devin-background, 2026-10-25 ~22:26Z: cleared the tick
+need "T-177 developer completed: write its tester task". T-178's Task File
+existed but missed the Verifies line, so gate.parse failed and testers_of
+saw no tester. Added `Verifies: T-177 @ d1102618b2b052509da71c2a289369317e21c952`,
+set T-178 blocked -> ready (tester tasks need no approval), launched
+attempt 1 on devin (pid 47220). T-177 stays in progress until the tester
+verdict; acceptance of both is mechanical and falls to the next tick.
+
+What waits: T-178 attempt 1 running (verifies persistent thread dropdown).
+For the human: as before - T-139/T-144 worktree cleanup, T-140 metadata.source
+spelling nit, Stage 8 remainder needs plan approval.

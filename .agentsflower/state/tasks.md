@@ -161,5 +161,5 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-174 | Verify Model Quota Hub UI Polish and Cockpit Cleanup | 7 | tester | devin | done | T-173 | 3f28f31f80ad29509e7d6e5a16a614c706e53095 |  | 2026-10-25 09:51 |
 | T-175 | Chat Thread Selector Folders and Project Isolation | 7 | developer | devin | done | T-174 | e3ab0ecb3002e45abdaee909580147c73052654e |  | 2026-10-25 20:19 |
 | T-176 | Verify Chat Thread Selector and Project Isolation | 7 | tester | devin | done | T-175 | e3ab0ecb3002e45abdaee909580147c73052654e | Tester for T-175 @ e3ab0ec; Verifies added, launched by background orchestrator | 2026-10-25 20:06 |
-| T-177 | Persistent Thread Dropdown on Selection | 7 | developer | devin | ready | T-176 |  |  | 2026-10-25 22:06 |
-| T-178 | Verify Persistent Thread Dropdown Behavior | 7 | tester | devin | blocked | T-177 |  |  | 2026-10-25 22:06 |
+| T-177 | Persistent Thread Dropdown on Selection | 7 | developer | devin | in progress | T-176 |  |  | 2026-10-25 22:06 |
+| T-178 | Verify Persistent Thread Dropdown Behavior | 7 | tester | devin | in progress | T-177 |  | Tester for T-177 @ d110261; Verifies added, launched by background orchestrator | 2026-10-25 22:25 |

@@ -7,6 +7,7 @@ Stage: 7
 Depends on: T-177
 Independent check: none
 Resume: none
+Verifies: T-177 @ d1102618b2b052509da71c2a289369317e21c952
 Routing exception: human authorized persistent chat dropdown verification (2026-10-26)
 
 ## Goal

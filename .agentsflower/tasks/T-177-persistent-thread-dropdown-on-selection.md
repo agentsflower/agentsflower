@@ -68,3 +68,21 @@ Ensure the chat thread selector dropdown remains open and interactive when selec
 ## Result
 
 <!-- Worker writes outcome below -->
+Outcome: completed
+Change: d110261 on t-177-persistent-thread-dropdown-on-selection
+Files:
+- .agentsflower/studio/studio.js - selectThread no longer calls closeThreadDropdown()/renderThreadDropdown(); toggles .active on .thread-item[data-thread] in place; new focusout listener on #threadSelector closes only when relatedTarget is a real element outside it
+- .agentsflower/tests/test_studio.py - new class TestPersistentThreadDropdown (3 contract tests)
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (115 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` (whole suite, pre-commit) -> 619 ran, 1 error: test_scenarios.test_scenario_quota_limit_recovery_simulated PermissionError on temp .runtime\T-001.json - documented Windows temp-fixture flake (known-issues 2026-10-25), passes on isolated rerun, unrelated to this change
+Criteria:
+- C-01: pass - selectThread in .agentsflower/studio/studio.js sets state.inspectorTaskId and calls updateThreadPill()+renderInspector() without closeThreadDropdown; test_select_thread_keeps_dropdown_open asserts it
+- C-02: pass - selectThread toggles .thread-item.active in place via classList.toggle on data-thread match; styling exists in studio.css .thread-item.active; test_select_thread_marks_active_item_in_place
+- C-03: pass - document click handler closes on !threadSelector.contains(ev.target); Escape handled in onThreadKeydown and pill keydown; threadPill click toggles .open closed; focusout closes only when relatedTarget is a concrete element outside #threadSelector; test_close_triggers_outside_click_escape_and_blur
+- C-04: pass - checks command green, 115 tests
+Found, not fixed:
+- focusout ignores null relatedTarget on purpose: window blur, detached nodes after renderThreadDropdown rebuild, and the prompt() dialog in addResearchFolder fire blur/focusout with no relatedTarget; closing there would violate the "stays open while adding folders" requirement. Plain outside clicks still close via the document click listener.
+- + New thread flow (addResearchThread -> selectThread -> chatInput.focus()) now leaves the dropdown open per the persistence contract; previously selectThread closed it.
+Proposed memory updates:
+- none
