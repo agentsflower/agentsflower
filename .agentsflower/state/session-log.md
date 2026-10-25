@@ -527,3 +527,12 @@ branches of T-139 and T-144 left for human-agreed cleanup.
 - Merges: d72d033 (T-149), 2b8e9f3 (T-151), 46e11c7 (T-153), 772f321 (T-155), 38495f2 (T-157), 9d208969 (T-161), a5889f2 (T-163), 30bd454 (T-165), d610b8a (T-167), 83e28f2 (T-169), a95f84e (T-171).
 
 Ended: ledger fully clean, tick.json no needs/waits, stage 7 gate PASS. What waits: nothing mechanical - new scope needs the human.
+
+2026-10-25 background orchestrator (devin-background), ~09:10-09:55Z: closed the last open tick need - T-173/T-174.
+
+- tick.json named one need: T-173 launch refused at preflight ("## Checks empty") - already fixed by commit 0035d60; a stale 09:10Z launch.lock had also self-expired (>300s rule). tick launched T-173 attempt 1 on devin; worker completed in ~17 min, `Outcome: completed`, Change 3f28f31, all C-01..C-05 pass (test_studio 106/106; full suite 609/610 with the known Windows temp-fixture PermissionError flake, passes isolated).
+- Set T-173 `review`; filled T-174's `Verifies: T-173 @ 3f28f31f80ad29509e7d6e5a16a614c706e53095` header and set it `ready`. Tick's mechanical decide() does not model the pre-merge tester exception (checked task in review satisfies its Depends), so T-174 was launched directly via run-task.ps1 - the launcher's admission gate handled it correctly.
+- T-174 exited `completed`, `Verdict: pass` with live headless-Chrome DOM evidence (card collision checks at 1366/480/320px, 3-subtab analytics, project disambiguation, flat searchable thread dropdown; 106 + 610 test runs clean on rerun). tick accepted T-174, then T-173; merged at 6a059a4, worktree/branch cleaned.
+- Recorded tester-proposed known-issues: test_scenarios PermissionError flake (second observation) + pre-existing <=600px sidebar clipping limitation (candidate future task, human's call).
+
+Ended: ledger fully clean, tick.json no needs/waits, main@6a059a4.

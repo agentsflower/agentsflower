@@ -169,3 +169,15 @@ Errors, dead ends, and constraints of the AgentFlow template. Each entry: date, 
   every file the contract's own goals require touching.
 - 2026-10-25 - Silent ledger row drop: T-166's row vanished from `.agentsflower/state/tasks.md` between ~00:14Z and ~06:20Z while other rows updated fine (file ends T-165 -> T-167). Suspected stale-snapshot `ledger.save`/`_write_atomic` rewrite from a concurrent writer (worker-side register_task_pool/move_task_stage paths touch tasks.md). Row restored by hand. Watch for recurrence.
 - 2026-10-25 - Tester Result gate failures repeat: evidence lines with `evidence:` followed by prose/bare basenames, or `.runtime/<task>.evidence/` files without the `T-NNN.` filename prefix, fail verify as out-of-scope path claims (T-154, T-156 this session; earlier T-141/T-147/T-075/T-080). Mitigation in place: pending tester Task Files carry an explicit evidence-format hint line; fixes so far were a re-attempt (T-154) and surgical renames/rewording with verdicts unchanged (T-156).
+- 2026-10-25 - test_scenarios.test_scenario_interrupted_merge_resume_simulated
+  is flaky on Windows (PermissionError reading its temp tasks\.runtime\T-001.json
+  while a simulated attempt file is still held); passes on isolated and
+  full-suite rerun. Observed by T-173's worker and T-174's tester on the same
+  day; same Windows temp-fixture flake class as the documented test_run_task.py
+  entry. Reopen as a task if it starts failing deterministically.
+- 2026-10-25 - Pre-existing Studio limitation (flagged by T-174's tester,
+  unchanged by T-173): the sidebar is fixed 200-450px and never collapses;
+  at <=~600px viewports the workspace pane is narrower than the 320px card
+  minimum, so capacity cards are clipped with no horizontal scroll.
+  Card-internal layout stays collision-free; candidate for a future
+  responsive-layout task.

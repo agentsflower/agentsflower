@@ -82,3 +82,26 @@ Resolve visual clutter, card element collisions, and cockpit UX regressions acro
 
 <!-- Worker writes outcome below -->
 
+Outcome: completed
+Change: 3f28f31f80ad29509e7d6e5a16a614c706e53095 on t-173-model-quota-hub-ui-polish
+Files:
+- .agentsflower/studio/index.html - removed #btnSubtabCosts subtab and the whole #costRoiDashboard Cost & ROI container; analytics keeps exactly 3 subtabs
+- .agentsflower/studio/studio.js - two-row card header (.capacity-card-header + .capacity-card-status-row with the .status-badge on its own row); removed 'costs' subtab branch, loadCostAnalytics/renderCostDashboard and all redundant calls; ts=Date.now() force-reload on project switch; flat searchable #threadDropdown (search input, Research & Inception (General Chat) top option, flat items with task ID/title/stage pill/status badge)
+- .agentsflower/studio/studio.css - .tools-capacity-grid min 320px; .capacity-card-header/.capacity-card-status-row layout + overflow-safe title/badge/toggle typography; removed Cost & ROI styles; replaced accordion styles with .thread-search/.thread-list/.thread-item-* styles
+- .agentsflower/tools/studio.py - get_project_flow_root probes code/ and src/ children; project_display_name formats generic dirs as "Parent / name"; find_projects discovers via flow-root resolution; missing project dashboards serve an HTML placeholder with rebuild hint
+- .agentsflower/tests/test_studio.py - updated thread-switcher, multi-research, manual-create and cost-ROI tests to the new contracts; added TestProjectNamingAndDashboardPlaceholder and capacity-card structure markers
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (106 passed / 0 failed)
+- evidence: .agentsflower/tasks/.runtime/T-173.check_test_studio.txt
+Criteria:
+- C-01: pass - .capacity-card-header holds title + .toggle-state-label + .platform-enable-toggle; .capacity-card-status-row is a dedicated badge row that cannot collide with title or toggle
+- C-02: pass - #btnSubtabCosts and #costRoiDashboard removed; 'costs' branch and cost dashboard code removed from studio.js; test asserts both absent and 3 subtabs present
+- C-03: pass - project_display_name maps code/site/v1/v2 to "Parent / name"; test verifies "AntiBrowser / code" through /api/projects
+- C-04: pass - renderThreadDropdown builds .thread-search + flat .thread-list (no sections, no collapse keys); items show .thread-item-id/.thread-item-title/.thread-item-stage/.thread-item-status
+- C-05: pass - 106 tests OK; full suite 609/610 with one unrelated Windows temp-fixture PermissionError flake (test_scenarios) that passes in isolation
+Found, not fixed:
+- /api/analytics/costs backend endpoint remains (UI-only removal per contract; its API tests stay green)
+- Research folder assignment stays editable via inspector controls, but the flat dropdown no longer groups by folder (contract-mandated flat list)
+Proposed memory updates:
+- known-issues candidate: test_scenarios.py also hits the Windows temp-dir PermissionError flake class documented for test_run_task.py; isolated rerun passes
+

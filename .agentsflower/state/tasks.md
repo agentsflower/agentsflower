@@ -157,5 +157,5 @@ One row per task. Written only by the Orchestrator (or a Single Mode session). S
 | T-171 | End-to-End Integration: Project Model Filtering in Studio Chat & Task Inception | 7 | developer | devin | done | T-170 | a95f84e174f30a091b00b702c61319b321b04a6f | Outcome completed; awaiting tester T-172 verdict | 2026-10-25 08:36 |
 | T-172 | Verify End-to-End Model Quota Hub Project Filtering and Fallback Guards | 7 | tester | devin | done | T-171 | a95f84e174f30a091b00b702c61319b321b04a6f | Tester for T-171; verifies that chat and task creation strictly enforce project-active model constraints | 2026-10-25 08:36 |
 | T-166 | Verify Telemetry Fact Tracking and Studio Cost & ROI Dashboard | 7 | tester | devin | done | T-165 | 30bd454f3ba1418a92067fb2b94ec87ce0f7770d | Tester for T-165; verifies cost dashboard rendering, aggregations, and math (ledger row restored after silent drop) | 2026-10-25 06:39 |
-| T-173 | Model Quota Hub UI Polish and Cockpit Cleanup | 7 | developer | devin | ready | T-172 |  |  | 2026-10-25 09:09 |
-| T-174 | Verify Model Quota Hub UI Polish and Cockpit Cleanup | 7 | tester | devin | blocked | T-173 |  |  | 2026-10-25 09:09 |
+| T-173 | Model Quota Hub UI Polish and Cockpit Cleanup | 7 | developer | devin | done | T-172 | 3f28f31f80ad29509e7d6e5a16a614c706e53095 | Outcome completed @ 3f28f31; awaiting tester T-174 verdict | 2026-10-25 09:51 |
+| T-174 | Verify Model Quota Hub UI Polish and Cockpit Cleanup | 7 | tester | devin | done | T-173 | 3f28f31f80ad29509e7d6e5a16a614c706e53095 |  | 2026-10-25 09:51 |

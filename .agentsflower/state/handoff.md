@@ -1,6 +1,23 @@
 # Session Handoff
 
-As of: 2026-10-25 ~08:40Z, main@750ff3a (T-171 merge; Stage 7 gate PASS at 51 tasks).
+As of: 2026-10-25 ~09:55Z, main@6a059a4 (T-173 merge; ledger fully clean).
+
+Background session devin-background, ~09:10-09:55Z: resolved the tick need
+(T-173 launch refused at preflight, "## Checks empty") - the fix was already
+committed (0035d60) and a stale launch.lock self-expired. tick launched
+T-173 (devin); `completed` @ 3f28f31, all criteria pass. Set T-173 `review`,
+filled T-174's `Verifies:` header, launched it directly via run-task.ps1
+(tick's mechanical decide() does not model the pre-merge tester exception -
+the launcher's admission gate does). T-174 `Verdict: pass` on live
+headless-Chrome DOM evidence; tick accepted T-174 then T-173, merged at
+6a059a4, worktree/branch cleaned.
+
+What waits: nothing mechanical - tick clean, ledger clean. For the human:
+T-174's tester flagged a pre-existing <=600px sidebar clipping limitation
+(candidate future responsive-layout task, recorded in known-issues.md);
+conductor autostart stays off (`conductor-panel.ps1 -Install` keeps the
+project moving when sessions end).
+
 
 Background session devin-background: ran the entire approved batch
 T-149..T-172 to a clean ledger - 11 developer merges (d72d033, 2b8e9f3,
