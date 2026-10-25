@@ -2495,9 +2495,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function selectThread(id) {
     state.inspectorTaskId = id || 'research';
-    closeThreadDropdown();
+    if (threadDropdown) {
+      threadDropdown.querySelectorAll('.thread-item').forEach((el) => {
+        el.classList.toggle('active', el.getAttribute('data-thread') === state.inspectorTaskId);
+      });
+    }
     updateThreadPill();
-    renderThreadDropdown();
     renderInspector();
   }
 
@@ -2613,6 +2616,11 @@ document.addEventListener('DOMContentLoaded', () => {
     threadDropdown.addEventListener('keydown', onThreadKeydown);
     document.addEventListener('click', (ev) => {
       if (!threadSelector.contains(ev.target)) closeThreadDropdown();
+    });
+    threadSelector.addEventListener('focusout', (ev) => {
+      if (ev.relatedTarget && !threadSelector.contains(ev.relatedTarget)) {
+        closeThreadDropdown();
+      }
     });
   }
 
