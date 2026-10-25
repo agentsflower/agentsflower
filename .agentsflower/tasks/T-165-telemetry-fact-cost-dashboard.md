@@ -76,3 +76,24 @@ Capture actual execution telemetry and provide a dedicated Cost & ROI Dashboard 
 ## Result
 
 <!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 30bd454f3ba1418a92067fb2b94ec87ce0f7770d on t-165-telemetry-fact-cost-dashboard
+Files:
+- .agentsflower/tools/studio.py - added `_extract_task_runtime_telemetry` and `get_analytics_costs` plus GET/POST `/api/analytics/costs` routing to aggregate planned budgets (`.plan.json`) against actual worker telemetry (`.runtime/`) with `actual_tokens`, `actual_cost_usd`, `delta_usd`, `net_savings_usd`, `local_free_tokens_pct`, and per-stage distributions.
+- .agentsflower/studio/index.html - added the `Cost & ROI Dashboard` subtab button (`data-sub="costs"`) and `#costRoiDashboard` panel with summary cards, per-stage distribution bar, stage filter, and detailed Plan vs Fact task table.
+- .agentsflower/studio/studio.js - wired the `costs` analytics subtab, implemented `loadCostAnalytics` and `renderCostDashboard` with stage filtering, summary card formatting, per-stage Plan/Fact dual bars, and stage-grouped task table rows.
+- .agentsflower/studio/studio.css - added styles for `.cost-roi-dashboard`, `.cost-summary-grid`, `.cost-stage-bar`, `.cost-stage-distribution`, `.cost-task-table`, `.cost-delta-pill`, and status badges.
+- .agentsflower/tests/test_studio.py - added `TestTelemetryFactAndCostDashboard` covering `/api/analytics/costs` Plan vs Fact aggregation, stage breakdowns, empty telemetry fallbacks, unregistered project 403 checks, and UI contract markers.
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (87 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (587 passed / 0 failed / 4 skipped)
+Criteria:
+- C-01: pass - `/api/analytics/costs` (`get_analytics_costs` and `_extract_task_runtime_telemetry`) ingests `.plan.json` planned metrics and `.runtime/` worker telemetry to compute `actual_tokens`, `actual_cost_usd`, `delta_usd = actual - plan`, and stage/project rollups; evidence: .agentsflower/tools/studio.py, .agentsflower/tests/test_studio.py
+- C-02: pass - Studio navigation includes the `Cost & ROI Dashboard` subtab (`data-sub="costs"`) switching to `#costRoiDashboard` and loading `/api/analytics/costs`; evidence: .agentsflower/studio/index.html, .agentsflower/studio/studio.js, .agentsflower/studio/studio.css
+- C-03: pass - `#costSummaryGrid` cards render `Total Planned ($)`, `Total Actual ($)`, `Net Savings ($)`, and `Local/Free Tokens (%)` from `/api/analytics/costs` summary data; evidence: .agentsflower/studio/index.html, .agentsflower/studio/studio.js
+- C-04: pass - `#costTaskTable` and `renderCostDashboard` render `Stage | Task ID | Title | Model | Plan ($) | Fact ($) | Delta (%) | Status` rows grouped by stage alongside `#costStageBar` and `#costStageDistribution`; evidence: .agentsflower/studio/index.html, .agentsflower/studio/studio.js, .agentsflower/studio/studio.css
+- C-05: pass - all 87 tests in `test_studio.py` (including `TestTelemetryFactAndCostDashboard`) and all 591 tests in the full suite pass cleanly; evidence: .agentsflower/tests/test_studio.py
+Found, not fixed:
+- none
+Proposed memory updates:
+- none
