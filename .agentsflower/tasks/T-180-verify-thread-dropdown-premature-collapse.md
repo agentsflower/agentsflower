@@ -1,4 +1,15 @@
-# Task: T-180 - Verify Thread Dropdown Stays Open on Header Toggles & Task Selection
+# T-180: Verify Thread Dropdown Stays Open on Header Toggles & Task Selection
+
+Role: tester
+Tool: devin
+Model: swe-2-high
+Stage: 7
+Depends on: T-179
+Branch: t-179-fix-thread-dropdown-premature-collapse
+Worktree: E:\Projects\AgentFlow\worktrees\agentsflower-t-179-fix-thread-dropdown-premature-collapse.t-180
+Independent check: none
+Resume: none
+Verifies: T-179
 
 ## Context
 

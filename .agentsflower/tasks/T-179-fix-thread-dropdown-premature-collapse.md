@@ -1,4 +1,15 @@
-# Task: T-179 - Fix Thread Dropdown Premature Collapse on Collapsible Headers & Task Items
+# T-179: Fix Thread Dropdown Premature Collapse on Collapsible Headers & Task Items
+
+Role: developer
+Tool: devin
+Model: swe-2-high
+Stage: 7
+Depends on: T-178
+Branch: t-179-fix-thread-dropdown-premature-collapse
+Worktree: E:\Projects\AgentFlow\worktrees\agentsflower-t-179-fix-thread-dropdown-premature-collapse
+Independent check: tester
+Resume: none
+Routing exception: human authorized thread dropdown collapse fixes (2026-10-26)
 
 ## Context
 
