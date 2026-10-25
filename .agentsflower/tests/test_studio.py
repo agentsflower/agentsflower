@@ -2065,6 +2065,57 @@ class TestStructuredThreadSwitcher(StudioApiCase):
         self.assertNotIn(".chat-task-select", css)
 
 
+class TestPersistentThreadDropdown(StudioApiCase):
+    """T-177: selecting a thread keeps the dropdown open; it closes only on
+    outside click, blur to an element outside #threadSelector, Escape, or the
+    threadPill toggle."""
+
+    def shell_js(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            return resp.read().decode("utf-8")
+
+    def fn_body(self, js, name):
+        start = js.index(f"function {name}(")
+        return js[start:js.index("\n  }", start)]
+
+    def test_select_thread_keeps_dropdown_open(self):
+        body = self.fn_body(self.shell_js(), "selectThread")
+        self.assertNotIn("closeThreadDropdown", body)
+        for marker in (
+            "state.inspectorTaskId",
+            "updateThreadPill()",
+            "renderInspector()",
+        ):
+            self.assertIn(marker, body)
+
+    def test_select_thread_marks_active_item_in_place(self):
+        body = self.fn_body(self.shell_js(), "selectThread")
+        self.assertNotIn("renderThreadDropdown", body)
+        for marker in (
+            "querySelectorAll('.thread-item')",
+            "classList.toggle('active'",
+            "data-thread",
+        ):
+            self.assertIn(marker, body)
+
+    def test_close_triggers_outside_click_escape_and_blur(self):
+        js = self.shell_js()
+        setup = self.fn_body(js, "setupThreadSelector")
+        for marker in (
+            "document.addEventListener('click'",
+            "!threadSelector.contains(ev.target)",
+            "addEventListener('focusout'",
+            "ev.relatedTarget",
+            "threadSelector.contains(ev.relatedTarget)",
+            "threadSelector.classList.contains('open')",
+            "closeThreadDropdown",
+        ):
+            self.assertIn(marker, setup)
+        keys = self.fn_body(js, "onThreadKeydown")
+        self.assertIn("Escape", keys)
+        self.assertIn("closeThreadDropdown", keys)
+
+
 class TestResearchThreads(StudioApiCase):
     """Tests for T-157: multi-research threads, folders, persistence, context forking."""
 
