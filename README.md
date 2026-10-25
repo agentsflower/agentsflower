@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/agentsflower/agentsflower/actions/workflows/ci.yml/badge.svg)](https://github.com/agentsflower/agentsflower/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.16.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.17.0-blue.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MCP ready](https://img.shields.io/badge/MCP-optional%20server-green.svg)](#mcp-server-optional)
 
@@ -34,15 +34,21 @@ flowchart LR
 
 The Orchestrator splits the goal into task contracts, launches workers and accepts results on evidence; it is the only writer of project memory. Developers and Testers each work on an isolated artifact (worktree / disposable checkout); the Deployer consumes only an accepted SHA and starts manually after human approval. Isolation is by git worktree plus post-attempt checks — not a universal sandbox guarantee for every tool.
 
-## Dashboard
+## Studio Cockpit & Analytics Dashboard
 
 ```bash
-python .agentsflower/dashboard/build.py          # real view -> .agentsflower/dashboard/out/
-python .agentsflower/dashboard/build.py --demo   # deterministic fixture, marked DEMO DATA
-agentsflower dashboard --open                   # packaged CLI: build and open in a browser
+agentsflower studio --open                       # launch local web cockpit (default: port 8888)
+python .agentsflower/tools/studio.py --port 8888  # direct zero-dependency server
+python .agentsflower/dashboard/build.py           # build static analytics -> .agentsflower/dashboard/out/
 ```
 
-A read-only view for the human: task table, filters, Gantt, timeline, a roadmap page showing every `### Stage` of `docs/project-plan.md` (declared status, local task counts and exit-criteria evidence kept as three separate facts), and evidence metrics (first-pass gate rate, lead time, verdict counts). Missing telemetry is shown as N/A — never a zero or an invented saving. Local source snapshots: `python .agentsflower/dashboard/snapshot.py save <what>` / `restore vN`.
+AgentsFlower Studio is a zero-dependency local web cockpit that unites project management, capacity routing, and codebase intelligence:
+
+- **Multi-Project Cockpit**: sidebar switcher with automatic template discovery, smart flow-root resolution, and parent-path disambiguation (`Parent / code`).
+- **Model Quota Hub**: dynamic live detection of installed agent CLIs (`devin`, `claude`, `codex`, `agy`, `ollama`), per-project platform & model activation toggles, and secure third-party provider integration (OpenRouter, Groq) with masked API keys.
+- **Analytics & Roadmap**: 3-tab unified view containing **Tasks & Overview**, **Gantt & Dependency Graph**, and **Roadmap & Milestones** (`docs/project-plan.md` stage progression, task counts, and exit criteria).
+- **Interactive Kanban & Inspector**: live task status filtering, visual task spec creator, and slide-out contract inspector.
+- **Graft Code Intelligence**: AST codebase knowledge graph explorer and blast-radius impact analyzer.
 
 ![AgentsFlower dashboard](.agentsflower/docs/assets/dashboard.png)
 
@@ -56,8 +62,9 @@ A read-only view for the human: task table, filters, Gantt, timeline, a roadmap 
 | `.agentsflower/roles/` | one instruction file per role; `tool-routing.md`: which tool takes which task |
 | `.agentsflower/commands/` | slash-command texts (`.claude/commands/` holds one-line pointers) |
 | `.agentsflower/tasks/_template.md` | Task File template |
-| `.agentsflower/tools/` | `install.py` installer/updater, `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified CLI, `gate.py` preflight/verify/`done`, `accept.py` acceptance, `ledger.py` Task Ledger, `tick.py` scheduler, routing (`route.py`, `plan_route.py`, `route_report.py`, `quota_groups.py`), machine sharing (`machine_capacity.py`, `dispatch.py`), `hooks.py` Codex adapter, `mcp_server.py` optional MCP server |
-| `.agentsflower/dashboard/` | read-only view for the human (`python .agentsflower/dashboard/build.py`) |
+| `.agentsflower/tools/` | `install.py` installer/updater, `run_task.py` launcher (`run-task.ps1` Windows wrapper), `cli.py` unified CLI, `studio.py` local web cockpit, `gate.py` preflight/verify/`done`, `accept.py` acceptance, `ledger.py` Task Ledger, `tick.py` scheduler, routing (`route.py`, `plan_route.py`, `route_report.py`, `quota_groups.py`), machine sharing (`machine_capacity.py`, `dispatch.py`), `hooks.py` Codex adapter, `mcp_server.py` optional MCP server |
+| `.agentsflower/studio/` | AgentsFlower Studio web interface (HTML/CSS/JS, zero npm runtime dependencies) |
+| `.agentsflower/dashboard/` | read-only analytics view for the human (`python .agentsflower/dashboard/build.py`) |
 | `.agentsflower/tests/` | tests of the tools (`python -m unittest discover -s .agentsflower/tests`) |
 | `.agentsflower/VERSION`, `.agentsflower/README.md` | version and folder map |
 | `AGENTS.md`, `CLAUDE.md`, `.claude/commands/` | entry points for the tools |

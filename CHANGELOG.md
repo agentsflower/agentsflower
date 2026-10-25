@@ -16,6 +16,12 @@ Stage 7: AgentsFlower Studio Local Web UI, Graft AST Knowledge Graph and Special
   - Full CLI tooling: `agentsflower graft build|query|impact|symbols|raw`.
   - MCP tools exported: `graft_query`, `graft_impact`, `graft_symbols`.
   - Blast Radius integration in gate preflight (`gate.py preflight`).
+- **Model Quota Hub & Cockpit Polish (T-167..T-174):**
+  - Live CLI dynamic scanning for installed agents (`devin`, `claude`, `codex`, `agy`, `ollama`) without hardcoded catalogs.
+  - Per-project activation toggles for platforms and models, enforcing project whitelists in chat and task inception.
+  - Secure third-party provider integration (OpenRouter, custom OpenAI-compatible) with masked secret storage.
+  - Multi-project path disambiguation (`Parent / code`) and smart flow-root auto-detection for nested repositories.
+  - Cockpit UI polish: two-row platform card layout eliminating badge/toggle collisions, and restoration of the clean 3-subtab Analytics view (Tasks & Overview, Gantt & Dependency Graph, Roadmap & Milestones).
 - **Specialized Skills Ecosystem (T-123, T-124):**
   - Dedicated `.agentsflower/skills/` directory packaged as template-owned files across child projects (`install.py`).
   - 9-domain registry (`INDEX.md`) covering UI/UX, Algorithms, Architecture, Browser/Extension MV3, Backend APIs, Frontend Frameworks, DevOps CI/CD, Product Spec, and SEO/GEO Citability.
