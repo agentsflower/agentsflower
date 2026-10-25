@@ -1316,6 +1316,230 @@ def _chat_run(argv: list, cwd: Path = None, timeout: int = CHAT_EXEC_TIMEOUT) ->
     return proc.returncode, (out or "").strip(), False
 
 
+# --- Persistent multi-research threads (.agentsflower/state/research/<id>.json) ---
+# Research threads are named "Task Research - NNN" (id `research-NNN`), can carry a
+# folder/category and refs to other research threads or tasks (T-NNN). Ref summaries
+# are injected into the chat prompt; turns persist to disk per thread.
+
+_RESEARCH_NUM_RE = re.compile(r"^research-(\d{1,4})$")
+_REF_RES_RE = re.compile(
+    r"(?i)\bref\s*:\s*(t-\d+|research\s*-?\s*\d+|task\s+research\s*-?\s*\d*)"
+)
+_FORK_RES_RE = re.compile(
+    r"(?i)\bfork\s+from\s+(research\s*-?\s*\d+|task\s+research\s*-?\s*\d*)"
+)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def normalize_research_id(raw) -> str:
+    """Normalize `research`, `Research-1`, `Task Research - 002` to `research` / `research-NNN`."""
+    s = re.sub(r"[^a-z0-9]+", "", str(raw or "").lower())
+    if s in ("research", "taskresearch"):
+        return "research"
+    m = re.fullmatch(r"(?:taskresearch|research)(\d{1,4})", s)
+    return f"research-{int(m.group(1)):03d}" if m else ""
+
+
+def normalize_ref(raw) -> str:
+    """Normalize a context reference: `T-NNN` task id or a research thread id."""
+    s = str(raw or "").strip()
+    if re.fullmatch(r"(?i)t-\d{1,4}", s):
+        return s.upper()
+    return normalize_research_id(s)
+
+
+def extract_context_refs(messages) -> list[str]:
+    """Pull `Ref: T-013` / `Ref: research-002` / `Fork from Research-001` tokens from chat text."""
+    refs: list[str] = []
+    for m in messages or []:
+        content = str(m.get("content") or "") if isinstance(m, dict) else str(m)
+        for tok in list(_REF_RES_RE.findall(content)) + list(_FORK_RES_RE.findall(content)):
+            n = normalize_ref(tok)
+            if n and n not in refs:
+                refs.append(n)
+    return refs
+
+
+def research_store_dir(target_root: Path) -> Path:
+    flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
+    return flow_root / "state" / "research"
+
+
+def _research_file(target_root: Path, thread_id) -> Path | None:
+    rid = normalize_research_id(thread_id)
+    if not rid:
+        return None
+    return safe_under(research_store_dir(target_root), f"{rid}.json")
+
+
+def _new_research_record(rid: str) -> dict:
+    if rid == "research":
+        name = "Research & Inception"
+    else:
+        name = f"Task Research - {rid.rsplit('-', 1)[1]}"
+    now = _now_iso()
+    return {
+        "id": rid, "name": name, "folder": "", "refs": [], "parent": "",
+        "created": now, "updated": now, "messages": [],
+    }
+
+
+def load_research_thread(target_root: Path, thread_id) -> dict | None:
+    rf = _research_file(target_root, thread_id)
+    if rf is None or not rf.is_file():
+        return None
+    try:
+        rec = json.loads(rf.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
+    if not isinstance(rec, dict) or not rec.get("id"):
+        return None
+    rec.setdefault("name", rec["id"])
+    rec.setdefault("folder", "")
+    rec.setdefault("refs", [])
+    rec.setdefault("parent", "")
+    rec.setdefault("messages", [])
+    return rec
+
+
+def save_research_thread(target_root: Path, rec: dict) -> bool:
+    rf = _research_file(target_root, rec.get("id"))
+    if rf is None:
+        return False
+    try:
+        rf.parent.mkdir(parents=True, exist_ok=True)
+        rf.write_text(json.dumps(rec, indent=2, ensure_ascii=False), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def list_research_threads(target_root: Path) -> list[dict]:
+    store = research_store_dir(target_root)
+    out: list[dict] = []
+    if store.is_dir():
+        for f in sorted(store.glob("research*.json")):
+            rec = load_research_thread(target_root, f.stem)
+            if rec:
+                out.append(rec)
+    out.sort(key=lambda r: (r["id"] != "research", r["id"]))
+    return out
+
+
+def _clean_folder(raw) -> str:
+    s = re.sub(r"[\\/]+", " ", str(raw or "")).strip()
+    return s[:60]
+
+
+def _merge_refs(rec: dict, refs, drop_self: bool = True) -> list[str]:
+    merged = [r for r in (rec.get("refs") or []) if isinstance(r, str)]
+    for raw in refs or []:
+        n = normalize_ref(raw)
+        if n and (not drop_self or n != rec.get("id")) and n not in merged:
+            merged.append(n)
+    return merged[:20]
+
+
+def create_research_thread(target_root: Path, name="", folder="", fork_from="") -> dict:
+    store = research_store_dir(target_root)
+    nums = []
+    if store.is_dir():
+        for f in store.glob("research-*.json"):
+            m = _RESEARCH_NUM_RE.fullmatch(f.stem)
+            if m:
+                nums.append(int(m.group(1)))
+    rec = _new_research_record(f"research-{max(nums, default=0) + 1:03d}")
+    if str(name or "").strip():
+        rec["name"] = str(name).strip()[:80]
+    rec["folder"] = _clean_folder(folder)
+    parent = normalize_research_id(fork_from)
+    if parent and parent != rec["id"]:
+        rec["parent"] = parent
+        rec["refs"] = [parent]
+    save_research_thread(target_root, rec)
+    return rec
+
+
+def update_research_thread(target_root: Path, thread_id, fields: dict) -> tuple[dict | None, str]:
+    rid = normalize_research_id(thread_id)
+    if not rid:
+        return None, "invalid research thread id"
+    rec = load_research_thread(target_root, rid) or _new_research_record(rid)
+    if "name" in fields:
+        v = str(fields.get("name") or "").strip()[:80]
+        if not v:
+            return None, "name must not be empty"
+        rec["name"] = v
+    if "folder" in fields:
+        rec["folder"] = _clean_folder(fields.get("folder"))
+    if "refs" in fields:
+        if not isinstance(fields.get("refs"), list):
+            return None, "refs must be a list"
+        rec["refs"] = []
+        rec["refs"] = _merge_refs(rec, fields["refs"])
+    parent = normalize_research_id(fields.get("fork_from"))
+    if parent and parent != rid:
+        rec["parent"] = parent
+        rec["refs"] = _merge_refs(rec, [parent])
+    rec["updated"] = _now_iso()
+    save_research_thread(target_root, rec)
+    return rec, ""
+
+
+def maybe_persist_research_turn(target_root: Path, thread, messages: list[dict],
+                                reply: str, refs=None, force: bool = False):
+    """Persist a completed chat turn for a research thread.
+
+    Writes when the thread record already exists or `persist: true` was sent, so
+    bare chat calls against an unpersisted thread stay side-effect free.
+    """
+    rid = normalize_research_id(thread)
+    if not rid:
+        return
+    rf = _research_file(target_root, rid)
+    if rf is None or (not force and not rf.is_file()):
+        return
+    try:
+        rec = load_research_thread(target_root, rid) or _new_research_record(rid)
+        rec["messages"] = [
+            {"role": m["role"], "content": m["content"]} for m in messages
+        ] + [{"role": "assistant", "content": reply}]
+        rec["refs"] = _merge_refs(rec, refs)
+        rec["updated"] = _now_iso()
+        save_research_thread(target_root, rec)
+    except Exception:
+        pass
+
+
+def reference_summary(target_root: Path, ref) -> str:
+    """One-line context summary for a linked task (T-NNN) or research thread."""
+    s = str(ref or "").strip()
+    if re.fullmatch(r"(?i)t-\d{1,4}", s):
+        ctx = get_task_context(target_root, s.upper())
+        if ctx.get("ok") and isinstance(ctx.get("task"), dict):
+            t = ctx["task"]
+            goal = str(t.get("goal") or "").replace("\n", " ").strip()[:160]
+            return f"{t.get('id', s.upper())} {t.get('title', '')} (status: {t.get('status', 'ready')}): {goal}".strip()
+        return f"{s.upper()}: referenced task not found"
+    rid = normalize_research_id(s)
+    if rid:
+        rec = load_research_thread(target_root, rid)
+        if rec is None:
+            return f"{rid}: referenced research thread not found"
+        msgs = rec.get("messages") or []
+        folder = f" [folder: {rec['folder']}]" if rec.get("folder") else ""
+        head = f"{rec.get('name') or rid} ({rid}){folder}: {len(msgs)} messages"
+        tail = "; ".join(
+            f"{m.get('role', 'user')}: {str(m.get('content', ''))[:80]}"
+            for m in msgs[-3:] if isinstance(m, dict)
+        )
+        return head + (f" - last: {tail}" if tail else "")
+    return f"{s}: unrecognized reference"
+
+
 def _normalize_chat_messages(raw_messages, fallback_prompt: str = "") -> list[dict]:
     normalized: list[dict] = []
     if isinstance(raw_messages, list):
@@ -1334,7 +1558,7 @@ def _normalize_chat_messages(raw_messages, fallback_prompt: str = "") -> list[di
     return normalized
 
 
-def format_chat_prompt(target_root: Path, thread: str, messages: list[dict]) -> str:
+def format_chat_prompt(target_root: Path, thread: str, messages: list[dict], refs=None) -> str:
     """Package active thread metadata and prior conversation history into a single prompt."""
     thread_id = (thread or "research").strip()
     lines = [
@@ -1351,6 +1575,12 @@ def format_chat_prompt(target_root: Path, thread: str, messages: list[dict]) -> 
                 lines.append(f"Task Goal: {t['goal'][:400]}")
             if t.get("allowed_files"):
                 lines.append("Allowed Files: " + ", ".join(t["allowed_files"][:8]))
+
+    if refs:
+        lines.append("")
+        lines.append("Referenced context (linked research / tasks):")
+        for r in refs:
+            lines.append(f"- {reference_summary(target_root, r)}")
 
     if len(messages) > 1:
         lines.append("")
@@ -1456,7 +1686,18 @@ def execute_chat_query(target_root: Path, body: dict) -> tuple[int, dict]:
     if not any(m["role"] == "user" and m["content"] for m in messages):
         return 400, {"ok": False, "error": "No user chat messages provided"}
 
-    prompt = format_chat_prompt(target_root, thread, messages)
+    refs: list[str] = []
+    for raw in body.get("refs") or []:
+        n = normalize_ref(raw)
+        if n and n not in refs:
+            refs.append(n)
+    for n in extract_context_refs(messages):
+        if n not in refs:
+            refs.append(n)
+    refs = [r for r in refs if r != normalize_research_id(thread)][:16]
+
+    prompt = format_chat_prompt(target_root, thread, messages, refs=refs)
+    persist_turn = bool(body.get("persist"))
 
     if tool == "ollama":
         if not local_adapter:
@@ -1500,6 +1741,7 @@ def execute_chat_query(target_root: Path, body: dict) -> tuple[int, dict]:
             "prompt_chars": len(prompt),
             "reply_chars": len(reply),
         }
+        maybe_persist_research_turn(target_root, thread, messages, reply, refs, force=persist_turn)
         return 200, {
             "ok": True,
             "reply": reply,
@@ -1539,6 +1781,7 @@ def execute_chat_query(target_root: Path, body: dict) -> tuple[int, dict]:
         }
 
     reply, usage = _parse_chat_output(tool, out, prompt=prompt)
+    maybe_persist_research_turn(target_root, thread, messages, reply, refs, force=persist_turn)
     return 200, {
         "ok": True,
         "reply": reply,
@@ -1609,6 +1852,27 @@ class StudioHandler(BaseHTTPRequestHandler):
             tid = qs.get("id", qs.get("task_id", [""]))[0]
             res = get_task_context(root, tid)
             self.send_json(res, 200 if res.get("ok") else 404)
+            return
+
+        if path == "/api/research/list":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            self.send_json({"ok": True, "threads": list_research_threads(root)})
+            return
+
+        if path == "/api/research/thread":
+            root = resolve_known_project(target_project_str)
+            if root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            rid = qs.get("id", [""])[0]
+            rec = load_research_thread(root, rid)
+            if rec is None:
+                self.send_json({"ok": False, "error": f"research thread not found: {rid}"}, 404)
+                return
+            self.send_json({"ok": True, "thread": rec})
             return
 
         if path == "/api/project/tree":
@@ -1830,6 +2094,39 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             status_code, res = execute_chat_query(target_root, body)
             self.send_json(res, status_code)
+            return
+
+        if path == "/api/research/create":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            rec = create_research_thread(
+                target_root,
+                name=body.get("name"),
+                folder=body.get("folder"),
+                fork_from=body.get("fork_from"),
+            )
+            self.send_json({"ok": True, "thread": rec})
+            return
+
+        if path == "/api/research/update":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            rid = str(body.get("id") or "").strip()
+            if not rid:
+                self.send_json({"ok": False, "error": "research thread id required"}, 400)
+                return
+            fields = {
+                k: body.get(k) for k in ("name", "folder", "refs", "fork_from") if k in body
+            }
+            rec, err = update_research_thread(target_root, rid, fields)
+            if rec is None:
+                self.send_json({"ok": False, "error": err}, 404 if "not found" in err else 400)
+                return
+            self.send_json({"ok": True, "thread": rec})
             return
 
         if path == "/api/task/synthesize":
