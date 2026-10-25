@@ -840,10 +840,80 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Task Detail Drawer ---
+  function availableStageNumbers(currentStage) {
+    const nums = new Set([1, 2, 3, 4, 5, 6, 7, 8]);
+    const cur = parseInt(String(currentStage || '1'), 10);
+    if (Number.isFinite(cur) && cur >= 1) {
+      nums.add(cur);
+      nums.add(cur + 1);
+    }
+    state.tasks.forEach(x => {
+      const n = parseInt(String(x.stage || '1'), 10);
+      if (Number.isFinite(n) && n >= 1) {
+        nums.add(n);
+        nums.add(n + 1);
+      }
+    });
+    return [...nums].sort((a, b) => a - b);
+  }
+
+  async function moveTaskStage(taskId, targetStage, statusEl = null, selectEl = null) {
+    const prevTask = state.tasks.find(x => x.id === taskId);
+    const prevStage = prevTask ? String(prevTask.stage || '1') : '1';
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--text-muted)';
+      statusEl.textContent = 'Validating DAG stage transition...';
+    }
+    try {
+      const resp = await fetch('/api/task/move-stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: state.currentProject,
+          id: taskId,
+          stage: targetStage,
+        }),
+      });
+      const data = await resp.json().catch(() => null);
+      if (resp.ok && data && data.ok) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--accent-emerald, #34d399)';
+          statusEl.textContent = 'Moved ' + taskId + ' to ' + (data.stage_label || stageLabel(targetStage));
+        }
+        await loadTasks(state.currentProject);
+        return data;
+      }
+      const errMsg = (data && (data.diagnostic || data.error))
+        ? (data.diagnostic || data.error)
+        : ('Cannot move ' + taskId + ' to ' + stageLabel(targetStage));
+      if (selectEl) selectEl.value = prevStage;
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = errMsg;
+      }
+      return data || { ok: false, error: errMsg };
+    } catch (err) {
+      if (selectEl) selectEl.value = prevStage;
+      const fallback = 'Stage move failed: ' + (err && err.message ? err.message : 'network error');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = fallback;
+      }
+      return { ok: false, error: fallback };
+    }
+  }
+
   function openTaskDrawer(t) {
     state.selectedTask = t;
     drawerTaskId.textContent = t.id;
     drawerTaskTitle.textContent = t.title;
+    const stageOpts = availableStageNumbers(t.stage).map(n =>
+      `<option value="${n}"${String(n) === String(t.stage) ? ' selected' : ''}>${escapeHTML(stageLabel(String(n)))}</option>`
+    ).join('');
 
     drawerBody.innerHTML = `
       <div>
@@ -856,9 +926,14 @@ document.addEventListener('DOMContentLoaded', () => {
           <span style="color:var(--text-subtle)">Assigned Tool / Model:</span>
           <span style="font-weight:600">${t.tool || 'auto'}</span>
         </div>
-        <div class="metric-row" style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <div class="metric-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="color:var(--text-subtle)">Stage:</span>
-          <span style="font-weight:600">${t.stage}</span>
+          <select id="drawerStageSelect" class="research-ctl-select" aria-label="Move task stage">${stageOpts}</select>
+        </div>
+        <div id="drawerStageMoveStatus" class="stage-move-diagnostic" style="display:none; font-size:0.76rem; margin-bottom:8px;"></div>
+        <div class="metric-row" style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text-subtle)">Depends on:</span>
+          <span style="font-weight:600">${escapeHTML(t.depends || 'none')}</span>
         </div>
         <div class="metric-row" style="display:flex; justify-content:space-between; margin-bottom:8px;">
           <span style="color:var(--text-subtle)">Status:</span>
@@ -885,6 +960,14 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
     `;
+
+    const drawerStageSel = document.getElementById('drawerStageSelect');
+    const drawerStageStatus = document.getElementById('drawerStageMoveStatus');
+    if (drawerStageSel) {
+      drawerStageSel.addEventListener('change', () => {
+        moveTaskStage(t.id, drawerStageSel.value, drawerStageStatus, drawerStageSel);
+      });
+    }
 
     taskDrawer.classList.add('active');
     taskDrawerOverlay.classList.add('active');
@@ -1219,62 +1302,12 @@ document.addEventListener('DOMContentLoaded', () => {
     probeChatPlatform(key);
   }
 
-  // --- Create Task Form Handler ---
+  // --- Create Task Form Handler (Guarded: manual creation disabled in Implementations) ---
   async function handleTaskCreate(e) {
     e.preventDefault();
-    syncCriteriaFromDOM();
-
-    const tid = document.getElementById('newTaskTid').value.trim();
-    const title = document.getElementById('newTaskTitle').value.trim();
-    const stage = document.getElementById('newTaskStage').value;
-    const role = document.getElementById('newTaskRole').value;
-    const tool = document.getElementById('newTaskTool').value;
-    const goal = document.getElementById('newTaskGoal').value.trim();
-
-    const allowed = state.allowedFiles.filter(Boolean);
-    const criteria = state.criteria.filter(s => s && s.trim());
-
-    const submitBtn = document.getElementById('btnSubmitTask');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span>Registering...</span>';
-
-    const res = await fetchJSON('/api/task/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project: state.currentProject,
-        id: tid,
-        title: title,
-        stage: stage,
-        role: role,
-        tool: tool,
-        goal: goal,
-        allowed: allowed,
-        criteria: criteria,
-      })
-    });
-
-    submitBtn.disabled = false;
-    submitBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <span>Generate Contract & Register in Ledger</span>
-    `;
-
-    if (res && res.ok) {
-      alert(`Success! Task ${tid} contract generated and registered in ledger.`);
-      createTaskForm.reset();
-      state.allowedFiles = ['.agentsflower/tools/*.py'];
-      state.criteria = [
-        'All unit tests pass without regressions: python -m unittest discover -s .agentsflower/tests',
-        'Clean git status and verification gate approval.'
-      ];
-      renderAllowedTags();
-      renderCriteriaList();
-      await loadTasks(state.currentProject);
-      switchTab('kanban');
-    } else {
-      alert(`Error creating task: ${res ? res.error : 'Unknown server error'}`);
-    }
+    alert('Manual task creation inside Implementations is disabled; tasks enter exclusively via approved synthesis pool in Researches.');
+    switchTab('explorer');
+    activateResearchThread();
   }
 
   // --- Global Project Synchronization ---
@@ -1836,13 +1869,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function buildThreadSection(sectionKey, title, count, withAdd, fill) {
     const collapseKey = 'sec:' + sectionKey;
+    const allowAdd = Boolean(withAdd) && sectionKey !== 'implementations';
     const sec = document.createElement('div');
     sec.className = 'thread-section' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
     sec.setAttribute('data-section', sectionKey);
+    sec.setAttribute('data-manual-create', allowAdd ? 'enabled' : 'disabled');
     const top = document.createElement('div');
     top.className = 'thread-section-top';
     top.appendChild(buildCollapsibleHeader('thread-section-header', collapseKey, title, count));
-    if (withAdd) {
+    if (allowAdd) {
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'thread-add';
@@ -2139,8 +2174,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function synthesizeTasksFromDiscussion() {
     if (!chatStream) return;
-    if (chatInput && chatInput.value.trim()) sendChatMessage();
     const threadKey = state.inspectorTaskId || 'research';
+    if (!isResearchThread(threadKey)) {
+      activateResearchThread();
+      return;
+    }
+    if (chatInput && chatInput.value.trim()) sendChatMessage();
     const items = getThreadItems(threadKey);
     const messages = items.filter(it => it.type === 'message').map(it => ({ role: it.role, content: it.content }));
 
@@ -2175,6 +2214,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateChatModelPill();
     const threadKey = state.inspectorTaskId || 'research';
     if (isResearchThread(threadKey)) {
+      if (btnSynthesizeTasks) btnSynthesizeTasks.disabled = false;
       const m = currentChatModel();
       chatStream.innerHTML =
         '<div class="chat-exec-card">' +
@@ -2192,6 +2232,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (btnSynthesizeTasks) btnSynthesizeTasks.disabled = true;
     const t = state.tasks.find(x => x.id === threadKey);
     if (!t) {
       chatStream.innerHTML = '<div class="empty-state"><p>No task selected or no tasks in this workspace.</p></div>';
@@ -2205,6 +2246,9 @@ document.addEventListener('DOMContentLoaded', () => {
       : 'Gate preflight: pass | Contract locked | Attempt history in .runtime/';
     const allowedHtml = (t.allowed_files || []).map(f => '<li><code>' + escapeHTML(f) + '</code></li>').join('');
     const critHtml = (t.criteria || []).map(c => '<li>' + escapeHTML((c.id ? c.id + ': ' : '') + (c.text || c)) + '</li>').join('');
+    const stageOpts = availableStageNumbers(t.stage).map(n =>
+      '<option value="' + n + '"' + (String(n) === String(t.stage) ? ' selected' : '') + '>' + escapeHTML(stageLabel(String(n))) + '</option>'
+    ).join('');
 
     chatStream.innerHTML =
       '<div class="chat-bubble user">приступай к ' + escapeHTML(t.id) + '</div>' +
@@ -2214,15 +2258,19 @@ document.addEventListener('DOMContentLoaded', () => {
         '<div class="exec-status-text">' + escapeHTML(execStatusText(t)) + '</div>' +
         '<div class="exec-meta">' +
           '<div class="exec-meta-row"><span class="k">Task ID</span><span class="v">' + escapeHTML(t.id) + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Stage</span><span class="v"><select id="taskStageSelect" class="research-ctl-select" aria-label="Reassign task stage">' + stageOpts + '</select></span></div>' +
+          '<div class="exec-meta-row"><span class="k">Depends on</span><span class="v" id="taskDependsOn">' + escapeHTML(t.depends || 'none') + '</span></div>' +
           '<div class="exec-meta-row"><span class="k">Role</span><span class="v">' + escapeHTML(t.role || '—') + '</span></div>' +
           '<div class="exec-meta-row"><span class="k">Tool</span><span class="v">' + escapeHTML(toolLabel) + '</span></div>' +
-          '<div class="exec-meta-row"><span class="k">Worktree</span><span class="v">' + escapeHTML(t.worktree || '—') + '</span></div>' +
+          '<div class="exec-meta-row"><span class="k">Worktree</span><span class="v">' + escapeHTML(t.worktree || '—') + ' <span id="taskWorktreeStatus" class="badge">checking...</span></span></div>' +
           '<div class="exec-meta-row"><span class="k">Status</span><span class="v' + (running ? ' running' : '') + '">' + escapeHTML(statusLabel) + '</span></div>' +
         '</div>' +
-        '<details class="pool-task-details"><summary>Contract Scope: Allowed Files &amp; Criteria</summary>' +
+        '<div id="taskStageMoveStatus" class="stage-move-diagnostic" style="display:none; font-size:0.75rem; margin:6px 0;"></div>' +
+        '<details class="pool-task-details" open><summary>Contract Scope: Allowed Files &amp; Criteria</summary>' +
           '<div id="taskContextScope" style="margin-top:6px; font-size:0.74rem;">' +
-            '<strong>Allowed Files:</strong><ul style="margin:4px 0 6px 16px;">' + (allowedHtml || '<li>none</li>') + '</ul>' +
-            '<strong>Acceptance Criteria:</strong><ul style="margin:4px 0 0 16px;">' + (critHtml || '<li>none</li>') + '</ul>' +
+            (t.goal ? '<div id="taskContractGoal" style="margin-bottom:6px;"><strong>Goal:</strong> ' + escapeHTML(t.goal) + '</div>' : '<div id="taskContractGoal" style="margin-bottom:6px;"></div>') +
+            '<strong>Allowed Files:</strong><ul id="taskAllowedList" style="margin:4px 0 6px 16px;">' + (allowedHtml || '<li>none</li>') + '</ul>' +
+            '<strong>Acceptance Criteria:</strong><ul id="taskCriteriaList" style="margin:4px 0 0 16px;">' + (critHtml || '<li>none</li>') + '</ul>' +
           '</div>' +
         '</details>' +
         '<div class="exec-diff" id="execDiff">' +
@@ -2238,6 +2286,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     getThreadItems(t.id).forEach(it => chatStream.appendChild(renderThreadItem(it)));
 
+    const stageSelEl = document.getElementById('taskStageSelect');
+    const stageMoveStatusEl = document.getElementById('taskStageMoveStatus');
+    if (stageSelEl) {
+      stageSelEl.addEventListener('change', () => {
+        moveTaskStage(t.id, stageSelEl.value, stageMoveStatusEl, stageSelEl);
+      });
+    }
     const workedEl = document.getElementById('chatWorked');
     const workedDetailEl = document.getElementById('chatWorkedDetail');
     if (workedEl && workedDetailEl) {
@@ -2366,6 +2421,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const workedDetailEl = document.getElementById('chatWorkedDetail');
     if (workedDetailEl && Array.isArray(res.recent_log) && res.recent_log.length) {
       workedDetailEl.textContent = res.recent_log.join(String.fromCharCode(10));
+    }
+    const wtBadge = document.getElementById('taskWorktreeStatus');
+    if (wtBadge && res.worktree_status) {
+      wtBadge.textContent = res.worktree_status.status || (res.worktree_status.exists ? 'active' : 'not created');
+    }
+    const taskData = res.task || {};
+    const depEl = document.getElementById('taskDependsOn');
+    if (depEl && taskData.depends) {
+      depEl.textContent = taskData.depends;
+    }
+    const goalEl = document.getElementById('taskContractGoal');
+    if (goalEl && taskData.goal) {
+      goalEl.innerHTML = '<strong>Goal:</strong> ' + escapeHTML(taskData.goal);
+    }
+    const allowedListEl = document.getElementById('taskAllowedList');
+    if (allowedListEl && Array.isArray(taskData.allowed_files) && taskData.allowed_files.length) {
+      allowedListEl.innerHTML = taskData.allowed_files.map(f => '<li><code>' + escapeHTML(f) + '</code></li>').join('');
+    }
+    const critListEl = document.getElementById('taskCriteriaList');
+    if (critListEl && Array.isArray(taskData.criteria) && taskData.criteria.length) {
+      critListEl.innerHTML = taskData.criteria.map(c =>
+        '<li>' + escapeHTML((c.id ? c.id + ': ' : '') + (c.text || c)) + '</li>'
+      ).join('');
     }
   }
 

@@ -1766,5 +1766,313 @@ class TestResearchThreads(StudioApiCase):
             self.assertIn(marker, css)
 
 
+class TestTaskChatAndStageCollisionGuard(StudioApiCase):
+    """Tests for T-161: Implementations manual-creation guard, task-level chat context, and DAG stage move collision checker."""
+
+    def _make_stage_project(self, td: str) -> tuple[Path, Path]:
+        proj = Path(td) / "stage_dag_proj"
+        flow = proj / ".agentsflower"
+        (flow / "state").mkdir(parents=True)
+        (flow / "tasks").mkdir(parents=True)
+        studio.save_attached_project(str(proj))
+        self.addCleanup(lambda: self._detach_project(proj))
+        return proj, flow
+
+    def _detach_project(self, proj: Path):
+        try:
+            if studio.ATTACHED_FILE.is_file():
+                attached = json.loads(studio.ATTACHED_FILE.read_text(encoding="utf-8"))
+                attached = [x for x in attached if str(proj.resolve()) != str(Path(x).resolve())]
+                studio.ATTACHED_FILE.write_text(
+                    json.dumps(attached, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+        except Exception:
+            pass
+
+    def test_implementations_manual_creation_disabled_in_ui_and_api(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        for marker in (
+            "buildThreadSection('implementations', 'Implementations', state.tasks.length, false",
+            "sectionKey !== 'implementations'",
+            "data-manual-create",
+            "/api/task/move-stage",
+            "moveTaskStage",
+            "taskWorktreeStatus",
+        ):
+            self.assertIn(marker, js)
+
+        code, res = self.api("/api/task/create", method="POST", body={
+            "project": str(studio.REPO_ROOT),
+            "id": "T-999",
+            "title": "Manual unauthorized task",
+            "stage": "7",
+        })
+        self.assertEqual(code, 403, res)
+        self.assertFalse(res.get("ok", True))
+        self.assertIn("synthesis", res.get("error", "").lower())
+
+    def test_task_level_chat_loads_contract_criteria_and_worktree_status(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_stage_project(td)
+            pool = [
+                {
+                    "id": "T-001",
+                    "title": "Implement core stage parser",
+                    "stage": 1,
+                    "role": "developer",
+                    "tool": "devin",
+                    "model": "swe-2-high",
+                    "effort": "high",
+                    "goal": "Parse DAG stage dependencies and validate stage transitions.",
+                    "allowed_files": [".agentsflower/tools/studio.py"],
+                    "criteria": [
+                        "C-01: DAG dependencies parsed from ledger and task files.",
+                        "C-02: Stage transitions validated before mutation.",
+                    ],
+                }
+            ]
+            code, reg = self.api("/api/task/pool/register", method="POST", body={
+                "project": str(proj),
+                "tasks": pool,
+            })
+            self.assertEqual(code, 200, reg)
+
+            code, ctx = self.api("/api/task/context?" + self.q({"project": str(proj), "id": "T-001"}))
+            self.assertEqual(code, 200, ctx)
+            self.assertTrue(ctx.get("ok"), ctx)
+            self.assertEqual(ctx["task"]["id"], "T-001")
+            self.assertEqual(ctx["task"]["stage"], "1")
+            self.assertIn(".agentsflower/tools/studio.py", ctx["task"]["allowed_files"])
+            self.assertEqual(len(ctx["task"]["criteria"]), 2)
+            self.assertIn("worktree_status", ctx)
+            self.assertIn("status", ctx["worktree_status"])
+            self.assertIn("exists", ctx["worktree_status"])
+
+            prompts = []
+
+            def fake_chat_run(argv, cwd=None, timeout=30):
+                prompts.append(" ".join(argv))
+                return 0, "Scope adjustment noted for T-001", False
+
+            with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                    patch.object(studio, "_chat_run", side_effect=fake_chat_run):
+                code, chat_res = self.api("/api/chat", method="POST", body={
+                    "project": str(proj),
+                    "tool": "devin",
+                    "model": "swe-2-high",
+                    "thread": "T-001",
+                    "messages": [
+                        {"role": "user", "content": "Clarify C-02 scope for T-001 stage transitions"}
+                    ],
+                })
+            self.assertEqual(code, 200, chat_res)
+            self.assertTrue(chat_res.get("ok"), chat_res)
+            self.assertEqual(chat_res.get("thread"), "T-001")
+            prompt = prompts[-1]
+            self.assertIn("T-001", prompt)
+            self.assertIn("Parse DAG stage dependencies", prompt)
+            self.assertIn("C-01:", prompt)
+            self.assertIn("C-02:", prompt)
+            self.assertIn("Worktree", prompt)
+
+    def test_move_stage_blocks_dependency_inversion_and_same_stage_collision(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_stage_project(td)
+            pool = [
+                {
+                    "id": "T-002",
+                    "title": "Base schema task",
+                    "stage": 1,
+                    "depends": "none",
+                    "goal": "Create base schema.",
+                    "allowed_files": ["schema.py"],
+                    "criteria": ["C-01: Schema created."],
+                },
+                {
+                    "id": "T-014",
+                    "title": "Dependent migration task",
+                    "stage": 2,
+                    "depends": "T-002",
+                    "goal": "Run migration after T-002.",
+                    "allowed_files": ["migrate.py"],
+                    "criteria": ["C-01: Migration complete."],
+                },
+                {
+                    "id": "T-020",
+                    "title": "Downstream verification task",
+                    "stage": 3,
+                    "depends": "T-014",
+                    "goal": "Verify migration output.",
+                    "allowed_files": ["test_migrate.py"],
+                    "criteria": ["C-01: Verification pass."],
+                },
+            ]
+            code, reg = self.api("/api/task/pool/register", method="POST", body={
+                "project": str(proj),
+                "tasks": pool,
+            })
+            self.assertEqual(code, 200, reg)
+
+            # 1. Moving T-014 (depends on T-002 in Stage 01) into Stage 01 -> blocked
+            code, res = self.api("/api/task/move-stage", method="POST", body={
+                "project": str(proj),
+                "id": "T-014",
+                "stage": 1,
+            })
+            self.assertEqual(code, 400, res)
+            self.assertFalse(res.get("ok", True))
+            self.assertTrue(res.get("collision"), res)
+            self.assertIn(
+                "Cannot move T-014 to Stage 01: depends on T-002 in Stage 01",
+                res.get("error", ""),
+            )
+
+            # 2. Moving T-020 (depends on T-014 in Stage 02) into Stage 01 -> blocked (inversion)
+            code, res2 = self.api("/api/task/move-stage", method="POST", body={
+                "project": str(proj),
+                "id": "T-020",
+                "stage": 1,
+            })
+            self.assertEqual(code, 400, res2)
+            self.assertFalse(res2.get("ok", True))
+            self.assertIn(
+                "Cannot move T-020 to Stage 01: depends on T-014 in Stage 02",
+                res2.get("error", ""),
+            )
+
+            # 3. Moving T-002 (required by T-014 in Stage 02) into Stage 02 or Stage 03 -> blocked
+            code, res3 = self.api("/api/task/move-stage", method="POST", body={
+                "project": str(proj),
+                "id": "T-002",
+                "stage": 3,
+            })
+            self.assertEqual(code, 400, res3)
+            self.assertFalse(res3.get("ok", True))
+            self.assertTrue(res3.get("collision"), res3)
+            self.assertIn("Cannot move T-002 to Stage 03", res3.get("error", ""))
+            self.assertIn("T-014", res3.get("error", ""))
+
+            # Confirm ledger and Task Files were NOT mutated by rejected moves
+            t014_file = next((flow / "tasks").glob("T-014-*.md"))
+            self.assertIn("Stage: 2", t014_file.read_text(encoding="utf-8"))
+            tasks_after = studio.get_tasks_data(str(proj))["tasks"]
+            stages_map = {t["id"]: t["stage"] for t in tasks_after}
+            self.assertEqual(stages_map, {"T-002": "1", "T-014": "2", "T-020": "3"})
+
+    def test_move_stage_detects_cyclic_dependencies_in_dag(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_stage_project(td)
+            pool = [
+                {
+                    "id": "T-010",
+                    "title": "Alpha node",
+                    "stage": 1,
+                    "depends": "T-012",
+                    "goal": "Alpha.",
+                    "allowed_files": ["a.py"],
+                    "criteria": ["C-01: Alpha."],
+                },
+                {
+                    "id": "T-011",
+                    "title": "Beta node",
+                    "stage": 2,
+                    "depends": "T-010",
+                    "goal": "Beta.",
+                    "allowed_files": ["b.py"],
+                    "criteria": ["C-01: Beta."],
+                },
+                {
+                    "id": "T-012",
+                    "title": "Gamma node",
+                    "stage": 3,
+                    "depends": "T-011",
+                    "goal": "Gamma.",
+                    "allowed_files": ["c.py"],
+                    "criteria": ["C-01: Gamma."],
+                },
+            ]
+            self.api("/api/task/pool/register", method="POST", body={
+                "project": str(proj),
+                "tasks": pool,
+            })
+
+            code, res = self.api("/api/task/move-stage", method="POST", body={
+                "project": str(proj),
+                "id": "T-010",
+                "stage": 4,
+            })
+            self.assertEqual(code, 400, res)
+            self.assertFalse(res.get("ok", True))
+            self.assertTrue(res.get("collision"), res)
+            self.assertEqual(res.get("collision_type"), "cycle")
+            self.assertIn("cyclic dependency", res.get("error", "").lower())
+            self.assertTrue(res.get("cycle"), res)
+
+    def test_valid_stage_move_atomically_updates_ledger_and_task_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, flow = self._make_stage_project(td)
+            pool = [
+                {
+                    "id": "T-002",
+                    "title": "Base schema task",
+                    "stage": 1,
+                    "depends": "none",
+                    "goal": "Create base schema.",
+                    "allowed_files": ["schema.py"],
+                    "criteria": ["C-01: Schema created."],
+                },
+                {
+                    "id": "T-014",
+                    "title": "Dependent migration task",
+                    "stage": 2,
+                    "depends": "T-002",
+                    "goal": "Run migration after T-002.",
+                    "allowed_files": ["migrate.py"],
+                    "criteria": ["C-01: Migration complete."],
+                },
+                {
+                    "id": "T-020",
+                    "title": "Downstream verification task",
+                    "stage": 4,
+                    "depends": "T-014",
+                    "goal": "Verify migration output.",
+                    "allowed_files": ["test_migrate.py"],
+                    "criteria": ["C-01: Verification pass."],
+                },
+            ]
+            self.api("/api/task/pool/register", method="POST", body={
+                "project": str(proj),
+                "tasks": pool,
+            })
+
+            # Moving T-014 from Stage 2 to Stage 3 is valid (Stage 1 < Stage 3 < Stage 4)
+            code, res = self.api("/api/task/move-stage", method="POST", body={
+                "project": str(proj),
+                "id": "T-014",
+                "stage": 3,
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertFalse(res.get("collision", True))
+            self.assertEqual(res.get("task_id"), "T-014")
+            self.assertEqual(res.get("from_stage"), 2)
+            self.assertEqual(res.get("to_stage"), 3)
+            self.assertEqual(res.get("stage_label"), "Stage 03")
+
+            # Verify Task File updated atomically
+            t014_file = next((flow / "tasks").glob("T-014-*.md"))
+            t014_text = t014_file.read_text(encoding="utf-8")
+            self.assertIn("Stage: 3", t014_text)
+            self.assertNotIn("Stage: 2", t014_text)
+
+            # Verify tasks.md ledger updated atomically
+            tasks_after = studio.get_tasks_data(str(proj))["tasks"]
+            stages_map = {t["id"]: t["stage"] for t in tasks_after}
+            self.assertEqual(stages_map["T-014"], "3")
+
+
 if __name__ == "__main__":
     unittest.main()

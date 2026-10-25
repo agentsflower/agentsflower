@@ -1115,6 +1115,331 @@ def register_task_pool(target_root: Path, tasks_payload: list[dict], default_sta
     }
 
 
+def parse_depends_on(raw) -> list[str]:
+    """Extract normalized T-NNN task IDs from a `Depends on` value (list or string)."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        text = " ".join(str(x) for x in raw)
+    else:
+        text = str(raw)
+    if text.strip().lower() in ("none", "-", "n/a"):
+        return []
+    seen: list[str] = []
+    for m in re.finditer(r"(?i)\b(T-\d+)\b", text):
+        tid = m.group(1).upper()
+        if tid not in seen:
+            seen.append(tid)
+    return seen
+
+
+def _parse_stage_number(raw) -> int | None:
+    """Parse stage values like `1`, `'02'`, `'Stage 03'` into a positive integer."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw if raw >= 1 else None
+    s = str(raw).strip()
+    if not s:
+        return None
+    m = re.search(r"\d+", s)
+    if not m:
+        return None
+    val = int(m.group(0))
+    return val if val >= 1 else None
+
+
+def inspect_worktree_status(target_root: Path, worktree_str: str, branch_str: str = "") -> dict:
+    """Inspect whether a task's declared worktree exists on disk and its git working-tree state."""
+    wt_raw = (worktree_str or "").strip()
+    br_raw = (branch_str or "").strip()
+    if not wt_raw or wt_raw.lower() == "none":
+        return {
+            "path": "",
+            "branch": br_raw if br_raw.lower() != "none" else "",
+            "exists": False,
+            "status": "none",
+            "clean": True,
+            "changed_count": 0,
+        }
+    try:
+        wt_path = Path(wt_raw)
+        exists = wt_path.is_dir()
+    except OSError:
+        exists = False
+        wt_path = None
+
+    if not exists or wt_path is None:
+        return {
+            "path": wt_raw,
+            "branch": br_raw,
+            "exists": False,
+            "status": "not created",
+            "clean": True,
+            "changed_count": 0,
+        }
+
+    code, br_out = _git(wt_path, "rev-parse", "--abbrev-ref", "HEAD")
+    active_branch = br_out.strip().splitlines()[0] if (code == 0 and br_out.strip()) else br_raw
+    _, st_out = _git(wt_path, "status", "--porcelain")
+    changed = [ln for ln in (st_out or "").splitlines() if ln.strip()]
+    clean = len(changed) == 0
+    return {
+        "path": wt_raw,
+        "branch": active_branch,
+        "exists": True,
+        "status": "active (clean)" if clean else f"active ({len(changed)} modified)",
+        "clean": clean,
+        "changed_count": len(changed),
+    }
+
+
+def detect_dag_cycles(deps_map: dict[str, list[str]], start_tid: str = "") -> list[str]:
+    """Detect a directed cycle in `deps_map` (task -> list of prerequisite tasks).
+
+    Returns the cycle path `[T-A, T-B, ..., T-A]` if a cycle exists, or `[]` if acyclic.
+    """
+    state: dict[str, int] = {}
+    stack: list[str] = []
+
+    nodes = list(deps_map.keys())
+    if start_tid and start_tid in deps_map:
+        nodes = [start_tid] + [n for n in sorted(nodes) if n != start_tid]
+    else:
+        nodes = sorted(nodes)
+
+    def dfs(u: str) -> list[str]:
+        state[u] = 1
+        stack.append(u)
+        for v in deps_map.get(u, []):
+            st = state.get(v, 0)
+            if st == 1:
+                idx = stack.index(v)
+                return stack[idx:] + [v]
+            if st == 0 and v in deps_map:
+                cyc = dfs(v)
+                if cyc:
+                    return cyc
+        stack.pop()
+        state[u] = 2
+        return []
+
+    for node in nodes:
+        if state.get(node, 0) == 0:
+            found = dfs(node)
+            if found:
+                return found
+    return []
+
+
+def move_task_stage(target_root: Path, body: dict) -> tuple[int, dict]:
+    """Validate a stage move request against the task DAG and atomically update ledger + Task File."""
+    tid = str(body.get("id") or body.get("task_id") or body.get("task") or "").strip().upper()
+    if not re.fullmatch(r"T-\d+", tid):
+        return 400, {"ok": False, "error": f"Valid task ID (T-NNN) required, got: {tid or 'empty'}"}
+
+    raw_stage = (
+        body.get("stage")
+        if "stage" in body
+        else (body.get("target_stage") if "target_stage" in body else body.get("to_stage"))
+    )
+    target_stage = _parse_stage_number(raw_stage)
+    if target_stage is None:
+        return 400, {"ok": False, "error": f"Invalid target stage: {raw_stage}"}
+
+    flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
+    ledger_file = flow_root / "state" / "tasks.md"
+    tasks_dir = flow_root / "tasks"
+    if not ledger_file.is_file():
+        return 404, {"ok": False, "error": f"Task ledger not found for project: {target_root.name}"}
+
+    lines, cols, rows, head, end = ledger.load(ledger_file)
+    idx_map = {r[0].strip().upper(): i for i, r in enumerate(rows) if r and r[0].strip()}
+    if tid not in idx_map:
+        return 404, {"ok": False, "error": f"Task not found in ledger: {tid}"}
+
+    stage_col = cols.index("Stage")
+    dep_col = cols.index("Depends on")
+    upd_col = cols.index("Updated")
+
+    stage_map: dict[str, int] = {}
+    deps_map: dict[str, list[str]] = {}
+    task_files_map: dict[str, Path] = {}
+
+    for r in rows:
+        r_tid = r[0].strip().upper()
+        if not r_tid.startswith("T-"):
+            continue
+        r_stage = _parse_stage_number(r[stage_col]) or 1
+        r_deps = parse_depends_on(r[dep_col])
+        if tasks_dir.is_dir():
+            hits = sorted(tasks_dir.glob(f"{r_tid}*.md"))
+            if hits:
+                task_files_map[r_tid] = hits[0]
+                if not r_deps:
+                    try:
+                        tf_text = hits[0].read_text(encoding="utf-8-sig")
+                        m_dep = re.search(r"^Depends on:\s*(.+?)\s*$", tf_text, re.M)
+                        if m_dep:
+                            r_deps = parse_depends_on(m_dep.group(1))
+                    except Exception:
+                        pass
+        stage_map[r_tid] = r_stage
+        deps_map[r_tid] = r_deps
+
+    has_dep_override = "depends" in body or "depends_on" in body
+    if has_dep_override:
+        deps_map[tid] = parse_depends_on(
+            body.get("depends") if "depends" in body else body.get("depends_on")
+        )
+
+    from_stage = stage_map.get(tid, 1)
+
+    # 1. Check DAG for cyclic dependencies before any mutation
+    cycle = detect_dag_cycles(deps_map, start_tid=tid)
+    if cycle:
+        cycle_str = " -> ".join(cycle)
+        msg = f"Cannot move {tid} to Stage {target_stage:02d}: cyclic dependency detected in DAG ({cycle_str})"
+        return 400, {
+            "ok": False,
+            "collision": True,
+            "collision_type": "cycle",
+            "task_id": tid,
+            "from_stage": from_stage,
+            "target_stage": target_stage,
+            "cycle": cycle,
+            "diagnostic": msg,
+            "error": msg,
+        }
+
+    # 2. Check upstream prerequisites (direct and transitive) for stage collision / inversion
+    visited_up: set[str] = set()
+    queue_up = list(deps_map.get(tid, []))
+    while queue_up:
+        dep_id = queue_up.pop(0)
+        if dep_id in visited_up:
+            continue
+        visited_up.add(dep_id)
+        dep_stage = stage_map.get(dep_id)
+        if dep_stage is not None and target_stage <= dep_stage:
+            msg = (
+                f"Cannot move {tid} to Stage {target_stage:02d}: "
+                f"depends on {dep_id} in Stage {dep_stage:02d} (dependency inversion)"
+            )
+            return 400, {
+                "ok": False,
+                "collision": True,
+                "collision_type": "dependency_inversion",
+                "task_id": tid,
+                "conflicting_task": dep_id,
+                "conflicting_stage": dep_stage,
+                "from_stage": from_stage,
+                "target_stage": target_stage,
+                "diagnostic": msg,
+                "error": msg,
+            }
+        for parent_dep in deps_map.get(dep_id, []):
+            if parent_dep not in visited_up:
+                queue_up.append(parent_dep)
+
+    # 3. Check downstream dependents (direct and transitive) for stage collision / inversion
+    reverse_deps: dict[str, list[str]] = {}
+    for other_tid, other_deps in deps_map.items():
+        for d in other_deps:
+            reverse_deps.setdefault(d, []).append(other_tid)
+
+    visited_down: set[str] = set()
+    queue_down = list(reverse_deps.get(tid, []))
+    while queue_down:
+        child_id = queue_down.pop(0)
+        if child_id in visited_down:
+            continue
+        visited_down.add(child_id)
+        child_stage = stage_map.get(child_id)
+        if child_stage is not None and target_stage >= child_stage:
+            msg = (
+                f"Cannot move {tid} to Stage {target_stage:02d}: "
+                f"dependent {child_id} in Stage {child_stage:02d} depends on {tid} (dependency inversion)"
+            )
+            return 400, {
+                "ok": False,
+                "collision": True,
+                "collision_type": "dependency_inversion",
+                "task_id": tid,
+                "conflicting_task": child_id,
+                "conflicting_stage": child_stage,
+                "from_stage": from_stage,
+                "target_stage": target_stage,
+                "diagnostic": msg,
+                "error": msg,
+            }
+        for grand_child in reverse_deps.get(child_id, []):
+            if grand_child not in visited_down:
+                queue_down.append(grand_child)
+
+    # 4. Safe move: atomically update Task File and tasks.md ledger, then re-link stage ordering
+    rel_contract_file = ""
+    tf = task_files_map.get(tid)
+    if tf and tf.is_file():
+        rel_contract_file = tf.relative_to(target_root).as_posix() if tf.is_relative_to(target_root) else str(tf)
+        try:
+            raw_tf = tf.read_text(encoding="utf-8-sig")
+            parts = re.split(r"(^## Result[ \t]*$)", raw_tf, maxsplit=1, flags=re.M)
+            head_part = parts[0]
+            rest_part = "".join(parts[1:])
+            if re.search(r"^Stage:\s*.*$", head_part, flags=re.M):
+                head_part = re.sub(r"^Stage:\s*.*$", f"Stage: {target_stage}", head_part, count=1, flags=re.M)
+            if has_dep_override and re.search(r"^Depends on:\s*.*$", head_part, flags=re.M):
+                dep_val = ", ".join(deps_map[tid]) if deps_map[tid] else "none"
+                head_part = re.sub(r"^Depends on:\s*.*$", f"Depends on: {dep_val}", head_part, count=1, flags=re.M)
+            ledger._write_atomic(tf, head_part + rest_part)
+        except Exception as e:
+            return 500, {"ok": False, "error": f"Failed to update Task File for {tid}: {e}"}
+
+    row_i = idx_map[tid]
+    rows[row_i][stage_col] = str(target_stage)
+    if has_dep_override:
+        rows[row_i][dep_col] = ", ".join(deps_map[tid])
+    rows[row_i][upd_col] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    stage_map[tid] = target_stage
+
+    indexed_rows = list(enumerate(rows))
+    indexed_rows.sort(
+        key=lambda pair: (
+            stage_map.get(pair[1][0].strip().upper(), 999),
+            pair[0],
+        )
+    )
+    reordered_rows = [r for _, r in indexed_rows]
+    ledger.save(ledger_file, lines, head, end, reordered_rows)
+
+    stage_buckets: dict[int, list[str]] = {}
+    for r in reordered_rows:
+        r_tid = r[0].strip().upper()
+        if r_tid.startswith("T-"):
+            s_num = stage_map.get(r_tid, 1)
+            stage_buckets.setdefault(s_num, []).append(r_tid)
+
+    stages_summary = [
+        {"stage": s_num, "label": f"Stage {s_num:02d}", "tasks": t_ids}
+        for s_num, t_ids in sorted(stage_buckets.items())
+    ]
+
+    return 200, {
+        "ok": True,
+        "collision": False,
+        "task_id": tid,
+        "from_stage": from_stage,
+        "to_stage": target_stage,
+        "stage": str(target_stage),
+        "stage_label": f"Stage {target_stage:02d}",
+        "depends_on": deps_map.get(tid, []),
+        "dependents": sorted(reverse_deps.get(tid, [])),
+        "file": rel_contract_file,
+        "stages": stages_summary,
+    }
+
+
 def get_task_context(target_root: Path, task_id: str) -> dict:
     tid = (task_id or "").strip().upper()
     tasks_data = get_tasks_data(str(target_root))
@@ -1132,6 +1457,7 @@ def get_task_context(target_root: Path, task_id: str) -> dict:
     checks: list[str] = []
     effort = "high"
     full_allowed = list(task_obj.get("allowed_files") or [])
+    depends_str = str(task_obj.get("depends") or "").strip()
     bt = chr(96)
     if tasks_dir.is_dir():
         hits = sorted(tasks_dir.glob(f"{tid}*.md"))
@@ -1143,7 +1469,8 @@ def get_task_context(target_root: Path, task_id: str) -> dict:
                 for line in t_text.splitlines():
                     if line.startswith("Effort:"):
                         effort = line.split(":", 1)[1].strip() or effort
-                        break
+                    elif line.startswith("Depends on:") and not depends_str:
+                        depends_str = line.split(":", 1)[1].strip()
                 sections = re.split(r"^## ", t_text, flags=re.M)
                 for sec in sections:
                     if sec.startswith("Allowed files"):
@@ -1181,15 +1508,35 @@ def get_task_context(target_root: Path, task_id: str) -> dict:
     if not recent_log:
         recent_log.append(f"Task {tid} registered in ledger (status: {task_obj.get('status', 'ready')})")
 
+    depends_on = parse_depends_on(depends_str)
+    wt_status = inspect_worktree_status(
+        target_root,
+        str(task_obj.get("worktree") or ""),
+        str(task_obj.get("branch") or ""),
+    )
+
     enriched = dict(task_obj)
     enriched["allowed_files"] = full_allowed
     enriched["checks"] = checks
     enriched["effort"] = effort
     enriched["contract_file"] = contract_file
+    enriched["depends"] = ", ".join(depends_on) if depends_on else (depends_str or "none")
+    enriched["depends_on"] = depends_on
+    enriched["worktree_status"] = wt_status
 
     return {
         "ok": True,
         "task": enriched,
+        "contract": {
+            "file": contract_file,
+            "goal": enriched.get("goal", ""),
+            "allowed_files": full_allowed,
+            "criteria": enriched.get("criteria", []),
+            "checks": checks,
+            "stage": enriched.get("stage", ""),
+            "depends_on": depends_on,
+        },
+        "worktree_status": wt_status,
         "recent_log": recent_log,
         "git": get_git_summary(target_root),
     }
@@ -1869,11 +2216,30 @@ def format_chat_prompt(target_root: Path, thread: str, messages: list[dict], ref
         ctx = get_task_context(target_root, thread_id)
         if ctx.get("ok") and isinstance(ctx.get("task"), dict):
             t = ctx["task"]
-            lines.append(f"Task Context: {t.get('id')} - {t.get('title', '')} (status: {t.get('status', 'ready')})")
+            wt = ctx.get("worktree_status") or {}
+            lines.append(
+                f"Task Context: {t.get('id')} - {t.get('title', '')} "
+                f"(stage: {t.get('stage', '')}, status: {t.get('status', 'ready')})"
+            )
+            if t.get("contract_file"):
+                lines.append(f"Contract File: {t['contract_file']}")
+            lines.append(
+                f"Worktree: {t.get('worktree') or 'none'} "
+                f"(branch: {wt.get('branch') or t.get('branch') or 'none'}, "
+                f"worktree_status: {wt.get('status', 'none')})"
+            )
+            if t.get("depends"):
+                lines.append(f"Depends on: {t['depends']}")
             if t.get("goal"):
                 lines.append(f"Task Goal: {t['goal'][:400]}")
             if t.get("allowed_files"):
                 lines.append("Allowed Files: " + ", ".join(t["allowed_files"][:8]))
+            if t.get("criteria"):
+                crit_items = [
+                    f"{c.get('id', '')}: {c.get('text', '')}" if isinstance(c, dict) else str(c)
+                    for c in t["criteria"][:10]
+                ]
+                lines.append("Acceptance Criteria: " + " | ".join(crit_items))
 
     if refs:
         lines.append("")
@@ -2450,11 +2816,32 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_json(res, 200 if res.get("ok") else 400)
             return
 
+        if path == "/api/task/move-stage":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            status_code, res = move_task_stage(target_root, body)
+            self.send_json(res, status_code)
+            return
+
         if path == "/api/task/create":
-            # Rapid task authoring
             target_root = resolve_known_project(body.get("project", "").strip())
             if target_root is None:
                 self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            if body.get("synthesis_approved") is not True:
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": (
+                            "Manual task creation inside Implementations is disabled; "
+                            "tasks enter exclusively via approved synthesis pool (/api/task/pool/register)."
+                        ),
+                        "guard": "implementations_synthesis_only",
+                    },
+                    403,
+                )
                 return
             flow_root = get_project_flow_root(target_root) or (target_root / ".agentsflower")
 
