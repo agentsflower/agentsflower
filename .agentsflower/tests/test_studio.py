@@ -973,5 +973,268 @@ class TestCapacityHub(StudioApiCase):
             self.assertIn(marker, css)
 
 
+class TestStudioChatEngine(StudioApiCase):
+    """Tests for T-153: Live CLI Chat Execution Engine (POST /api/chat)."""
+
+    def test_chat_dispatches_to_cli_platforms(self):
+        from unittest.mock import patch
+
+        calls = []
+
+        def fake_which(name):
+            return f"/fake/bin/{name}"
+
+        def fake_chat_run(argv, cwd=None, timeout=studio.CHAT_EXEC_TIMEOUT):
+            calls.append((list(argv), cwd, timeout))
+            exe = Path(str(argv[0])).name.lower()
+            if exe == "agy":
+                stream = "\n".join([
+                    json.dumps({"type": "init", "model": "claude-opus-4-6-thinking"}),
+                    json.dumps({"type": "assistant", "content": "Antigravity stream reply"}),
+                    json.dumps({"type": "result", "usage": {"input_tokens": 12, "output_tokens": 8}}),
+                ])
+                return 0, stream, False
+            return 0, f"Reply from {exe}", False
+
+        with patch.object(studio.shutil, "which", side_effect=fake_which), \
+                patch.object(studio, "_chat_run", side_effect=fake_chat_run):
+            # 1. devin
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "model": "swe-2-high",
+                "thread": "research",
+                "messages": [{"role": "user", "content": "Explain studio architecture"}],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertEqual(res.get("reply"), "Reply from devin")
+            self.assertEqual(res.get("model"), "swe-2-high")
+            self.assertIsInstance(res.get("usage"), dict)
+            devin_argv, _, devin_timeout = calls[-1]
+            self.assertEqual(Path(devin_argv[0]).name, "devin")
+            self.assertIn("-p", devin_argv)
+            self.assertEqual(devin_timeout, 30)
+
+            # 2. claude
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "claude",
+                "model": "claude-sonnet-4",
+                "thread": "research",
+                "messages": [{"role": "user", "content": "Check gate rules"}],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertEqual(res.get("reply"), "Reply from claude")
+            claude_argv, _, _ = calls[-1]
+            self.assertEqual(Path(claude_argv[0]).name, "claude")
+            self.assertIn("-p", claude_argv)
+
+            # 3. codex
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "codex",
+                "model": "gpt-6.1-sol",
+                "thread": "research",
+                "messages": [{"role": "user", "content": "Review ledger transitions"}],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertEqual(res.get("reply"), "Reply from codex")
+            codex_argv, _, _ = calls[-1]
+            self.assertEqual(Path(codex_argv[0]).name, "codex")
+            self.assertEqual(codex_argv[1], "exec")
+
+            # 4. agy (stream-json)
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "agy",
+                "model": "claude-opus-4-6-thinking",
+                "thread": "research",
+                "messages": [{"role": "user", "content": "Analyze blast radius"}],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertEqual(res.get("reply"), "Antigravity stream reply")
+            self.assertEqual(res["usage"].get("input_tokens"), 12)
+            agy_argv, _, _ = calls[-1]
+            self.assertEqual(Path(agy_argv[0]).name, "agy")
+            self.assertIn("-p", agy_argv)
+            self.assertIn("--output-format", agy_argv)
+            self.assertIn("stream-json", agy_argv)
+
+    def test_chat_dispatches_to_ollama_local_adapter(self):
+        from unittest.mock import patch
+
+        captured = {}
+
+        def fake_chat_completion(model_info, messages, temperature=0.2, timeout=30.0):
+            captured["model_info"] = model_info
+            captured["messages"] = messages
+            captured["timeout"] = timeout
+            return {
+                "ok": True,
+                "content": "Local Qwen response",
+                "raw": {"prompt_eval_count": 24, "eval_count": 10},
+            }
+
+        with patch.object(studio.local_adapter, "chat_completion", side_effect=fake_chat_completion):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "ollama",
+                "model": "qwen2.5-coder:7b",
+                "thread": "research",
+                "messages": [
+                    {"role": "user", "content": "First question"},
+                    {"role": "assistant", "content": "First answer"},
+                    {"role": "user", "content": "Follow-up question"},
+                ],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            self.assertEqual(res.get("reply"), "Local Qwen response")
+            self.assertEqual(res.get("model"), "qwen2.5-coder:7b")
+            self.assertEqual(captured["model_info"]["id"], "qwen2.5-coder:7b")
+            self.assertEqual(captured["timeout"], 30)
+            roles = [m["role"] for m in captured["messages"]]
+            self.assertIn("user", roles)
+            self.assertIn("assistant", roles)
+
+    def test_chat_packages_thread_context_and_history_into_prompt(self):
+        from unittest.mock import patch
+
+        prompts = []
+
+        def fake_chat_run(argv, cwd=None, timeout=30):
+            prompts.append(argv)
+            return 0, "Contextual reply", False
+
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", side_effect=fake_chat_run):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "model": "swe-2-high",
+                "thread": "T-153",
+                "messages": [
+                    {"role": "user", "content": "Earlier user turn about studio.py"},
+                    {"role": "assistant", "content": "Earlier assistant analysis"},
+                    {"role": "user", "content": "Now explain timeout handling"},
+                ],
+            })
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res.get("ok"), res)
+            argv = prompts[-1]
+            joined = " ".join(argv)
+            self.assertIn("T-153", joined)
+            self.assertIn("Earlier user turn about studio.py", joined)
+            self.assertIn("Earlier assistant analysis", joined)
+            self.assertIn("Now explain timeout handling", joined)
+
+    def test_chat_subprocess_timeout_terminates_process(self):
+        from unittest.mock import MagicMock, patch
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 42424
+        fake_proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["devin"], timeout=30)
+
+        with patch.object(studio.subprocess, "Popen", return_value=fake_proc), \
+                patch.object(studio, "_kill_probe_tree") as kill_tree_mock:
+            rc, out, timed_out = studio._chat_run(["/fake/bin/devin", "-p", "hi"], timeout=30)
+            self.assertIsNone(rc)
+            self.assertTrue(timed_out)
+            self.assertIn("timed out", out.lower())
+            kill_tree_mock.assert_called_once_with(42424)
+            fake_proc.kill.assert_called_once()
+
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", return_value=(None, "CLI execution timed out after 30s", True)):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "model": "swe-2-high",
+                "thread": "research",
+                "messages": [{"role": "user", "content": "long query"}],
+            })
+            self.assertEqual(code, 504, res)
+            self.assertFalse(res.get("ok", True))
+            self.assertTrue(res.get("timed_out"))
+            self.assertIn("timed out", res.get("error", "").lower())
+
+    def test_chat_error_handling_and_validation(self):
+        from unittest.mock import patch
+
+        # Unregistered project -> 403
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": td,
+                "tool": "devin",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(code, 403)
+            self.assertFalse(res.get("ok", True))
+
+        # Unsupported tool -> 400
+        code, res = self.api("/api/chat", method="POST", body={
+            "project": str(studio.REPO_ROOT),
+            "tool": "unknown_cli",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        self.assertEqual(code, 400)
+        self.assertFalse(res.get("ok", True))
+
+        # Empty messages -> 400
+        code, res = self.api("/api/chat", method="POST", body={
+            "project": str(studio.REPO_ROOT),
+            "tool": "devin",
+            "messages": [],
+        })
+        self.assertEqual(code, 400)
+        self.assertFalse(res.get("ok", True))
+
+        # Missing CLI binary -> 400
+        with patch.object(studio.shutil, "which", return_value=None):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "claude",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(code, 400)
+            self.assertFalse(res.get("ok", True))
+            self.assertIn("not found", res.get("error", "").lower())
+
+        # Non-zero CLI exit -> 502
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", return_value=(1, "Authentication failed", False)):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(code, 502)
+            self.assertFalse(res.get("ok", True))
+            self.assertIn("Authentication failed", res.get("error", ""))
+
+    def test_chat_ui_live_execution_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+
+        for marker in (
+            "/api/chat",
+            "CHAT_TIMEOUT_MS",
+            "30000",
+            "AbortController",
+            "thinking-dots",
+            "state.chatPlatform",
+        ):
+            self.assertIn(marker, js)
+
+        for marker in (".thinking-dots", ".chat-bubble.assistant.thinking", ".chat-bubble.assistant.error"):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,7 @@ except ImportError:
 import ledger  # noqa: E402
 import gate  # noqa: E402
 import machine_capacity  # noqa: E402
+import local_adapter  # noqa: E402
 try:
     import graft  # noqa: E402
 except ImportError:
@@ -1273,6 +1274,281 @@ def set_default_worker_model(flow_root: Path, model: str, tool: str = "") -> dic
     return {"ok": True, "default_model": cfg["default_worker_model"]}
 
 
+# --- Live CLI Chat Execution Engine (/api/chat) ---
+
+CHAT_EXEC_TIMEOUT = 30
+CHAT_TOOLS = ("devin", "claude", "codex", "agy", "ollama")
+
+
+def _chat_run(argv: list, cwd: Path = None, timeout: int = CHAT_EXEC_TIMEOUT) -> tuple[int | None, str, bool]:
+    """Execute one bounded CLI chat command; returns (returncode, stdout_text, timed_out)."""
+    kw = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if cwd is not None and Path(cwd).is_dir():
+        kw["cwd"] = str(cwd)
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kw["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(argv, **kw)
+    except OSError as e:
+        return None, str(e), False
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_probe_tree(proc.pid)
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
+        return None, f"CLI execution timed out after {timeout}s", True
+    return proc.returncode, (out or "").strip(), False
+
+
+def _normalize_chat_messages(raw_messages, fallback_prompt: str = "") -> list[dict]:
+    normalized: list[dict] = []
+    if isinstance(raw_messages, list):
+        for m in raw_messages:
+            if isinstance(m, dict):
+                role = str(m.get("role") or "user").strip().lower()
+                if role not in ("user", "assistant", "system"):
+                    role = "user"
+                content = str(m.get("content") or m.get("text") or "").strip()
+                if content:
+                    normalized.append({"role": role, "content": content})
+            elif isinstance(m, str) and m.strip():
+                normalized.append({"role": "user", "content": m.strip()})
+    if not normalized and fallback_prompt and str(fallback_prompt).strip():
+        normalized.append({"role": "user", "content": str(fallback_prompt).strip()})
+    return normalized
+
+
+def format_chat_prompt(target_root: Path, thread: str, messages: list[dict]) -> str:
+    """Package active thread metadata and prior conversation history into a single prompt."""
+    thread_id = (thread or "research").strip()
+    lines = [
+        f"Workspace: {target_root.name} ({target_root})",
+        f"Active Thread: {thread_id}",
+        "Mode: Read-only Studio conversational assistant (do not modify files).",
+    ]
+    if thread_id.upper().startswith("T-"):
+        ctx = get_task_context(target_root, thread_id)
+        if ctx.get("ok") and isinstance(ctx.get("task"), dict):
+            t = ctx["task"]
+            lines.append(f"Task Context: {t.get('id')} - {t.get('title', '')} (status: {t.get('status', 'ready')})")
+            if t.get("goal"):
+                lines.append(f"Task Goal: {t['goal'][:400]}")
+            if t.get("allowed_files"):
+                lines.append("Allowed Files: " + ", ".join(t["allowed_files"][:8]))
+
+    if len(messages) > 1:
+        lines.append("")
+        lines.append("Conversation history:")
+        for msg in messages[:-1]:
+            speaker = "Assistant" if msg["role"] == "assistant" else "User"
+            lines.append(f"{speaker}: {msg['content']}")
+
+    latest = messages[-1]["content"] if messages else ""
+    lines.append("")
+    lines.append(f"User: {latest}")
+    return "\n".join(lines)
+
+
+def _build_chat_argv(tool: str, exe: str, prompt: str, model: str = "") -> list[str]:
+    """Build bounded read-only CLI invocation for the selected platform."""
+    if tool == "devin":
+        argv = [exe, "-p", prompt, "--respect-workspace-trust", "false", "--permission-mode", "auto"]
+        if model:
+            argv += ["--model", model]
+        return argv
+    if tool == "claude":
+        argv = [exe, "-p", prompt, "--allowedTools", ""]
+        if model:
+            argv += ["--model", model]
+        return argv
+    if tool == "codex":
+        argv = [exe, "exec", prompt, "--sandbox", "read-only", "--skip-git-repo-check"]
+        if model:
+            argv += ["-m", model]
+        return argv
+    if tool == "agy":
+        argv = [exe, "-p", prompt, "--output-format", "stream-json"]
+        if model:
+            argv += ["--model", model]
+        return argv
+    raise ValueError(f"Unsupported CLI tool: {tool}")
+
+
+def _parse_chat_output(tool: str, raw_out: str, prompt: str = "") -> tuple[str, dict]:
+    """Extract assistant reply text and token usage metadata from CLI stdout."""
+    text = (raw_out or "").strip()
+    usage: dict = {}
+    chunks: list[str] = []
+
+    if tool == "agy" or (text.startswith("{") and "\n" in text):
+        for ln in text.splitlines():
+            s = ln.strip()
+            if not (s.startswith("{") and s.endswith("}")):
+                continue
+            try:
+                ev = json.loads(s)
+            except ValueError:
+                continue
+            if not isinstance(ev, dict):
+                continue
+            if isinstance(ev.get("usage"), dict):
+                usage.update(ev["usage"])
+            ev_type = str(ev.get("type") or "").lower()
+            if ev_type in ("init", "session", "config", "system"):
+                continue
+            msg = ev.get("message")
+            if isinstance(msg, dict):
+                if isinstance(msg.get("usage"), dict):
+                    usage.update(msg["usage"])
+                mc = msg.get("content")
+                if isinstance(mc, str) and mc.strip():
+                    chunks.append(mc.strip())
+                elif isinstance(mc, list):
+                    for part in mc:
+                        if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"].strip():
+                            chunks.append(part["text"].strip())
+                continue
+            for key in ("reply", "result", "content", "text", "delta"):
+                val = ev.get(key)
+                if isinstance(val, str) and val.strip():
+                    chunks.append(val.strip())
+                    break
+
+    reply = "\n".join(chunks).strip() if chunks else text
+    if not usage:
+        usage = {
+            "prompt_chars": len(prompt or ""),
+            "reply_chars": len(reply),
+        }
+    return reply, usage
+
+
+def execute_chat_query(target_root: Path, body: dict) -> tuple[int, dict]:
+    """Validate and execute a live chat query against the requested CLI or local runtime."""
+    raw_tool = str(body.get("tool") or body.get("platform") or "").strip().lower()
+    raw_model = str(body.get("model") or "").strip()
+    thread = str(body.get("thread") or "research").strip()
+
+    tool = raw_tool or ("ollama" if raw_model == "local-ollama" else "devin")
+    if tool not in CHAT_TOOLS:
+        return 400, {"ok": False, "error": f"Unsupported chat tool: {tool}"}
+
+    if raw_model and not re.fullmatch(r"[A-Za-z0-9][\w./:-]{0,80}", raw_model):
+        return 400, {"ok": False, "error": "invalid model id"}
+
+    messages = _normalize_chat_messages(body.get("messages"), body.get("prompt") or body.get("message") or "")
+    if not any(m["role"] == "user" and m["content"] for m in messages):
+        return 400, {"ok": False, "error": "No user chat messages provided"}
+
+    prompt = format_chat_prompt(target_root, thread, messages)
+
+    if tool == "ollama":
+        if not local_adapter:
+            return 500, {"ok": False, "error": "local_adapter module unavailable"}
+        model_id = raw_model if (raw_model and raw_model != "local-ollama") else ""
+        model_info = None
+        if not model_id:
+            model_info = local_adapter.select_best_coding_model()
+            if model_info:
+                model_id = model_info.get("id", "")
+        if not model_info:
+            model_info = {
+                "id": model_id or "qwen2.5-coder:7b",
+                "runtime_type": "ollama",
+                "base_url": OLLAMA_URL,
+            }
+            model_id = model_info["id"]
+        ollama_msgs = [
+            {
+                "role": "system",
+                "content": f"Workspace: {target_root.name} ({target_root}) | Thread: {thread}",
+            },
+            *messages,
+        ]
+        res = local_adapter.chat_completion(model_info, ollama_msgs, temperature=0.2, timeout=CHAT_EXEC_TIMEOUT)
+        if not res.get("ok"):
+            err = str(res.get("error") or "Local Ollama runtime failed")
+            is_timeout = "timed out" in err.lower() or "timeout" in err.lower()
+            return (504 if is_timeout else 502), {
+                "ok": False,
+                "error": err,
+                "tool": "ollama",
+                "model": model_id,
+                "timed_out": is_timeout,
+            }
+        raw_data = res.get("raw") if isinstance(res.get("raw"), dict) else {}
+        reply = str(res.get("content") or "").strip()
+        usage = {
+            "prompt_tokens": raw_data.get("prompt_eval_count", 0),
+            "completion_tokens": raw_data.get("eval_count", 0),
+            "prompt_chars": len(prompt),
+            "reply_chars": len(reply),
+        }
+        return 200, {
+            "ok": True,
+            "reply": reply,
+            "tool": "ollama",
+            "model": model_id,
+            "thread": thread,
+            "usage": usage,
+        }
+
+    exe = shutil.which(tool)
+    if not exe:
+        return 400, {
+            "ok": False,
+            "error": f"{tool} CLI not found on PATH",
+            "tool": tool,
+            "model": raw_model,
+        }
+
+    model_for_cli = "" if raw_model in ("local-ollama",) else raw_model
+    argv = _build_chat_argv(tool, exe, prompt, model_for_cli)
+    rc, out, timed_out = _chat_run(argv, cwd=target_root, timeout=CHAT_EXEC_TIMEOUT)
+    if timed_out:
+        return 504, {
+            "ok": False,
+            "error": out or f"CLI execution timed out after {CHAT_EXEC_TIMEOUT}s",
+            "tool": tool,
+            "model": raw_model or tool,
+            "timed_out": True,
+        }
+    if rc != 0:
+        err_msg = (out or f"{tool} exited with code {rc}").splitlines()[0][:240]
+        return 502, {
+            "ok": False,
+            "error": err_msg,
+            "tool": tool,
+            "model": raw_model or tool,
+        }
+
+    reply, usage = _parse_chat_output(tool, out, prompt=prompt)
+    return 200, {
+        "ok": True,
+        "reply": reply,
+        "tool": tool,
+        "model": raw_model or tool,
+        "thread": thread,
+        "usage": usage,
+    }
+
+
 class StudioHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Concise logging
@@ -1545,6 +1821,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             target = body.get("target", "")
             res = graft.graft_impact(target_root, target)
             self.send_json(res)
+            return
+
+        if path == "/api/chat":
+            target_root = resolve_known_project(body.get("project"))
+            if target_root is None:
+                self.send_json({"ok": False, "error": "unknown or unregistered project"}, 403)
+                return
+            status_code, res = execute_chat_query(target_root, body)
+            self.send_json(res, status_code)
             return
 
         if path == "/api/task/synthesize":
