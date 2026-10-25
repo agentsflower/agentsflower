@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     explorerPath: '',
     inspectorTaskId: 'research',
     threads: { research: [] },
+    threadCollapsed: new Set(),
     pendingInstall: null,
     openTabs: [],
     chatModel: 'swe-2-high',
@@ -142,7 +143,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const explorerBreadcrumbs = document.getElementById('explorerBreadcrumbs');
   const explorerCodeView = document.getElementById('explorerCodeView');
   const explorerStatusBar = document.getElementById('explorerStatusBar');
-  const inspectorTaskSelect = document.getElementById('inspectorTaskSelect');
+  const threadSelector = document.getElementById('threadSelector');
+  const threadPill = document.getElementById('threadPill');
+  const threadDropdown = document.getElementById('threadDropdown');
   const explorerGrid = document.getElementById('explorerGrid');
   const editorTabsBar = document.getElementById('editorTabsBar');
   const sidebarEl = document.querySelector('.sidebar');
@@ -191,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupPaneSplitters();
     setupModelSelector();
+    setupThreadSelector();
     renderAllowedTags();
     renderCriteriaList();
     await loadProjects();
@@ -297,13 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Chat cockpit: task select, composer, header controls
-    if (inspectorTaskSelect) {
-      inspectorTaskSelect.addEventListener('change', () => {
-        state.inspectorTaskId = inspectorTaskSelect.value;
-        renderInspector();
-      });
-    }
+    // Chat cockpit: hierarchical thread switcher, composer, header controls
     if (btnChatSend) btnChatSend.addEventListener('click', sendChatMessage);
     if (chatInput) {
       chatInput.addEventListener('keydown', (e) => {
@@ -1622,33 +1620,249 @@ document.addEventListener('DOMContentLoaded', () => {
     return state.threads[key];
   }
 
-  function activateResearchThread() {
-    state.inspectorTaskId = 'research';
-    if (inspectorTaskSelect) inspectorTaskSelect.value = 'research';
+  function isResearchThread(id) {
+    return id === 'research' || (id || '').startsWith('research-');
+  }
+
+  function researchThreadIds() {
+    return Object.keys(state.threads).filter(isResearchThread);
+  }
+
+  function threadLabel(id) {
+    if (id === 'research') return '🔍 Research & Inception';
+    if (isResearchThread(id)) return '🔍 Research #' + id.slice('research-'.length);
+    const t = state.tasks.find(x => x.id === id);
+    return t ? t.id + ' — ' + t.title : String(id);
+  }
+
+  function groupTasksByStage(tasks) {
+    const groups = {};
+    tasks.forEach(t => {
+      const key = String(t.stage || '0');
+      (groups[key] = groups[key] || []).push(t);
+    });
+    return Object.keys(groups)
+      .sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0) || a.localeCompare(b))
+      .map(k => ({ stage: k, tasks: groups[k] }));
+  }
+
+  function stageLabel(stageKey) {
+    const n = parseInt(stageKey, 10);
+    return 'Stage ' + (isNaN(n) ? stageKey : String(n).padStart(2, '0'));
+  }
+
+  function threadCaretSvg() {
+    return '<svg class="thread-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  }
+
+  function buildCollapsibleHeader(cls, collapseKey, title, count) {
+    const collapsed = state.threadCollapsed.has(collapseKey);
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = cls;
+    header.setAttribute('data-collapse-key', collapseKey);
+    header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    header.innerHTML = threadCaretSvg() +
+      '<span class="thread-title">' + escapeHTML(title) + '</span>' +
+      '<span class="thread-count">' + count + '</span>';
+    header.addEventListener('click', () => toggleThreadCollapse(collapseKey));
+    return header;
+  }
+
+  function buildCollapsibleBody(cls) {
+    const body = document.createElement('div');
+    body.className = cls;
+    const inner = document.createElement('div');
+    inner.className = 'thread-body-inner';
+    body.appendChild(inner);
+    return { body, inner };
+  }
+
+  function buildThreadItem(id) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'thread-item' + ((state.inspectorTaskId || 'research') === id ? ' active' : '');
+    item.setAttribute('data-thread', id);
+    item.setAttribute('role', 'menuitem');
+    item.textContent = threadLabel(id);
+    item.addEventListener('click', () => selectThread(id));
+    return item;
+  }
+
+  function buildStageGroup(stageKey, tasks) {
+    const collapseKey = 'stage:' + stageKey;
+    const grp = document.createElement('div');
+    grp.className = 'thread-stage-group' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
+    grp.setAttribute('data-stage', stageKey);
+    grp.appendChild(buildCollapsibleHeader('thread-stage-header', collapseKey, stageLabel(stageKey), tasks.length));
+    const { body, inner } = buildCollapsibleBody('thread-stage-body');
+    tasks.forEach(t => inner.appendChild(buildThreadItem(t.id)));
+    grp.appendChild(body);
+    return grp;
+  }
+
+  function buildThreadSection(sectionKey, title, count, withAdd, fill) {
+    const collapseKey = 'sec:' + sectionKey;
+    const sec = document.createElement('div');
+    sec.className = 'thread-section' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
+    sec.setAttribute('data-section', sectionKey);
+    const top = document.createElement('div');
+    top.className = 'thread-section-top';
+    top.appendChild(buildCollapsibleHeader('thread-section-header', collapseKey, title, count));
+    if (withAdd) {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'thread-add';
+      addBtn.title = 'New research thread';
+      addBtn.setAttribute('aria-label', 'New research thread');
+      addBtn.textContent = '+';
+      addBtn.addEventListener('click', (ev) => { ev.stopPropagation(); addResearchThread(); });
+      top.appendChild(addBtn);
+    }
+    sec.appendChild(top);
+    const { body, inner } = buildCollapsibleBody('thread-section-body');
+    fill(inner);
+    sec.appendChild(body);
+    return sec;
+  }
+
+  function renderThreadDropdown() {
+    if (!threadDropdown) return;
+    threadDropdown.innerHTML = '';
+    const researchIds = researchThreadIds();
+    threadDropdown.appendChild(buildThreadSection('researches', '🔍 Researches', researchIds.length, true, (inner) => {
+      researchIds.forEach(id => inner.appendChild(buildThreadItem(id)));
+    }));
+    const groups = groupTasksByStage(state.tasks);
+    threadDropdown.appendChild(buildThreadSection('implementations', 'Implementations', state.tasks.length, false, (inner) => {
+      groups.forEach(g => inner.appendChild(buildStageGroup(g.stage, g.tasks)));
+      if (!groups.length) {
+        const empty = document.createElement('div');
+        empty.className = 'thread-empty';
+        empty.textContent = 'No tasks in this workspace';
+        inner.appendChild(empty);
+      }
+    }));
+  }
+
+  function toggleThreadCollapse(collapseKey) {
+    if (state.threadCollapsed.has(collapseKey)) {
+      state.threadCollapsed.delete(collapseKey);
+    } else {
+      state.threadCollapsed.add(collapseKey);
+    }
+    renderThreadDropdown();
+    const btn = threadDropdown.querySelector('[data-collapse-key="' + collapseKey + '"]');
+    if (btn) btn.focus();
+  }
+
+  function openThreadDropdown() {
+    if (!threadSelector) return;
+    renderThreadDropdown();
+    threadSelector.classList.add('open');
+    if (threadPill) threadPill.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeThreadDropdown() {
+    if (!threadSelector) return;
+    threadSelector.classList.remove('open');
+    if (threadPill) threadPill.setAttribute('aria-expanded', 'false');
+  }
+
+  function updateThreadPill() {
+    if (!threadPill) return;
+    const label = threadLabel(state.inspectorTaskId || 'research');
+    threadPill.innerHTML = escapeHTML(label) + ' <span class="model-caret">&#8963;</span>';
+    threadPill.title = 'Thread: ' + label;
+  }
+
+  function selectThread(id) {
+    state.inspectorTaskId = id || 'research';
+    closeThreadDropdown();
+    updateThreadPill();
+    renderThreadDropdown();
     renderInspector();
+  }
+
+  function addResearchThread() {
+    const id = 'research-' + (researchThreadIds().length + 1);
+    state.threads[id] = [];
+    selectThread(id);
     if (chatInput) chatInput.focus();
   }
 
-  function populateInspectorTasks() {
-    if (!inspectorTaskSelect) return;
-    const prev = state.inspectorTaskId || 'research';
-    inspectorTaskSelect.innerHTML = '';
-    const researchOpt = document.createElement('option');
-    researchOpt.value = 'research';
-    researchOpt.textContent = '🔍 Research & Inception';
-    inspectorTaskSelect.appendChild(researchOpt);
+  function activateResearchThread() {
+    selectThread('research');
+    if (chatInput) chatInput.focus();
+  }
 
-    state.tasks.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.id + ' — ' + t.title;
-      inspectorTaskSelect.appendChild(opt);
+  function threadFocusables() {
+    if (!threadDropdown) return [];
+    return Array.from(threadDropdown.querySelectorAll(
+      '.thread-item, .thread-add, .thread-section-header, .thread-stage-header'
+    )).filter(el => !el.closest('.collapsed'));
+  }
+
+  function onThreadKeydown(e) {
+    const items = threadFocusables();
+    if (!items.length) return;
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[Math.min(idx + 1, items.length - 1)].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[Math.max(idx - 1, 0)].focus();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const el = items[idx] || items[0];
+      if (el) el.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeThreadDropdown();
+      if (threadPill) threadPill.focus();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const el = items[idx];
+      if (!el || !el.getAttribute('data-collapse-key')) return;
+      const collapsed = state.threadCollapsed.has(el.getAttribute('data-collapse-key'));
+      if ((e.key === 'ArrowRight' && collapsed) || (e.key === 'ArrowLeft' && !collapsed)) {
+        e.preventDefault();
+        toggleThreadCollapse(el.getAttribute('data-collapse-key'));
+      }
+    }
+  }
+
+  function setupThreadSelector() {
+    if (!threadSelector || !threadPill || !threadDropdown) return;
+    updateThreadPill();
+    renderThreadDropdown();
+    threadPill.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (threadSelector.classList.contains('open')) closeThreadDropdown();
+      else openThreadDropdown();
     });
+    threadPill.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        openThreadDropdown();
+        const items = threadFocusables();
+        if (items.length) items[0].focus();
+      } else if (e.key === 'Escape') {
+        closeThreadDropdown();
+      }
+    });
+    threadDropdown.addEventListener('keydown', onThreadKeydown);
+    document.addEventListener('click', (ev) => {
+      if (!threadSelector.contains(ev.target)) closeThreadDropdown();
+    });
+  }
 
-    const validTask = state.tasks.some(t => t.id === prev);
-    const pick = (prev === 'research' || !validTask) ? 'research' : prev;
-    inspectorTaskSelect.value = pick;
-    state.inspectorTaskId = pick;
+  function populateInspectorTasks() {
+    const prev = state.inspectorTaskId || 'research';
+    const valid = isResearchThread(prev) || state.tasks.some(t => t.id === prev);
+    if (!valid) state.inspectorTaskId = 'research';
+    renderThreadDropdown();
+    updateThreadPill();
     renderInspector();
   }
 
@@ -1786,18 +2000,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chatStream) return;
     updateChatModelPill();
     const threadKey = state.inspectorTaskId || 'research';
-    if (threadKey === 'research') {
+    if (isResearchThread(threadKey)) {
       const m = currentChatModel();
       chatStream.innerHTML =
         '<div class="chat-exec-card">' +
-          '<div class="exec-status-text">🔍 Research &amp; Inception Thread — Free-form architecture ideation &amp; AST task synthesis</div>' +
+          '<div class="exec-status-text">' + escapeHTML(threadLabel(threadKey)) + ' Thread — Free-form architecture ideation &amp; AST task synthesis</div>' +
           '<div class="exec-meta">' +
             '<div class="exec-meta-row"><span class="k">Mode</span><span class="v">Conversational Inception</span></div>' +
             '<div class="exec-meta-row"><span class="k">Model</span><span class="v">' + escapeHTML(m.label) + '</span></div>' +
             '<div class="exec-meta-row"><span class="k">AST Graph</span><span class="v">Graft local blast-radius active</span></div>' +
           '</div>' +
         '</div>';
-      getThreadItems('research').forEach(it => chatStream.appendChild(renderThreadItem(it)));
+      getThreadItems(threadKey).forEach(it => chatStream.appendChild(renderThreadItem(it)));
       return;
     }
 

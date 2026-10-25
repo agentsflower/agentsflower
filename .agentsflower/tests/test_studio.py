@@ -317,7 +317,8 @@ class TestStudioShell(StudioApiCase):
             'id="chatModelPill"',
             'class="composer-spacer"',
             'id="btnChatSend"',
-            'id="inspectorTaskSelect"',
+            'id="threadSelector"',
+            'id="threadPill"',
         ):
             self.assertIn(marker, html)
         for removed in (
@@ -1234,6 +1235,111 @@ class TestStudioChatEngine(StudioApiCase):
 
         for marker in (".thinking-dots", ".chat-bubble.assistant.thinking", ".chat-bubble.assistant.error"):
             self.assertIn(marker, css)
+
+
+class TestHierarchicalThreadSwitcher(StudioApiCase):
+    """Tests for T-155: hierarchical thread switcher (Researches + Implementations)."""
+
+    def shell_assets(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as resp:
+            html = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+        return html, js, css
+
+    def test_header_shell_has_thread_switcher_not_select(self):
+        html, _, _ = self.shell_assets()
+        for marker in (
+            'id="threadSelector"',
+            'id="threadPill"',
+            'id="threadDropdown"',
+            'role="menu"',
+            "Research &amp; Inception",
+        ):
+            self.assertIn(marker, html)
+        self.assertNotIn('id="inspectorTaskSelect"', html)
+        self.assertNotIn('class="chat-task-select"', html)
+
+    def test_dropdown_builds_two_collapsible_sections(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "'researches'",
+            "'implementations'",
+            "🔍 Researches",
+            "Implementations",
+            "thread-section",
+            "thread-section-header",
+            "thread-section-body",
+            "thread-count",
+            "thread-add",
+            "threadCollapsed",
+            "toggleThreadCollapse",
+            "aria-expanded",
+        ):
+            self.assertIn(marker, js)
+
+    def test_implementations_grouped_under_stage_subheaders(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "groupTasksByStage",
+            "stageLabel",
+            "'Stage '",
+            "padStart(2",
+            "thread-stage-group",
+            "thread-stage-header",
+            "thread-stage-body",
+            "data-stage",
+        ):
+            self.assertIn(marker, js)
+
+    def test_thread_items_selection_and_click_handlers(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "thread-item",
+            "data-thread",
+            "state.inspectorTaskId",
+            "selectThread",
+            "addResearchThread",
+            "closeThreadDropdown",
+            "renderInspector()",
+            "' — '",
+        ):
+            self.assertIn(marker, js)
+
+    def test_keyboard_navigation_and_dismiss(self):
+        _, js, _ = self.shell_assets()
+        for marker in (
+            "keydown",
+            "ArrowDown",
+            "ArrowUp",
+            "ArrowLeft",
+            "ArrowRight",
+            "Enter",
+            "Escape",
+            "threadFocusables",
+        ):
+            self.assertIn(marker, js)
+
+    def test_css_dark_theme_accent_and_accordion_styles(self):
+        _, _, css = self.shell_assets()
+        for marker in (
+            ".thread-selector-wrap",
+            ".thread-pill",
+            ".thread-dropdown",
+            ".thread-section-header",
+            ".thread-stage-group",
+            ".thread-stage-header",
+            ".thread-item",
+            ".thread-item.active",
+            "#134e9e",
+            "#060a12",
+            "transition",
+            "grid-template-rows",
+        ):
+            self.assertIn(marker, css)
+        self.assertNotIn(".chat-task-select", css)
 
 
 if __name__ == "__main__":
