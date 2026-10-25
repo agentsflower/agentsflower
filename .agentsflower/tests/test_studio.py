@@ -313,10 +313,24 @@ class TestStudioShell(StudioApiCase):
             'id="explorerCodeView"',
             'class="chat-stream"',
             'class="chat-composer"',
+            'id="chatModelSelector"',
             'id="chatModelPill"',
+            'class="composer-spacer"',
+            'id="btnChatSend"',
             'id="inspectorTaskSelect"',
         ):
             self.assertIn(marker, html)
+        for removed in (
+            'id="activeProjectChip"',
+            'class="search-box"',
+            'id="globalSearchInput"',
+            'id="btnQuickCreate"',
+            'id="btnChatNew"',
+            'id="btnChatRefresh"',
+            'id="btnChatPlus"',
+            'id="btnSynthesizeTasks"',
+        ):
+            self.assertNotIn(removed, html)
 
 
 
@@ -374,6 +388,8 @@ class TestAnalyticsRoadmapContract(StudioApiCase):
             "btnDashThemeToggle",
             "analyticsBuiltStamp",
             "analyticsSubTab",
+            "getElementById('hdr')",
+            ".style.display = 'none'",
         ):
             self.assertIn(marker, js)
         # the fullscreen link must NOT carry the embedded flag - standalone view keeps #hdr
@@ -387,7 +403,7 @@ class TestAnalyticsRoadmapContract(StudioApiCase):
         for marker in ("embedded", "dash-meta", "dash-theme", "postMessage"):
             self.assertIn(marker, cjs)
         ccss = self.dash_asset("common.css")
-        for marker in ("[data-embedded]", "#hdr", "#111625", "#161c2d", "display:none"):
+        for marker in ("[data-embedded]", "#hdr", "#111625", "#161c2d", "display:none!important", "margin-top:0!important"):
             self.assertIn(marker, ccss)
 
     def test_gantt_layout_contract_markers(self):
@@ -599,12 +615,14 @@ class TestTaskSynthesisAndPool(StudioApiCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
             css = resp.read().decode("utf-8")
 
-        for marker in (
-            "Research &amp; Inception",
+        self.assertIn("Research &amp; Inception", html)
+        for removed in (
             'id="btnSynthesizeTasks"',
-            "Synthesize Tasks from Discussion",
+            'id="btnChatNew"',
+            'id="btnChatRefresh"',
+            'id="btnChatPlus"',
         ):
-            self.assertIn(marker, html)
+            self.assertNotIn(removed, html)
 
         for marker in (
             "/api/task/synthesize",

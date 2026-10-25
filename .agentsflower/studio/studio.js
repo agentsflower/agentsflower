@@ -221,10 +221,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Search Filter
-    globalSearchInput.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value.toLowerCase().trim();
-      renderKanban();
-    });
+    if (globalSearchInput) {
+      globalSearchInput.addEventListener('input', (e) => {
+        state.searchQuery = e.target.value.toLowerCase().trim();
+        renderKanban();
+      });
+    }
 
     // Task Drawer Close
     btnDrawerClose.addEventListener('click', closeDrawer);
@@ -447,7 +449,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (analyticsFrame) {
       analyticsFrame.addEventListener('load', () => {
         try {
-          const gen = analyticsFrame.contentDocument && analyticsFrame.contentDocument.querySelector('#hdr .gen');
+          const doc = analyticsFrame.contentDocument;
+          if (doc && doc.documentElement) {
+            doc.documentElement.setAttribute('data-embedded', '1');
+          }
+          if (doc && doc.getElementById('hdr')) {
+            analyticsFrame.contentDocument.getElementById('hdr').style.display = 'none';
+          }
+          const gen = doc && doc.querySelector('#hdr .gen');
           if (gen && gen.textContent) setAnalyticsBuilt(gen.textContent.replace(/^Built\s*/, '').trim());
         } catch(e) {}
       });

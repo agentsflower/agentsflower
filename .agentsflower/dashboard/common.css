@@ -59,9 +59,9 @@ details.fold summary{cursor:pointer;color:var(--accent);font-size:13px}
 /* ===== Embedded mode (?embedded=1): harmonize with the Studio Cockpit chrome ===== */
 /* Studio supplies the toolbar, so this page's own topbar is suppressed; rows are pinned
    because a display:none grid item would shift the auto-placed cards up one track. */
-html[data-embedded] #hdr{display:none}
-html[data-embedded] .app{grid-template-rows:auto 26px minmax(0,1fr)}
-html[data-embedded] .app>.fbcard{grid-row:1}
+html[data-embedded] #hdr{display:none!important;margin:0!important}
+html[data-embedded] .app{grid-template-rows:auto 26px minmax(0,1fr);margin-top:0!important}
+html[data-embedded] .app>.fbcard{grid-row:1;margin-top:0!important}
 html[data-embedded] .app>.fbchosen{grid-row:2}
 html[data-embedded] .app>.side,html[data-embedded] .app>.center,html[data-embedded] .app>#mainc,html[data-embedded] .app>#ctl,html[data-embedded] .app>#detail{grid-row:3}
 /* dark cockpit palette: Studio surfaces #111625 / #161c2d (an explicit light choice is still honored) */
