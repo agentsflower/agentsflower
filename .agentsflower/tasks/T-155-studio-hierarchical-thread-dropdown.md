@@ -3,6 +3,7 @@
 Role: developer
 Tool: devin
 Model: swe-2-high
+Routing exception: human standing policy 2026-10-21 (model-options.json + questions.md): on low confidence evaluate the Devin catalog and take the adequate higher-confidence default instead of halting; devin/swe-2-high is the mandated floor. Jev option confidence 0.97 for devin-swe-2; only the effort-tier sub-question scored 0.46 while the requirement floor is already high.
 Stage: 7
 Depends on: T-154
 Branch: t-155-studio-hierarchical-thread-dropdown
