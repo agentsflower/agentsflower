@@ -70,4 +70,24 @@ Provide persistent multi-research management in Studio with folder/category grou
 
 ## Result
 
-<!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 38495f2e3923371c06d19539633ef2533906f9d2 on t-157-multi-research-threads-and-folders
+Files:
+- .agentsflower/tools/studio.py - research thread store (research_store_dir, create/list/load/save/update under .agentsflower/state/research/<id>.json, auto-name Task Research - NNN, folder/refs/parent fields), reference_summary + extract_context_refs injected into format_chat_prompt, maybe_persist_research_turn on chat success, endpoints GET /api/research/list, GET /api/research/thread, POST /api/research/create, POST /api/research/update
+- .agentsflower/studio/studio.js - researchMeta state + loadResearchThreads on loadTasks, addResearchThread via /api/research/create with Task Research - NNN naming, dblclick inline rename (startRenameThread), collapsible folder groups (buildFolderGroup) in the Researches section, inspector folder select + ref chips + fork-from select (renderResearchControls), extractRefsFromText for Ref:/Fork from tokens, refs + persist sent on /api/chat
+- .agentsflower/studio/studio.css - .thread-folder-* collapsible styles, .thread-rename-input, .ref-chip/.ref-chip-x, .research-ctl-* control styles
+- .agentsflower/tests/test_studio.py - added TestResearchThreads (7 tests): auto-naming + persistence, rename/folder grouping, update validation, chat history persistence, opt-in persist guard, ref/context-summary injection incl. inline tokens, fork_from linking, UI markers; store redirected to a temp dir so tests never write real project state
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (70 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (574 passed / 4 skipped / 0 failed)
+Criteria:
+- C-01: pass - evidence: .agentsflower/tools/studio.py, .agentsflower/studio/studio.js, .agentsflower/tests/test_studio.py
+- C-02: pass - evidence: .agentsflower/studio/studio.js, .agentsflower/studio/studio.css, .agentsflower/tools/studio.py
+- C-03: pass - evidence: .agentsflower/tools/studio.py, .agentsflower/tests/test_studio.py
+- C-04: pass - evidence: .agentsflower/tools/studio.py, .agentsflower/studio/studio.js
+- C-05: pass - evidence: .agentsflower/tests/test_studio.py, .agentsflower/tasks/.runtime/T-157.check1_test_studio.txt, .agentsflower/tasks/.runtime/T-157.check2_full_suite.txt
+Found, not fixed:
+- .agentsflower/state/research/ is not in .gitignore; live research JSON written by real Studio sessions will appear as untracked files. Adding the ignore rule is outside Allowed files.
+- Pool-card items in research threads are not persisted to disk (only role/content messages are); deliberate scope choice, not a defect.
+Proposed memory updates:
+- none

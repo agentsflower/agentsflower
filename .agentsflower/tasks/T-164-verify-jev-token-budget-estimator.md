@@ -21,6 +21,8 @@ Independently verify T-163 (Jev token and budget estimation for task synthesis) 
 4. Verify `T-NNN.plan.json` generation upon registration.
 5. Run full test suite: `python -m unittest discover -s .agentsflower/tests`.
 
+When recording the Result: put prose first and keep `evidence:` followed only by real repo-relative paths; every file under .agentsflower/tasks/.runtime/<this task>.evidence/ must be named <task id>.<name> (e.g. T-158.checks.txt), never bare filenames, selectors or fragments.
+
 ## Read first
 
 - .agentsflower/tasks/T-163-jev-token-budget-estimator.md

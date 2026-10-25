@@ -76,3 +76,23 @@ Replace the flat select dropdown in the Studio chat header with an interactive t
 ## Result
 
 <!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 772f3211e65442c28dd0d5810a274ec4cbd88773 on t-155-studio-hierarchical-thread-dropdown
+Files:
+- .agentsflower/studio/index.html - flat <select id="inspectorTaskSelect"> replaced by .thread-selector-wrap: #threadPill button (aria-haspopup/aria-expanded) + #threadDropdown role="menu"
+- .agentsflower/studio/studio.js - hierarchical switcher: researchThreadIds/threadLabel/groupTasksByStage/stageLabel (Stage NN via padStart(2,'0')), buildThreadSection/buildStageGroup/buildThreadItem, state.threadCollapsed accordion state, selectThread sets state.inspectorTaskId and closes popup, addResearchThread behind the Researches '+' action, onThreadKeydown Arrow/Enter/Escape navigation, populateInspectorTasks now re-renders the accordion; renderInspector accepts research-* thread keys
+- .agentsflower/studio/studio.css - .chat-task-select block replaced by .thread-* styles: #060a12 dropdown, #134e9e accent section headers and active pill, grid-template-rows 1fr/0fr accordion transitions, caret rotation on aria-expanded
+- .agentsflower/tests/test_studio.py - stale 'id="inspectorTaskSelect"' marker swapped for threadSelector/threadPill; new TestHierarchicalThreadSwitcher (6 tests) covering shell DOM, two-section accordion, stage grouping, item click/selection handlers, keyboard nav, theme CSS
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (62 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (566 passed / 0 failed, 4 skipped)
+Criteria:
+- C-01: pass - renderThreadDropdown builds two collapsible sections data-section="researches" (count badge, '+' addResearchThread, caret) and data-section="implementations" in .agentsflower/studio/studio.js
+- C-02: pass - groupTasksByStage + buildStageGroup render collapsible thread-stage-group groups with thread-stage-header "Stage NN" + task count in .agentsflower/studio/studio.js
+- C-03: pass - .thread-dropdown background #060a12, #134e9e accent borders/headers, grid-template-rows transitions in .agentsflower/studio/studio.css
+- C-04: pass - .thread-item click -> selectThread(id) sets state.inspectorTaskId, closeThreadDropdown, renderInspector in .agentsflower/studio/studio.js
+- C-05: pass - TestHierarchicalThreadSwitcher in .agentsflower/tests/test_studio.py; both ## Checks commands green above
+Found, not fixed:
+- .chat-header-controls CSS rule is orphaned in studio.css (no matching markup); pre-existing since the T-149 header cleanup, outside this task's scope
+Proposed memory updates:
+- none

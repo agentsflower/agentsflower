@@ -14,6 +14,8 @@ Routing exception: human authorized Model Quota Hub verification (2026-10-25)
 
 Independently verify T-167's dynamic CLI probing, per-project activation/deactivation persistence, OpenRouter provider fetching, and secret storage hygiene.
 
+When recording the Result: put prose first and keep `evidence:` followed only by real repo-relative paths; every file under .agentsflower/tasks/.runtime/<this task>.evidence/ must be named <task id>.<name> (e.g. T-158.checks.txt), never bare filenames, selectors or fragments.
+
 ## Read first
 
 - .agentsflower/tasks/T-167-model-quota-hub-backend.md

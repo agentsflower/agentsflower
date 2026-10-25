@@ -14,6 +14,8 @@ Routing exception: human authorized Model Quota Hub integration verification (20
 
 Independently verify T-171's end-to-end integration: ensuring disabled platforms and models are cleanly filtered out of Studio composer and task creation workflows.
 
+When recording the Result: put prose first and keep `evidence:` followed only by real repo-relative paths; every file under .agentsflower/tasks/.runtime/<this task>.evidence/ must be named <task id>.<name> (e.g. T-158.checks.txt), never bare filenames, selectors or fragments.
+
 ## Read first
 
 - .agentsflower/tasks/T-171-model-quota-hub-integration.md

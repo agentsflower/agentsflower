@@ -75,3 +75,23 @@ Enhance `/api/task/synthesize` in `studio.py` to automatically group synthesized
 ## Result
 
 <!-- Worker writes its outcome below this block -->
+Outcome: completed
+Change: 142d600be8fa7af6ca356d01b6ebee839b33735b on t-159-stage-aware-task-synthesis-and-skills
+Files:
+- .agentsflower/tools/studio.py - added stage topology dependency analysis (`_infer_item_phase`, `_assign_stage_topology`), autonomous skills mapping against `skills/INDEX.md` (`_load_skills_catalog`, `map_task_skills`), and `Skills:` field preservation in `register_task_pool`
+- .agentsflower/studio/studio.js - updated `createTaskPoolCardElement` to render formatted stage labels and `.skill-badge.skill-pill` badges alongside effort and model badges
+- .agentsflower/studio/studio.css - added `.skill-badge` and `.skill-pill` pill styles in the Task Pool Card section
+- .agentsflower/tests/test_studio.py - added unit tests verifying stage topology ordering without inversions, skills mapping heuristics and AST blast radius matching, `Skills:` preservation in registered Task Files, and UI skill badge markers
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (74 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` -> pass (574 passed, 4 skipped / 0 failed)
+Criteria:
+- C-01: pass - evidence: .agentsflower/tools/studio.py .agentsflower/tests/test_studio.py
+- C-02: pass - evidence: .agentsflower/tools/studio.py .agentsflower/tests/test_studio.py
+- C-03: pass - evidence: .agentsflower/studio/studio.js .agentsflower/studio/studio.css .agentsflower/tests/test_studio.py
+- C-04: pass - evidence: .agentsflower/tools/studio.py .agentsflower/tests/test_studio.py
+- C-05: pass - evidence: .agentsflower/tests/test_studio.py
+Found, not fixed:
+- none
+Proposed memory updates:
+- none

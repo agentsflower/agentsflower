@@ -14,6 +14,8 @@ Routing exception: human authorized Model Quota Hub UI verification (2026-10-25)
 
 Independently verify T-169's UI overhaul of Model Quota Hub: auto-scan on tab switch, skeleton loading, interactive platform and model toggle switches, OpenRouter modal with masked keys, and project isolation.
 
+When recording the Result: put prose first and keep `evidence:` followed only by real repo-relative paths; every file under .agentsflower/tasks/.runtime/<this task>.evidence/ must be named <task id>.<name> (e.g. T-158.checks.txt), never bare filenames, selectors or fragments.
+
 ## Read first
 
 - .agentsflower/tasks/T-169-model-quota-hub-ui.md
