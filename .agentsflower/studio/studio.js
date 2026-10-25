@@ -1670,7 +1670,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderThreadItem(item) {
     if (item.type === 'pool') return createTaskPoolCardElement(item.data, item);
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble ' + (item.role === 'assistant' ? 'assistant' : 'user');
+    bubble.className = 'chat-bubble ' + (item.role === 'assistant' ? ('assistant' + (item.error ? ' error' : '')) : 'user');
     bubble.textContent = item.content;
     return bubble;
   }
@@ -1910,7 +1910,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function sendChatMessage() {
+  const CHAT_TIMEOUT_MS = 30000;
+
+  async function sendChatMessage() {
     if (!chatInput || !chatStream) return;
     const text = chatInput.value.trim();
     if (!text) return;
@@ -1921,14 +1923,81 @@ document.addEventListener('DOMContentLoaded', () => {
     chatStream.appendChild(renderThreadItem(userItem));
     chatInput.value = '';
 
-    const m = currentChatModel();
-    const replyText = threadKey === 'research'
-      ? ('[' + m.label + '] Captured deliverable context. Click "✨ Synthesize Tasks from Discussion" to compute Graft AST blast radius and generate atomic task contracts.')
-      : ('[' + m.label + ' · ' + threadKey + '] Context noted for ' + threadKey + '. You can refine scope or synthesize follow-up tasks directly from this discussion.');
-    const assistantItem = { type: 'message', role: 'assistant', content: replyText };
-    items.push(assistantItem);
-    chatStream.appendChild(renderThreadItem(assistantItem));
+    const messages = items
+      .filter(it => it.type === 'message' && !it.error)
+      .map(it => ({ role: it.role, content: it.content }));
+
+    const toolKey = state.chatPlatform || 'devin';
+    const modelId = state.chatModel || (currentChatModel() && currentChatModel().id) || 'swe-2-high';
+    const thinkingEl = document.createElement('div');
+    thinkingEl.className = 'chat-bubble assistant thinking';
+    thinkingEl.innerHTML =
+      '<span class="thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+      '<span class="thinking-label">Thinking via ' + escapeHTML(platformLabel(toolKey)) + ' (' + escapeHTML(modelId) + ')...</span>';
+    chatStream.appendChild(thinkingEl);
     chatStream.scrollTop = chatStream.scrollHeight;
+
+    if (btnChatSend) btnChatSend.disabled = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
+
+    let assistantItem;
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: state.currentProject,
+          tool: toolKey,
+          model: modelId,
+          thread: threadKey,
+          messages: messages,
+        }),
+        signal: controller.signal,
+      });
+      const data = await resp.json().catch(() => null);
+      if (resp.ok && data && data.ok) {
+        assistantItem = {
+          type: 'message',
+          role: 'assistant',
+          content: data.reply || '(empty response)',
+          model: data.model || modelId,
+          tool: data.tool || toolKey,
+          usage: data.usage || null,
+        };
+      } else {
+        const errText = (data && data.error)
+          ? data.error
+          : ('Chat execution failed (HTTP ' + resp.status + ')');
+        assistantItem = {
+          type: 'message',
+          role: 'assistant',
+          error: true,
+          content: 'Error [' + platformLabel(toolKey) + ']: ' + errText,
+        };
+      }
+    } catch (err) {
+      const isTimeout = err && err.name === 'AbortError';
+      const msg = isTimeout
+        ? ('CLI execution timed out after 30s (' + platformLabel(toolKey) + ' / ' + modelId + ').')
+        : ('Unable to reach /api/chat: ' + (err && err.message ? err.message : 'network error'));
+      assistantItem = {
+        type: 'message',
+        role: 'assistant',
+        error: true,
+        content: msg,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+      if (btnChatSend) btnChatSend.disabled = false;
+      if (thinkingEl.parentNode) thinkingEl.parentNode.removeChild(thinkingEl);
+    }
+
+    items.push(assistantItem);
+    if ((state.inspectorTaskId || 'research') === threadKey) {
+      chatStream.appendChild(renderThreadItem(assistantItem));
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
   }
 
   // --- Chat model selector ---
