@@ -73,3 +73,12 @@ Resolve visual clutter, card element collisions, and cockpit UX regressions acro
 - [ ] C-03: Projects with generic folder names (`code`, `site`, `v2`) display disambiguated parent paths in the project list.
 - [ ] C-04: Chat task dropdown provides a flat, searchable selection list without broken nested accordions.
 - [ ] C-05: Unit test suite passes: `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"`.
+
+## Checks
+
+- python -m unittest discover -s .agentsflower/tests -p "test_studio.py"
+
+## Result
+
+<!-- Worker writes outcome below -->
+
