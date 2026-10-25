@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     explorerPath: '',
     inspectorTaskId: 'research',
     threads: { research: [] },
+    researchMeta: {},
     threadCollapsed: new Set(),
     pendingInstall: null,
     openTabs: [],
@@ -662,7 +663,82 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateMetrics();
     renderKanban();
+    await loadResearchThreads(target);
     populateInspectorTasks();
+  }
+
+  // --- Persistent research threads (folders, refs, forking) ---
+  function normalizeRefId(raw) {
+    const s = String(raw || '').trim();
+    if (/^t-\d{1,4}$/i.test(s)) return s.toUpperCase();
+    const flat = s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (flat === 'research' || flat === 'taskresearch') return 'research';
+    const m = flat.match(/^(?:taskresearch|research)(\d{1,4})$/);
+    return m ? 'research-' + String(parseInt(m[1], 10)).padStart(3, '0') : '';
+  }
+
+  function extractRefsFromText(text) {
+    const refs = [];
+    const push = (tok) => {
+      const n = normalizeRefId(tok);
+      if (n && !refs.includes(n)) refs.push(n);
+    };
+    const refRe = /\bref\s*:\s*(t-\d+|research\s*-?\s*\d+|task\s+research\s*-?\s*\d*)/gi;
+    const forkRe = /\bfork\s+from\s+(research\s*-?\s*\d+|task\s+research\s*-?\s*\d*)/gi;
+    let m;
+    while ((m = refRe.exec(text || '')) !== null) push(m[1]);
+    while ((m = forkRe.exec(text || '')) !== null) push(m[1]);
+    return refs;
+  }
+
+  function researchMeta(id) {
+    return state.researchMeta[id] || null;
+  }
+
+  function researchFolderName(id) {
+    const meta = researchMeta(id);
+    return meta && meta.folder ? meta.folder : '';
+  }
+
+  async function loadResearchThreads(projPath = '') {
+    const target = projPath || state.currentProject;
+    const query = target ? `?project=${encodeURIComponent(target)}` : '';
+    const res = await fetchJSON(`/api/research/list${query}`);
+    state.researchMeta = {};
+    if (res && res.ok && Array.isArray(res.threads)) {
+      res.threads.forEach(r => {
+        if (!r || !r.id) return;
+        state.researchMeta[r.id] = r;
+        const local = state.threads[r.id] || [];
+        const localMsgs = local.filter(it => it.type === 'message');
+        const serverMsgs = (r.messages || [])
+          .filter(m => m && m.content)
+          .map(m => ({ type: 'message', role: m.role || 'user', content: m.content }));
+        const msgs = serverMsgs.length >= localMsgs.length ? serverMsgs : localMsgs;
+        state.threads[r.id] = msgs.concat(local.filter(it => it.type !== 'message'));
+      });
+    }
+    renderThreadDropdown();
+    updateThreadPill();
+  }
+
+  async function updateResearchThread(id, fields) {
+    const res = await fetchJSON('/api/research/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: state.currentProject, id, ...fields }),
+    });
+    if (res && res.ok && res.thread) {
+      state.researchMeta[id] = res.thread;
+    } else {
+      if (!state.researchMeta[id]) {
+        state.researchMeta[id] = { id, name: '', folder: '', refs: [] };
+      }
+      Object.assign(state.researchMeta[id], fields);
+    }
+    renderThreadDropdown();
+    updateThreadPill();
+    if ((state.inspectorTaskId || 'research') === id) renderInspector();
   }
 
   // --- Model Quota Hub: live CLI probe ---
@@ -1625,12 +1701,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function researchThreadIds() {
-    return Object.keys(state.threads).filter(isResearchThread);
+    const ids = new Set(['research']);
+    Object.keys(state.researchMeta).forEach(id => ids.add(id));
+    Object.keys(state.threads).forEach(id => { if (isResearchThread(id)) ids.add(id); });
+    return [...ids].sort((a, b) => {
+      if (a === 'research') return -1;
+      if (b === 'research') return 1;
+      return a.localeCompare(b);
+    });
   }
 
   function threadLabel(id) {
-    if (id === 'research') return '🔍 Research & Inception';
-    if (isResearchThread(id)) return '🔍 Research #' + id.slice('research-'.length);
+    const meta = researchMeta(id);
+    if (id === 'research') return '🔍 ' + (meta && meta.name ? meta.name : 'Research & Inception');
+    if (isResearchThread(id)) {
+      return '🔍 ' + (meta && meta.name ? meta.name : 'Research #' + id.slice('research-'.length));
+    }
     const t = state.tasks.find(x => x.id === id);
     return t ? t.id + ' — ' + t.title : String(id);
   }
@@ -1686,7 +1772,42 @@ document.addEventListener('DOMContentLoaded', () => {
     item.setAttribute('role', 'menuitem');
     item.textContent = threadLabel(id);
     item.addEventListener('click', () => selectThread(id));
+    if (isResearchThread(id)) {
+      item.title = 'Double-click to rename';
+      item.addEventListener('dblclick', (ev) => {
+        ev.stopPropagation();
+        startRenameThread(id, item);
+      });
+    }
     return item;
+  }
+
+  function startRenameThread(id, itemEl) {
+    const meta = researchMeta(id);
+    const current = (meta && meta.name) || (id === 'research' ? 'Research & Inception' : id);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'thread-rename-input';
+    input.value = current;
+    input.setAttribute('aria-label', 'Rename research thread');
+    let done = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (name && name !== current) updateResearchThread(id, { name });
+      else renderThreadDropdown();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { done = true; renderThreadDropdown(); }
+    });
+    input.addEventListener('blur', commit);
+    input.addEventListener('click', (e) => e.stopPropagation());
+    itemEl.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   function buildStageGroup(stageKey, tasks) {
@@ -1697,6 +1818,18 @@ document.addEventListener('DOMContentLoaded', () => {
     grp.appendChild(buildCollapsibleHeader('thread-stage-header', collapseKey, stageLabel(stageKey), tasks.length));
     const { body, inner } = buildCollapsibleBody('thread-stage-body');
     tasks.forEach(t => inner.appendChild(buildThreadItem(t.id)));
+    grp.appendChild(body);
+    return grp;
+  }
+
+  function buildFolderGroup(folderName, ids) {
+    const collapseKey = 'folder:' + folderName;
+    const grp = document.createElement('div');
+    grp.className = 'thread-folder-group' + (state.threadCollapsed.has(collapseKey) ? ' collapsed' : '');
+    grp.setAttribute('data-folder', folderName);
+    grp.appendChild(buildCollapsibleHeader('thread-folder-header', collapseKey, '📁 ' + folderName, ids.length));
+    const { body, inner } = buildCollapsibleBody('thread-folder-body');
+    ids.forEach(id => inner.appendChild(buildThreadItem(id)));
     grp.appendChild(body);
     return grp;
   }
@@ -1731,7 +1864,12 @@ document.addEventListener('DOMContentLoaded', () => {
     threadDropdown.innerHTML = '';
     const researchIds = researchThreadIds();
     threadDropdown.appendChild(buildThreadSection('researches', '🔍 Researches', researchIds.length, true, (inner) => {
-      researchIds.forEach(id => inner.appendChild(buildThreadItem(id)));
+      const unfiled = researchIds.filter(id => !researchFolderName(id));
+      const folderNames = [...new Set(researchIds.map(researchFolderName).filter(Boolean))].sort();
+      unfiled.forEach(id => inner.appendChild(buildThreadItem(id)));
+      folderNames.forEach(fname => {
+        inner.appendChild(buildFolderGroup(fname, researchIds.filter(id => researchFolderName(id) === fname)));
+      });
     }));
     const groups = groupTasksByStage(state.tasks);
     threadDropdown.appendChild(buildThreadSection('implementations', 'Implementations', state.tasks.length, false, (inner) => {
@@ -1784,9 +1922,35 @@ document.addEventListener('DOMContentLoaded', () => {
     renderInspector();
   }
 
-  function addResearchThread() {
-    const id = 'research-' + (researchThreadIds().length + 1);
-    state.threads[id] = [];
+  function nextResearchSeq() {
+    let max = 0;
+    researchThreadIds().forEach(id => {
+      const m = id.match(/^research-(\d+)$/);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    return max + 1;
+  }
+
+  async function addResearchThread(folder = '', forkFrom = '') {
+    let id;
+    const res = await fetchJSON('/api/research/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: state.currentProject, folder, fork_from: forkFrom }),
+    });
+    if (res && res.ok && res.thread && res.thread.id) {
+      id = res.thread.id;
+      state.researchMeta[id] = res.thread;
+      if (!state.threads[id]) state.threads[id] = [];
+    } else {
+      id = 'research-' + String(nextResearchSeq()).padStart(3, '0');
+      state.threads[id] = [];
+      state.researchMeta[id] = {
+        id, name: 'Task Research - ' + id.slice('research-'.length),
+        folder: folder || '', refs: forkFrom ? [normalizeRefId(forkFrom)] : [],
+      };
+    }
+    renderThreadDropdown();
     selectThread(id);
     if (chatInput) chatInput.focus();
   }
@@ -1799,7 +1963,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function threadFocusables() {
     if (!threadDropdown) return [];
     return Array.from(threadDropdown.querySelectorAll(
-      '.thread-item, .thread-add, .thread-section-header, .thread-stage-header'
+      '.thread-item, .thread-add, .thread-section-header, .thread-stage-header, .thread-folder-header'
     )).filter(el => !el.closest('.collapsed'));
   }
 
@@ -2009,9 +2173,12 @@ document.addEventListener('DOMContentLoaded', () => {
             '<div class="exec-meta-row"><span class="k">Mode</span><span class="v">Conversational Inception</span></div>' +
             '<div class="exec-meta-row"><span class="k">Model</span><span class="v">' + escapeHTML(m.label) + '</span></div>' +
             '<div class="exec-meta-row"><span class="k">AST Graph</span><span class="v">Graft local blast-radius active</span></div>' +
+            '<div class="exec-meta-row"><span class="k">Folder</span><span class="v research-ctl" id="researchFolderCtl"></span></div>' +
+            '<div class="exec-meta-row"><span class="k">Refs</span><span class="v research-ctl" id="researchRefsCtl"></span></div>' +
           '</div>' +
         '</div>';
       getThreadItems(threadKey).forEach(it => chatStream.appendChild(renderThreadItem(it)));
+      renderResearchControls(threadKey);
       return;
     }
 
@@ -2080,6 +2247,109 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTaskThreadContext(t.id);
   }
 
+  function renderResearchControls(threadKey) {
+    const folderCtl = document.getElementById('researchFolderCtl');
+    const refsCtl = document.getElementById('researchRefsCtl');
+    if (!folderCtl || !refsCtl) return;
+    const meta = researchMeta(threadKey) || { id: threadKey, folder: '', refs: [] };
+
+    // Folder / category select
+    const folders = [...new Set(researchThreadIds().map(researchFolderName).filter(Boolean))].sort();
+    const folderSel = document.createElement('select');
+    folderSel.className = 'research-ctl-select';
+    folderSel.id = 'researchFolderSelect';
+    folderSel.title = 'Assign this research thread to a folder';
+    const mkOpt = (val, label) => {
+      const o = document.createElement('option');
+      o.value = val; o.textContent = label;
+      return o;
+    };
+    folderSel.appendChild(mkOpt('', '(unfiled)'));
+    folders.forEach(f => folderSel.appendChild(mkOpt(f, '📁 ' + f)));
+    folderSel.appendChild(mkOpt('__new__', '+ New folder…'));
+    folderSel.value = folders.includes(meta.folder) ? meta.folder : (meta.folder ? '__new__' : '');
+    folderSel.addEventListener('change', () => {
+      if (folderSel.value === '__new__') {
+        folderInput.style.display = '';
+        folderInput.focus();
+      } else {
+        updateResearchThread(threadKey, { folder: folderSel.value });
+      }
+    });
+    const folderInput = document.createElement('input');
+    folderInput.type = 'text';
+    folderInput.className = 'research-ctl-input';
+    folderInput.id = 'researchFolderInput';
+    folderInput.placeholder = meta.folder && !folders.includes(meta.folder) ? meta.folder : 'Folder name…';
+    folderInput.value = meta.folder && !folders.includes(meta.folder) ? meta.folder : '';
+    folderInput.style.display = folderSel.value === '__new__' ? '' : 'none';
+    folderInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const name = folderInput.value.trim();
+        updateResearchThread(threadKey, { folder: name });
+      }
+    });
+    folderCtl.appendChild(folderSel);
+    folderCtl.appendChild(folderInput);
+
+    // Context refs: chips + add input + fork-from select
+    const chipWrap = document.createElement('span');
+    chipWrap.className = 'ref-chip-wrap';
+    chipWrap.id = 'researchRefChips';
+    (meta.refs || []).forEach(ref => {
+      const chip = document.createElement('span');
+      chip.className = 'ref-chip';
+      chip.setAttribute('data-ref', ref);
+      chip.textContent = (ref.startsWith('T-') ? 'Ref: ' : 'Fork: ') + ref + ' ';
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'ref-chip-x';
+      rm.textContent = '×';
+      rm.title = 'Remove reference ' + ref;
+      rm.addEventListener('click', () => {
+        const next = (researchMeta(threadKey) || {}).refs || [];
+        updateResearchThread(threadKey, { refs: next.filter(r => r !== ref) });
+      });
+      chip.appendChild(rm);
+      chipWrap.appendChild(chip);
+    });
+    const refInput = document.createElement('input');
+    refInput.type = 'text';
+    refInput.className = 'research-ctl-input ref-input';
+    refInput.id = 'researchRefInput';
+    refInput.placeholder = 'Ref: T-013 or research-001';
+    refInput.title = 'Link a task (T-NNN) or research thread; its summary is injected into the prompt';
+    refInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const n = normalizeRefId(refInput.value);
+        if (!n || n === threadKey) return;
+        const cur = (researchMeta(threadKey) || {}).refs || [];
+        if (!cur.includes(n)) updateResearchThread(threadKey, { refs: cur.concat([n]) });
+      }
+    });
+    chipWrap.appendChild(refInput);
+    const forkSel = document.createElement('select');
+    forkSel.className = 'research-ctl-select';
+    forkSel.id = 'researchForkSelect';
+    forkSel.title = 'Fork from an existing research thread';
+    forkSel.appendChild(mkOpt('', 'Fork from…'));
+    researchThreadIds().filter(id => id !== threadKey).forEach(id => {
+      forkSel.appendChild(mkOpt(id, (researchMeta(id) && researchMeta(id).name) || id));
+    });
+    forkSel.addEventListener('change', () => {
+      const target = normalizeRefId(forkSel.value);
+      if (!target) return;
+      const cur = (researchMeta(threadKey) || {}).refs || [];
+      const fields = { fork_from: target };
+      if (!cur.includes(target)) fields.refs = cur.concat([target]);
+      updateResearchThread(threadKey, fields);
+    });
+    chipWrap.appendChild(forkSel);
+    refsCtl.appendChild(chipWrap);
+  }
+
   async function loadTaskThreadContext(taskId) {
     const res = await fetchJSON('/api/task/context?project=' + encodeURIComponent(state.currentProject) + '&id=' + encodeURIComponent(taskId));
     if (!res || !res.ok || state.inspectorTaskId !== taskId) return;
@@ -2143,6 +2413,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const toolKey = state.chatPlatform || 'devin';
     const modelId = state.chatModel || (currentChatModel() && currentChatModel().id) || 'swe-2-high';
+    const isResearch = isResearchThread(threadKey);
+    let refsForBody = [];
+    if (isResearch) {
+      const found = extractRefsFromText(text);
+      const cur = ((researchMeta(threadKey) || {}).refs || []).slice();
+      const merged = cur.concat(found.filter(r => !cur.includes(r) && r !== threadKey));
+      refsForBody = merged.filter(r => r !== threadKey);
+      if (found.length && merged.length !== cur.length) {
+        updateResearchThread(threadKey, { refs: refsForBody });
+      }
+    }
     const thinkingEl = document.createElement('div');
     thinkingEl.className = 'chat-bubble assistant thinking';
     thinkingEl.innerHTML =
@@ -2166,6 +2447,8 @@ document.addEventListener('DOMContentLoaded', () => {
           model: modelId,
           thread: threadKey,
           messages: messages,
+          refs: refsForBody,
+          persist: isResearch,
         }),
         signal: controller.signal,
       });

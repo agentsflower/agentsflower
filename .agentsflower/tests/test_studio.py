@@ -1342,5 +1342,255 @@ class TestHierarchicalThreadSwitcher(StudioApiCase):
         self.assertNotIn(".chat-task-select", css)
 
 
+class TestResearchThreads(StudioApiCase):
+    """Tests for T-157: multi-research threads, folders, persistence, context forking."""
+
+    def _temp_store(self):
+        """Redirect the research store to a temp dir so tests never touch real project state."""
+        from unittest.mock import patch
+
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        store = Path(td.name) / "state" / "research"
+        patcher = patch.object(studio, "research_store_dir", return_value=store)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return store
+
+    def _chat(self, thread, messages, **extra):
+        from unittest.mock import patch
+
+        body = {
+            "project": str(studio.REPO_ROOT),
+            "tool": "devin",
+            "model": "swe-2-high",
+            "thread": thread,
+            "messages": messages,
+        }
+        body.update(extra)
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", return_value=(0, "Research reply", False)):
+            return self.api("/api/chat", method="POST", body=body)
+
+    def test_create_autonames_and_persists_threads(self):
+        store = self._temp_store()
+        code, res = self.api("/api/research/create", method="POST",
+                             body={"project": str(studio.REPO_ROOT)})
+        self.assertEqual(code, 200, res)
+        self.assertTrue(res.get("ok"), res)
+        t1 = res["thread"]
+        self.assertEqual(t1["id"], "research-001")
+        self.assertEqual(t1["name"], "Task Research - 001")
+        self.assertTrue((store / "research-001.json").is_file())
+
+        code, res = self.api("/api/research/create", method="POST",
+                             body={"project": str(studio.REPO_ROOT)})
+        self.assertEqual(res["thread"]["id"], "research-002")
+        self.assertEqual(res["thread"]["name"], "Task Research - 002")
+
+        code, res = self.api("/api/research/list?" + self.q({"project": str(studio.REPO_ROOT)}))
+        self.assertEqual(code, 200, res)
+        ids = [t["id"] for t in res["threads"]]
+        self.assertEqual(ids, ["research-001", "research-002"])
+
+    def test_rename_and_folder_grouping(self):
+        store = self._temp_store()
+        for _ in range(2):
+            self.api("/api/research/create", method="POST", body={"project": str(studio.REPO_ROOT)})
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-001",
+            "name": "Alpha spike", "folder": "Architecture",
+        })
+        self.assertEqual(code, 200, res)
+        self.assertEqual(res["thread"]["name"], "Alpha spike")
+        self.assertEqual(res["thread"]["folder"], "Architecture")
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-002", "folder": "UI Design",
+        })
+        self.assertEqual(res["thread"]["folder"], "UI Design")
+
+        code, res = self.api("/api/research/thread?" + self.q({
+            "project": str(studio.REPO_ROOT), "id": "research-001"}))
+        self.assertEqual(res["thread"]["name"], "Alpha spike")
+        self.assertEqual(res["thread"]["folder"], "Architecture")
+
+        code, res = self.api("/api/research/list?" + self.q({"project": str(studio.REPO_ROOT)}))
+        folders = {t["id"]: t["folder"] for t in res["threads"]}
+        self.assertEqual(folders["research-001"], "Architecture")
+        self.assertEqual(folders["research-002"], "UI Design")
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-001", "folder": "",
+        })
+        self.assertEqual(res["thread"]["folder"], "")
+        rec = json.loads((store / "research-001.json").read_text(encoding="utf-8"))
+        self.assertEqual(rec["folder"], "")
+
+    def test_update_rejects_bad_input(self):
+        self._temp_store()
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT),
+        })
+        self.assertEqual(code, 400)
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-099", "name": "x",
+        })
+        self.assertEqual(code, 200, res)
+        self.assertEqual(res["thread"]["id"], "research-099")
+        self.assertEqual(res["thread"]["name"], "x")
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "../outside", "name": "x",
+        })
+        self.assertEqual(code, 400)
+
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-099", "refs": "not-a-list",
+        })
+        self.assertEqual(code, 400)
+
+        self.api("/api/research/create", method="POST", body={"project": str(studio.REPO_ROOT)})
+        code, res = self.api("/api/research/update", method="POST", body={
+            "project": str(studio.REPO_ROOT), "id": "research-001", "name": "   ",
+        })
+        self.assertEqual(code, 400)
+
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api("/api/research/create", method="POST", body={"project": td})
+            self.assertEqual(code, 403)
+
+    def test_chat_persists_thread_history(self):
+        store = self._temp_store()
+        self.api("/api/research/create", method="POST", body={"project": str(studio.REPO_ROOT)})
+
+        code, res = self._chat("research-001", [{"role": "user", "content": "First question"}])
+        self.assertEqual(code, 200, res)
+        rec = json.loads((store / "research-001.json").read_text(encoding="utf-8"))
+        roles = [m["role"] for m in rec["messages"]]
+        self.assertEqual(roles, ["user", "assistant"])
+        self.assertEqual(rec["messages"][0]["content"], "First question")
+        self.assertEqual(rec["messages"][1]["content"], "Research reply")
+
+        code, res = self._chat("research-001", [
+            {"role": "user", "content": "First question"},
+            {"role": "assistant", "content": "Research reply"},
+            {"role": "user", "content": "Second question"},
+        ])
+        self.assertEqual(code, 200, res)
+        rec = json.loads((store / "research-001.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(rec["messages"]), 4)
+        self.assertEqual(rec["messages"][2]["content"], "Second question")
+
+    def test_chat_persist_is_opt_in_for_new_threads(self):
+        store = self._temp_store()
+        code, res = self._chat("research-007", [{"role": "user", "content": "hi"}])
+        self.assertEqual(code, 200, res)
+        self.assertFalse((store / "research-007.json").exists())
+
+        code, res = self._chat("research-007", [{"role": "user", "content": "hi"}], persist=True)
+        self.assertEqual(code, 200, res)
+        rec = json.loads((store / "research-007.json").read_text(encoding="utf-8"))
+        self.assertEqual(rec["id"], "research-007")
+        self.assertEqual(rec["name"], "Task Research - 007")
+
+        code, res = self._chat("research", [{"role": "user", "content": "hi"}])
+        self.assertEqual(code, 200, res)
+        self.assertFalse((store / "research.json").exists())
+
+    def test_refs_and_inline_tokens_inject_context_summary(self):
+        self._temp_store()
+        code, res = self._chat("research-001", [{"role": "user", "content": "Chose Postgres for storage"}],
+                               persist=True)
+        self.assertEqual(code, 200, res)
+
+        prompts = []
+
+        def fake_chat_run(argv, cwd=None, timeout=30):
+            prompts.append(" ".join(argv))
+            return 0, "ok", False
+
+        from unittest.mock import patch
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", side_effect=fake_chat_run):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "thread": "research-002",
+                "persist": True,
+                "refs": ["research-001", "T-013"],
+                "messages": [{"role": "user", "content": "Compare approaches"}],
+            })
+        self.assertEqual(code, 200, res)
+        prompt = prompts[-1]
+        self.assertIn("Referenced context", prompt)
+        self.assertIn("research-001", prompt)
+        self.assertIn("Postgres", prompt)
+        self.assertIn("T-013", prompt)
+
+        prompts.clear()
+        with patch.object(studio.shutil, "which", return_value="/fake/bin/devin"), \
+                patch.object(studio, "_chat_run", side_effect=fake_chat_run):
+            code, res = self.api("/api/chat", method="POST", body={
+                "project": str(studio.REPO_ROOT),
+                "tool": "devin",
+                "thread": "research-002",
+                "messages": [{"role": "user", "content": "Now fork from Research-001, Ref: T-013"}],
+            })
+        self.assertEqual(code, 200, res)
+        prompt = prompts[-1]
+        self.assertIn("Referenced context", prompt)
+        self.assertIn("research-001", prompt)
+        self.assertIn("T-013", prompt)
+
+    def test_create_with_fork_from_links_parent(self):
+        self._temp_store()
+        self.api("/api/research/create", method="POST", body={"project": str(studio.REPO_ROOT)})
+        code, res = self.api("/api/research/create", method="POST", body={
+            "project": str(studio.REPO_ROOT),
+            "fork_from": "Research-001",
+            "folder": "Architecture",
+        })
+        self.assertEqual(code, 200, res)
+        t = res["thread"]
+        self.assertEqual(t["id"], "research-002")
+        self.assertEqual(t["parent"], "research-001")
+        self.assertIn("research-001", t["refs"])
+        self.assertEqual(t["folder"], "Architecture")
+
+    def test_multi_research_ui_markers(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.js") as resp:
+            js = resp.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/studio.css") as resp:
+            css = resp.read().decode("utf-8")
+        for marker in (
+            "/api/research/create",
+            "/api/research/update",
+            "/api/research/list",
+            "Task Research - ",
+            "buildFolderGroup",
+            "thread-folder-header",
+            "thread-folder-group",
+            "thread-rename-input",
+            "startRenameThread",
+            "extractRefsFromText",
+            "researchMeta",
+            "ref-chip",
+            "researchForkSelect",
+            "persist: isResearch",
+        ):
+            self.assertIn(marker, js)
+        for marker in (
+            ".thread-folder-header",
+            ".thread-folder-group",
+            ".thread-rename-input",
+            ".ref-chip",
+            ".research-ctl-select",
+        ):
+            self.assertIn(marker, css)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2129,6 +2129,87 @@ body.pane-resizing iframe {
   font-size: 0.74rem;
   color: var(--text-subtle);
 }
+.thread-folder-group { margin: 2px 0 2px 12px; }
+.thread-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-left: 2px solid rgba(59, 130, 246, 0.7);
+  border-radius: var(--radius-sm);
+  background: rgba(19, 78, 158, 0.18);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.thread-folder-header:hover { background: rgba(19, 78, 158, 0.32); color: #dbeafe; }
+.thread-folder-header[aria-expanded="false"] .thread-caret { transform: rotate(-90deg); }
+.thread-folder-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 0.2s ease, opacity 0.2s ease;
+}
+.thread-folder-group.collapsed > .thread-folder-body {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.thread-rename-input {
+  display: block;
+  width: calc(100% - 4px);
+  margin: 1px 2px;
+  padding: 5px 9px;
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius-sm);
+  background: #060a12;
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.research-ctl { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.research-ctl-select,
+.research-ctl-input {
+  padding: 2px 8px;
+  border: 1px solid rgba(19, 78, 158, 0.65);
+  border-radius: var(--radius-sm);
+  background: #060a12;
+  color: #dbeafe;
+  font-size: 0.72rem;
+  font-family: var(--font-sans);
+}
+.research-ctl-input { min-width: 130px; }
+.research-ctl-input:focus,
+.research-ctl-select:focus { border-color: #3b82f6; outline: none; }
+.ref-chip-wrap { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid rgba(147, 197, 253, 0.4);
+  border-radius: 10px;
+  background: rgba(19, 78, 158, 0.3);
+  color: #bfdbfe;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.ref-chip-x {
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 1px;
+}
+.ref-chip-x:hover { color: #fff; }
 .chat-header-controls {
   display: flex;
   gap: 6px;
