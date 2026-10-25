@@ -43,8 +43,9 @@ When recording the Result: put prose first and keep `evidence:` followed only by
 - [ ] V-03: Implementations section cleanly groups tasks by stage with `T-XXX — Title` formatting and status pills.
 - [ ] V-04: Research threads and tasks strictly reload per project without leaking across workspace boundaries.
 - [ ] V-05: Deactivated platforms in `project-models.json` bypass CLI subprocess probes during capacity scanning.
-- [ ] V-06: Unit test suite passes: `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"`.
-- [ ] V-07: Full test suite passes: `python -m unittest discover -s .agentsflower/tests`.
+- [ ] V-06: Analytics toolbar includes "Cost and Plan" subtab displaying project-scoped Plan vs Fact telemetry.
+- [ ] V-07: Unit test suite passes: `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"`.
+- [ ] V-08: Full test suite passes: `python -m unittest discover -s .agentsflower/tests`.
 
 ## Checks
 
