@@ -1148,6 +1148,254 @@ class TestCapacityHub(StudioApiCase):
             self.assertIn(marker, css)
 
 
+OPENROUTER_MODELS_PAYLOAD = {
+    "data": [
+        {"id": "openai/gpt-4o", "name": "OpenAI: GPT-4o", "context_length": 128000,
+         "pricing": {"prompt": "0.0000025", "completion": "0.00001"}},
+        {"id": "anthropic/claude-3.7-sonnet", "name": "Anthropic: Claude 3.7 Sonnet",
+         "context_length": 200000, "pricing": {"prompt": "0.000003"}},
+    ]
+}
+
+
+class TestProviderEngineAndProjectState(StudioApiCase):
+    """T-167: provider engine (OpenRouter / OpenAI-compatible), masked secrets,
+    per-project platform/model activation state."""
+
+    def setUp(self):
+        self._attached = (studio.ATTACHED_FILE.read_text(encoding="utf-8")
+                          if studio.ATTACHED_FILE.is_file() else None)
+        self._cache = dict(studio._capacity_probe_cache)
+        self._pcache = dict(studio._platform_probe_cache)
+        studio._capacity_probe_cache.update(at=0.0, data=None, scope=None)
+        studio._platform_probe_cache.clear()
+
+    def tearDown(self):
+        if self._attached is None:
+            studio.ATTACHED_FILE.unlink(missing_ok=True)
+        else:
+            studio.ATTACHED_FILE.write_text(self._attached, encoding="utf-8")
+        studio._capacity_probe_cache.clear()
+        studio._capacity_probe_cache.update(self._cache)
+        studio._platform_probe_cache.clear()
+        studio._platform_probe_cache.update(self._pcache)
+
+    @staticmethod
+    def _attach(td, name):
+        proj = Path(td) / name
+        (proj / ".agentsflower" / "state").mkdir(parents=True)
+        studio.save_attached_project(str(proj))
+        return proj
+
+    def test_codex_models_come_from_live_cli(self):
+        """`codex models` output is parsed dynamically, ahead of the configured catalog."""
+        def fake_run(argv, timeout=None):
+            exe = Path(str(argv[0])).name.lower()
+            args = list(argv[1:])
+            if exe.startswith("codex"):
+                if args == ["--version"]:
+                    return 0, "codex-cli 9.8.7"
+                if args == ["login", "status"]:
+                    return 0, "Logged in using ChatGPT"
+                if args == ["models"]:
+                    return 0, "gpt-live-1\ngpt-live-2  fast variant"
+            return None, ""
+
+        from unittest.mock import patch
+        with patch.object(studio.shutil, "which",
+                          side_effect=lambda n: f"/fake/{n}.exe" if n == "codex" else None), \
+                patch.object(studio, "_probe_run", side_effect=fake_run), \
+                patch.object(studio, "_fetch_ollama_json", return_value=None):
+            code, res = self.api("/api/capacity/probe?" + self.q({"platform": "codex"}))
+        self.assertEqual(code, 200, res)
+        p = res["platform"]
+        self.assertEqual(p["key"], "codex")
+        self.assertTrue(p["authenticated"])
+        self.assertEqual(p["version"], "codex-cli 9.8.7")
+        self.assertEqual({m["id"] for m in p["models"]}, {"gpt-live-1", "gpt-live-2"})
+
+    def test_mask_api_key(self):
+        self.assertEqual(studio.mask_api_key("sk-or-v1-secret"), "sk-or-••••••••")
+        self.assertEqual(studio.mask_api_key("abc"), "••••••••")
+        self.assertEqual(studio.mask_api_key(""), "")
+
+    def test_provider_add_openrouter_fetches_models_and_masks_key(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "prov_proj")
+            seen = {}
+
+            def fake_req(url, api_key, timeout=None):
+                seen["url"], seen["key"] = url, api_key
+                return OPENROUTER_MODELS_PAYLOAD
+
+            from unittest.mock import patch
+            with patch.object(studio, "_provider_request", side_effect=fake_req):
+                code, res = self.api("/api/capacity/provider/add", method="POST", body={
+                    "project": str(proj), "name": "OpenRouter",
+                    "api_key": "sk-or-v1-testsecret123"})
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res["ok"], res)
+            self.assertEqual(seen["url"], studio.OPENROUTER_BASE_URL + "/models")
+            self.assertEqual(seen["key"], "sk-or-v1-testsecret123")
+
+            prov = res["provider"]
+            self.assertEqual(prov["id"], "openrouter")
+            self.assertEqual(prov["kind"], "openrouter")
+            self.assertEqual(prov["api_key_masked"], "sk-or-••••••••")
+            self.assertNotIn("testsecret123", json.dumps(res, ensure_ascii=False))
+            ids = {m["id"] for m in prov["models"]}
+            self.assertEqual(ids, {"openai/gpt-4o", "anthropic/claude-3.7-sonnet"})
+            gpt = next(m for m in prov["models"] if m["id"] == "openai/gpt-4o")
+            self.assertEqual(gpt["context"], "128,000 context")
+            self.assertIn("/ 1M prompt", gpt["pricing"])
+
+            # Raw credential lives only in the git-ignored secrets file.
+            state_dir = proj / ".agentsflower" / "state"
+            secrets = json.loads((state_dir / ".secrets.json").read_text(encoding="utf-8"))
+            self.assertEqual(secrets["providers"]["openrouter"]["api_key"],
+                             "sk-or-v1-testsecret123")
+            state_text = (state_dir / "project-models.json").read_text(encoding="utf-8")
+            self.assertNotIn("testsecret123", state_text)
+            self.assertIn("openrouter",
+                          json.loads(state_text)["providers"])
+            gitignore = (proj / ".gitignore").read_text(encoding="utf-8")
+            self.assertIn(".agentsflower/state/.secrets.json", gitignore)
+
+    def test_provider_add_custom_base_url_and_verify_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "prov_fail")
+            from unittest.mock import patch
+            with patch.object(studio, "_provider_request",
+                              side_effect=urllib.error.URLError("refused")):
+                code, res = self.api("/api/capacity/provider/add", method="POST", body={
+                    "project": str(proj), "name": "Corp GW",
+                    "kind": "openai-compatible",
+                    "base_url": "https://gw.corp.example/v1",
+                    "api_key": "corp-key-123456"})
+            self.assertEqual(code, 502, res)
+            self.assertFalse(res["ok"])
+            self.assertFalse((proj / ".agentsflower" / "state" / ".secrets.json").exists())
+            self.assertEqual(studio.load_project_state(proj)["providers"], {})
+
+            code, res = self.api("/api/capacity/provider/add", method="POST", body={
+                "project": str(proj), "name": "nokey"})
+            self.assertEqual(code, 400)
+            self.assertFalse(res["ok"])
+
+    def test_provider_remove_purges_credentials(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "prov_rm")
+            from unittest.mock import patch
+            with patch.object(studio, "_provider_request",
+                              return_value=OPENROUTER_MODELS_PAYLOAD):
+                code, res = self.api("/api/capacity/provider/add", method="POST", body={
+                    "project": str(proj), "name": "openrouter",
+                    "api_key": "sk-or-v1-abcdefgh"})
+                self.assertTrue(res["ok"], res)
+                code, res = self.api("/api/capacity/provider/remove", method="POST", body={
+                    "project": str(proj), "id": "openrouter"})
+            self.assertEqual(code, 200, res)
+            self.assertTrue(res["ok"], res)
+            self.assertNotIn("openrouter", studio.load_project_secrets(proj)["providers"])
+            self.assertNotIn("openrouter", studio.load_project_state(proj)["providers"])
+            code, res = self.api("/api/capacity/provider/remove", method="POST", body={
+                "project": str(proj), "id": "openrouter"})
+            self.assertEqual(code, 404)
+
+    def test_project_toggle_persists_and_scopes_to_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj_a = self._attach(td, "proj_a")
+            proj_b = self._attach(td, "proj_b")
+
+            code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+                "project": str(proj_a), "platform": "devin", "enabled": False})
+            self.assertEqual(code, 200, res)
+            self.assertFalse(res["state"]["platforms"]["devin"]["enabled"])
+            code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+                "project": str(proj_a), "platform": "devin",
+                "model": "swe-2-high", "enabled": False})
+            self.assertTrue(res["ok"], res)
+
+            persisted = json.loads(
+                (proj_a / ".agentsflower" / "state" / "project-models.json")
+                .read_text(encoding="utf-8"))
+            self.assertFalse(persisted["platforms"]["devin"]["enabled"])
+            self.assertFalse(persisted["models"]["devin"]["swe-2-high"]["enabled"])
+
+            code, res = self.api("/api/capacity/project-state?" + self.q({"project": str(proj_b)}))
+            self.assertEqual(code, 200, res)
+            self.assertEqual(res["state"]["platforms"], {})
+            self.assertEqual(res["state"]["models"], {})
+
+            from unittest.mock import patch
+            patches = (patch.object(studio.shutil, "which",
+                                    side_effect=TestCapacityHub._fake_which),
+                       patch.object(studio, "_probe_run",
+                                    side_effect=TestCapacityHub._fake_run),
+                       patch.object(studio, "_fetch_ollama_json",
+                                    side_effect=TestCapacityHub._fake_ollama))
+            with patches[0], patches[1], patches[2]:
+                code, res = self.api("/api/capacity/probe?" + self.q({"project": str(proj_a)}))
+                self.assertEqual(code, 200, res)
+                devin = next(p for p in res["platforms"] if p["key"] == "devin")
+                self.assertFalse(devin["enabled"])
+                swe = next(m for m in devin["models"] if m["id"] == "swe-2-high")
+                self.assertFalse(swe["enabled"])
+                # a model without an explicit flag inherits the disabled platform
+                other = next(m for m in devin["models"] if m["id"] != "swe-2-high")
+                self.assertFalse(other["enabled"])
+
+                code, res_b = self.api("/api/capacity/probe?" + self.q({"project": str(proj_b)}))
+                self.assertEqual(code, 200, res_b)
+                devin_b = next(p for p in res_b["platforms"] if p["key"] == "devin")
+                self.assertTrue(devin_b["enabled"])
+                self.assertTrue(all(m["enabled"] for m in devin_b["models"]))
+
+    def test_probe_includes_provider_with_live_models(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = self._attach(td, "prov_probe")
+
+            def fake_req(url, api_key, timeout=None):
+                return OPENROUTER_MODELS_PAYLOAD
+
+            from unittest.mock import patch
+            with patch.object(studio, "_provider_request", side_effect=fake_req), \
+                    patch.object(studio.shutil, "which", return_value=None), \
+                    patch.object(studio, "_fetch_ollama_json", return_value=None):
+                self.api("/api/capacity/provider/add", method="POST", body={
+                    "project": str(proj), "name": "openrouter",
+                    "api_key": "sk-or-v1-zxcvbnm1"})
+                code, res = self.api("/api/capacity/probe?" + self.q({"project": str(proj)}))
+            self.assertEqual(code, 200, res)
+            keys = {p["key"] for p in res["platforms"]}
+            self.assertIn("openrouter", keys)
+            prov = next(p for p in res["platforms"] if p["key"] == "openrouter")
+            self.assertTrue(prov["provider"])
+            self.assertTrue(prov["enabled"])
+            self.assertEqual(prov["api_key_masked"], "sk-or-••••••••")
+            self.assertIn("openai/gpt-4o", {m["id"] for m in prov["models"]})
+            self.assertNotIn("zxcvbnm1", json.dumps(res, ensure_ascii=False))
+            self.assertIn("openrouter", res["project_state"]["providers"])
+
+    def test_project_toggle_rejects_bad_input(self):
+        code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+            "project": str(studio.REPO_ROOT), "platform": "x; rm -rf /"})
+        self.assertEqual(code, 400)
+        self.assertFalse(res["ok"])
+        with tempfile.TemporaryDirectory() as td:
+            code, res = self.api("/api/capacity/project-toggle", method="POST", body={
+                "project": td, "platform": "devin"})
+            self.assertEqual(code, 403)
+            code, res = self.api("/api/capacity/provider/add", method="POST", body={
+                "project": td, "name": "x", "api_key": "k" * 12})
+            self.assertEqual(code, 403)
+
+    def test_repo_gitignore_covers_secrets_file(self):
+        text = (studio.REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".agentsflower/state/.secrets.json", text)
+        self.assertIn(".agentflow/state/.secrets.json", text)
+
+
 class TestStudioChatEngine(StudioApiCase):
     """Tests for T-153: Live CLI Chat Execution Engine (POST /api/chat)."""
 
