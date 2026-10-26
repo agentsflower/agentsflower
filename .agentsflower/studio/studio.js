@@ -2614,6 +2614,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
     threadDropdown.addEventListener('keydown', onThreadKeydown);
+    threadDropdown.addEventListener('click', (ev) => ev.stopPropagation());
     document.addEventListener('click', (ev) => {
       if (!threadSelector.contains(ev.target)) closeThreadDropdown();
     });
