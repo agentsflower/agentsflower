@@ -62,3 +62,23 @@ Ensure that clicking collapsible headers (Researches, Implementations, Stages, F
 ## Result
 
 <!-- Worker writes outcome below -->
+Outcome: completed
+Change: 570b0d2 on t-179-fix-thread-dropdown-premature-collapse
+Files:
+- .agentsflower/studio/studio.js - setupThreadSelector adds threadDropdown.addEventListener('click', ev => ev.stopPropagation()); clicks inside the dropdown (incl. headers detached mid-bubble by fillThreadList) no longer reach the document outside-click handler
+- .agentsflower/studio/index.html - cache-busting bump studio.js?v=5 -> studio.js?v=6
+- .agentsflower/tests/test_studio.py - new class TestThreadDropdownInsideClicks (3 contract tests)
+Checks:
+- `python -m unittest discover -s .agentsflower/tests -p "test_studio.py"` -> pass (118 passed / 0 failed)
+- `python -m unittest discover -s .agentsflower/tests` (whole suite) -> pass (622 ran, 4 skipped, 0 failed)
+Criteria:
+- C-01: pass - section headers (Researches, Implementations) go buildCollapsibleHeader -> toggleThreadCollapse -> fillThreadList rebuild; the re-render detaches the clicked node mid-bubble but the event still bubbles along the precomputed path to threadDropdown, where the new guard stops it before document; test_inside_clicks_stop_before_document_handler in .agentsflower/tests/test_studio.py
+- C-02: pass - stage headers use the same data-collapse-key path via buildStageGroup; test_toggle_collapse_does_not_close_dropdown asserts toggleThreadCollapse contains no closeThreadDropdown call
+- C-03: pass - .thread-item click calls selectThread which sets state.inspectorTaskId and toggles .active in place via data-thread match (T-177), and the click is stopped at threadDropdown so the outside-click handler never fires
+- C-04: pass - close paths unchanged: document click on !threadSelector.contains(ev.target), Escape in onThreadKeydown, threadPill toggle, focusout to an outside element; TestPersistentThreadDropdown.test_close_triggers_outside_click_escape_and_blur still green
+- C-05: pass - .agentsflower/studio/index.html serves studio.js?v=6; test_studio_js_cache_busting_version
+- C-06: pass - checks command verbatim green, 118 tests
+Found, not fixed:
+- clicks inside #threadDropdown now also skip other document-level click handlers (e.g. the model-selector outside-close); consistent with the existing stopPropagation on .thread-sec-btn and the search input
+Proposed memory updates:
+- none

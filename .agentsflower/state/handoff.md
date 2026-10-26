@@ -1,6 +1,23 @@
 # Session Handoff
 
-As of: 2026-10-25 ~20:20Z, main@0b2cad3 (T-175 merge; ledger fully clean).
+As of: 2026-10-26 ~00:20Z, main@abbc306 (T-179 merge; ledger fully clean).
+
+Background session devin-background, ~00:04-00:19Z: resolved the tick need
+(T-179 developer completed, "write its tester task"). T-180 already existed
+but `Verifies:` lacked the SHA and it sat `blocked` - added
+`Verifies: T-179 @ 570b0d2…`, set T-179 `review`, set T-180 `ready`. Jev
+rolled low-confidence again (option 0.87 devin-swe-2; effort sub-question
+0.39 vs an already-high floor) - admitted via a `Routing exception:` header
+line citing the 2026-10-21 standing policy + human-authorized task pair.
+Launched T-180 directly via run_task.py; `Verdict: pass` on all 6 criteria
+(118 + 622 tests). Accepted T-180, then T-179 merged at abbc306,
+worktree/branch cleaned.
+
+What waits: nothing mechanical - tick clean, ledger clean. New scope (Stage
+8) still needs the human. Recurring pattern (3rd time): Studio-drafted
+tester Task Files arrive without the `Verifies:` SHA and `blocked`, and Jev
+keeps rolling low-confidence on tester effort tiers - both handled by the
+documented orchestrator steps; candidate tooling fix if the human wants.
 
 Background session devin-background, ~19:45-20:20Z: resolved the tick need
 (T-175 developer completed, "write its tester task"). T-176 already existed

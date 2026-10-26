@@ -545,3 +545,11 @@ Ended: ledger fully clean, tick.json no needs/waits, main@6a059a4.
 - Note for future orchestrators: a tester Task File drafted before the checked SHA exists needs its `Verifies:` filled by the orchestrator; tick's `decide()` does not model the pre-merge tester exception (`Depends on` the checked task is satisfied by review status) - launch the ready tester directly through the launcher.
 
 Ended: ledger fully clean, tick.json no needs/waits, main@0b2cad3.
+
+2026-10-26 background orchestrator (devin-background), ~00:04-00:19Z: closed the open tick need - T-179/T-180.
+
+- tick.json named one need: T-179 developer completed, "write its tester task". T-180 existed but `Verifies: T-179` lacked the SHA and it sat `blocked`. Added `Verifies: T-179 @ 570b0d23cf4d022abf82925593c89c8cf70a2f83`, set T-179 `review`, set T-180 `ready`, launched via run_task.py.
+- route.py returned a low-confidence Jev assessment (option confidence 0.87 for devin-swe-2; only the effort-tier sub-question 0.39 while the requirement floor is already high and swe-2-high meets it). Admitted via a `Routing exception:` header line citing the human-authorized task pair and the 2026-10-21 standing policy - same pattern as T-155/T-163.
+- T-180 exited `completed`, `Verdict: pass` on V-01..V-06 (test_studio 118/118, full suite 622/0+4skip), evidence in .runtime/T-180.evidence. Accepted T-180, then accept.py T-179: verify PASS, trial merge clean, merged at abbc306, worktree and branch removed.
+
+Ended: ledger fully clean, tick.json no needs/waits, main@abbc306.

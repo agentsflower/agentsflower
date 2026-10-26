@@ -1,6 +1,8 @@
 # Current Step
 
-2026-10-25 (T-173/T-174 done on main@6a059a4 - Model Quota Hub UI polish merged; ledger fully clean - new scope waits for the human):
+2026-10-26 (T-179/T-180 done on main@abbc306 - thread dropdown inside-click fix merged; ledger fully clean - new scope waits for the human):
+
+Earlier entry (2026-10-25, T-173/T-174 done on main@6a059a4 - Model Quota Hub UI polish merged; ledger fully clean - new scope waits for the human):
 
 Earlier entry (2026-10-24, Stage 7 closed, AgentsFlower 2.17.0 on main@db7e22f):
 
